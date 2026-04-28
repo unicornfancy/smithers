@@ -1,12 +1,37 @@
 # templates/seed-data/
 
-NDA-safe fake data for demo screenshots and the `pnpm seed` mock-mode. To be filled in with the `demo_seed` todo:
+NDA-safe demo content for screenshots, demos, and the eventual `pnpm seed` mock-mode. Point Smithers at `templates/seed-data/vault/` to see a fully-populated UI without needing access to a real vault.
 
-- ClimateFirst Foundation Phase 2 (`partner`, active, full panels)
-- OpenSource Initiative Q4 (`team`, hot, P2 + Slack only)
-- Documentation Sprint (`personal`, active, GitHub only)
-- Annual Newsletter (`partner`, cold + `next_nudge`)
-- After-Launch Maintenance (`partner`, launched + closeout window)
-- Backlog Cleanup (`personal`, with stale carrying task)
+## Layout
 
-Plus mock MCP responses keyed off these projects so the app boots fully without real MCP access (toggle in `packages/mcp-client/src/mock.ts`).
+```
+templates/seed-data/
+└── vault/                  ← point config.yaml `paths.vault` here for a demo
+    ├── Daily Notes/
+    ├── Drafts/
+    │   ├── Originals/
+    │   └── Archived Drafts/
+    ├── Call Notes/
+    ├── Agendas/
+    ├── Projects/
+    │   ├── ClimateFirst Foundation Phase 2/   (folder layout, partner kind)
+    │   ├── OpenSource Initiative Q4.md         (flat, team kind, hot)
+    │   ├── Documentation Sprint.md             (flat, personal kind)
+    │   └── Annual Newsletter.md                (flat, partner kind, cold + next_nudge)
+    ├── Weekly Updates/
+    ├── Templates/
+    ├── Working With You.md
+    ├── You Style Guide.md
+    └── Follow-ups.md
+```
+
+## Try it
+
+In `config.yaml`, set:
+
+```yaml
+paths:
+  vault: "./templates/seed-data/vault"
+```
+
+Then `pnpm dev` and `/today` shows the demo content.
