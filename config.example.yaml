@@ -1,0 +1,89 @@
+# Smithers configuration — copy to config.yaml and edit.
+# config.yaml is gitignored. Most of these are also editable via /settings.
+
+identity:
+  name: ""
+  github_handle: ""
+  slack_handle: ""
+  internal_email_domains:
+    - automattic.com
+
+paths:
+  # Where your vault (markdown notes) lives. Obsidian-compatible but not required.
+  vault: "~/Documents/A8C Claude"
+  # Where your Team51-Hive-Mind clone lives. Leave empty to skip Hive Mind features.
+  hive_mind: "~/Team51-Hive-Mind"
+  # Where Smithers stores its SQLite cache and logs.
+  data: "~/.smithers"
+
+mcps:
+  # ContextA8C: Slack/Linear/GitHub/Zendesk/P2/wpcom aggregator
+  context_a8c:
+    enabled: true
+    endpoint: "" # auto-detected from `claude mcp list` if empty
+  hive_mind:
+    enabled: true
+    endpoint: ""
+  fathom:
+    enabled: true
+    endpoint: ""
+
+transcription:
+  # One of: fathom | granola | manual | whisper (stub) | gemini (stub)
+  provider: "fathom"
+  fathom:
+    api_key_env: "FATHOM_API_KEY"
+  granola:
+    api_key_env: "GRANOLA_API_KEY"
+
+p2:
+  # Default team P2 used for weekly updates
+  team_p2_url: ""
+  # Smithers-specific P2 post URL for posting your own status updates as comments.
+  # Leave empty until v1 launch.
+  smithers_p2_post_url: ""
+  # Rules for finding the team's "this week" post when posting weekly updates as comments.
+  team_weekly_post_finder:
+    title_patterns:
+      - "Week {n}"
+      - "Team Update — Week {n}"
+    fallback: "ask" # ask | newest | none
+
+working_rhythm:
+  # Used by the briefing job and AFK detection.
+  timezone: "America/Los_Angeles"
+  workdays: ["mon", "tue", "wed", "thu", "fri"]
+  briefing_time: "07:30"
+  ping_monitor_interval_minutes: 30
+  fathom_sync_interval_minutes: 10
+
+stall_thresholds:
+  follow_up_nudge_days: 10
+  follow_up_escalate_days: 21
+  follow_up_force_decide_days: 30
+  carrying_task_park_days: 14
+  hot_demote_prompt_days: 10
+  active_demote_prompt_days: 30
+  at_risk_review_days: 21
+  launched_closeout_days: 30
+
+follow_up_intervals:
+  default_first_nudge_days: 7
+  default_second_nudge_days: 14
+  default_force_decide_days: 30
+
+logging:
+  # Tier 1 (status codes, timings, file ops by UUID/slug) is always on.
+  retention_days_tier1: 7
+  # Tier 2 (MCP payloads, prompt I/O, file contents) — verbose, off by default.
+  enable_tier2: false
+
+backups:
+  # If true, Smithers writes a daily git commit of your vault to a backup branch.
+  daily_vault_snapshot: false
+
+skills:
+  # Local Hive Mind skills directory (consumed read-only)
+  hive_mind_skills_path: "~/Team51-Hive-Mind/.claude/skills"
+  # Personal skill drafts that haven't been contributed back yet
+  personal_skills_path: ".claude/skills"

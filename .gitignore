@@ -1,0 +1,71 @@
+# dependencies
+node_modules
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# next.js
+.next/
+out/
+build/
+dist/
+
+# production
+*.tsbuildinfo
+next-env.d.ts
+
+# environment
+.env
+.env*.local
+.env.development
+.env.production
+
+# user config
+config.yaml
+config.local.yaml
+
+# local data (SQLite cache, logs)
+data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+logs/
+*.log
+
+# vault snapshots / backups
+backups/
+snapshots/
+
+# os
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.iml
+
+# typescript
+*.tsbuildinfo
+
+# turbo / pnpm
+.turbo
+.pnpm-store/
+
+# coverage / test
+coverage/
+.nyc_output/
+
+# misc
+.cache/
+.tmp/
+tmp/

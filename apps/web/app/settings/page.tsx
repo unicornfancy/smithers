@@ -1,0 +1,25 @@
+import { AppHeader } from "@/components/app-header";
+import { PageShell, PlaceholderCard } from "@/components/page-shell";
+
+export const metadata = {
+  title: "Settings · Smithers",
+};
+
+export default function SettingsPage() {
+  return (
+    <>
+      <AppHeader title="Settings" subtitle="Identity, paths, MCPs, thresholds" />
+      <PageShell>
+        <PlaceholderCard
+          title="Single long-scroll page with sticky section nav"
+          description="Sections: Identity · Paths · MCPs · Transcription · P2 destinations · Working rhythm · Stall thresholds · Follow-up intervals · MCP Health · Skills · Backups & Privacy · About."
+          todo={[
+            "Read/write config.yaml + per-section local overrides",
+            "MCP Health panel: last-success timestamps, 7-day error log, exportable diagnostics",
+            "Section deep-links from app header",
+          ]}
+        />
+      </PageShell>
+    </>
+  );
+}
