@@ -12,6 +12,7 @@ import type { RealisticShapeOutput, TopThreeOutput } from "@smithers/agents";
 import type { Ping, SourceResult } from "@smithers/mcp-client";
 
 import { AppHeader } from "@/components/app-header";
+import { DailyNoteSourceLink } from "@/components/daily-note-source-link";
 import { EmptyState, VaultMissingNotice } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
 import { PingsToAction } from "@/components/pings-to-action";
@@ -51,9 +52,14 @@ export default async function TodayPage() {
     month: "long",
     day: "numeric",
   });
+  const todayIso = new Date().toISOString().slice(0, 10);
 
   const vault = await getVault();
   const status = vault.status();
+  const dailyNoteAbsPath = vault.dailyNotePath(todayIso);
+  const dailyNoteExistsToday = status.exists
+    ? Boolean(await vault.readDailyNote(todayIso).catch(() => null))
+    : false;
 
   // Pull all the high-level counts in parallel; degrade gracefully on missing vault.
   const [projects, drafts, followUps, dailyNotes] = status.exists
@@ -143,7 +149,18 @@ export default async function TodayPage() {
 
   return (
     <>
-      <AppHeader title="Today" subtitle={today} />
+      <AppHeader
+        title="Today"
+        subtitle={today}
+        actions={
+          status.exists ? (
+            <DailyNoteSourceLink
+              path={dailyNoteAbsPath}
+              exists={dailyNoteExistsToday}
+            />
+          ) : null
+        }
+      />
       <PageShell>
         {!status.exists ? (
           <VaultMissingNotice vaultPath={status.vault_path} />

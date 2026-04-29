@@ -8,6 +8,7 @@ import {
 } from "@smithers/agents";
 
 import { getAgentRuntime } from "@/lib/server/agents";
+import { writeRealisticShapeToDailyNote } from "@/lib/server/daily-note-writeback";
 import {
   dateCacheKey,
   getCached,
@@ -119,6 +120,8 @@ export async function POST(req: Request) {
       },
     };
     await setCached("realistic-shape", cacheKey, payload);
+    // Side-effect: persist the paragraph to today's daily note.
+    await writeRealisticShapeToDailyNote(result.output);
     return NextResponse.json({
       ok: true,
       ...payload,

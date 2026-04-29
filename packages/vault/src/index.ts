@@ -19,9 +19,12 @@ import { resolveVaultOptions, type VaultOptions } from "./config";
 import { listAgendas } from "./agendas";
 import { listCallNotes } from "./call-notes";
 import {
+  applyDailySectionEdit,
+  dailyNotePath,
   listDailyNotes,
   readDailyNote,
   readTodayNote,
+  upsertDailySection,
 } from "./daily-notes";
 import {
   ensureDraftId,
@@ -51,6 +54,8 @@ export * from "./status";
 export type { ProjectDetail, SiblingFile } from "./project-detail";
 export type { ProjectTask } from "./tasks";
 export {
+  applyDailySectionEdit,
+  dailyNotePath,
   filterFollowUpsForProject,
   listAgendas,
   listCallNotes,
@@ -68,6 +73,7 @@ export {
   readVaultStatus,
   readWorkingWith,
   splitTasks,
+  upsertDailySection,
   ensureDraftId,
   ensureProjectId,
   watchVault,
@@ -85,6 +91,12 @@ export interface Vault {
   listDailyNotes: () => ReturnType<typeof listDailyNotes>;
   readDailyNote: (date: string) => ReturnType<typeof readDailyNote>;
   readTodayNote: () => ReturnType<typeof readTodayNote>;
+  dailyNotePath: (date: string) => string;
+  upsertDailySection: (
+    date: string,
+    sectionId: string,
+    bodyMarkdown: string,
+  ) => ReturnType<typeof upsertDailySection>;
   listCallNotes: () => ReturnType<typeof listCallNotes>;
   listAgendas: () => ReturnType<typeof listAgendas>;
   readStyleGuide: () => ReturnType<typeof readStyleGuide>;
@@ -106,6 +118,9 @@ export function createVault(options: VaultOptions): Vault {
     listDailyNotes: () => listDailyNotes(resolved),
     readDailyNote: (date) => readDailyNote(resolved, date),
     readTodayNote: () => readTodayNote(resolved),
+    dailyNotePath: (date) => dailyNotePath(resolved, date),
+    upsertDailySection: (date, sectionId, body) =>
+      upsertDailySection(resolved, date, sectionId, body),
     listCallNotes: () => listCallNotes(resolved),
     listAgendas: () => listAgendas(resolved),
     readStyleGuide: () => readStyleGuide(resolved),
