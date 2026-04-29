@@ -42,6 +42,36 @@ interface DetectInput {
 }
 
 /**
+ * Project-scoped stall summary. Filters the full detector output to one
+ * project and matches by either explicit slug or the project's name —
+ * follow-up rows reference projects by string name, not slug, so we can't
+ * just slug-match.
+ */
+export async function detectStallsForProject(
+  vault: Vault,
+  projectSlug: string,
+  projectName: string,
+  now?: Date,
+): Promise<StallSummary> {
+  const summary = await detectStalls({ vault, now });
+  const lowerName = projectName.toLowerCase();
+  const items = summary.items.filter((item) => {
+    if (item.project_slug === projectSlug) return true;
+    // Fallback: stall came from a follow-up that didn't fuzzy-match a
+    // project. Match the human-readable context against the project name.
+    return item.context.toLowerCase().includes(lowerName);
+  });
+  const counts: Record<StallSeverity, number> = {
+    force_decide: 0,
+    escalate: 0,
+    nudge: 0,
+    next_nudge_upcoming: 0,
+  };
+  for (const it of items) counts[it.severity]++;
+  return { items, counts };
+}
+
+/**
  * Detect stalls in the vault: overdue follow-ups (3 severities) plus
  * upcoming next-nudge dates. Hot/Active demote and launched-closeout
  * are deferred to v2 — they need real activity data via MCP, and vault

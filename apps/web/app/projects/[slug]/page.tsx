@@ -7,6 +7,7 @@ import {
 } from "@smithers/vault";
 
 import { LiveActivityFeed } from "@/components/live-activity-feed";
+import { NeedsDecisionPanel } from "@/components/needs-decision-panel";
 import { PageShell } from "@/components/page-shell";
 import { WorkbenchHeader } from "@/components/workbench-header";
 import {
@@ -20,7 +21,9 @@ import {
   PersonalNotesPanel,
   ProjectBriefPanel,
 } from "@/components/workbench-panels";
+import { getAgentRuntimeStatus } from "@/lib/server/agents";
 import { getMcpClient } from "@/lib/server/mcp";
+import { detectStallsForProject } from "@/lib/server/stalls";
 import { getVault } from "@/lib/server/vault";
 
 interface Params {
@@ -63,7 +66,7 @@ export default async function ProjectWorkbenchPage({
 
   // Pull project-scoped data in parallel.
   const mcp = await getMcpClient();
-  const [allDrafts, allFollowUps, activityResult, partnerResult] =
+  const [allDrafts, allFollowUps, activityResult, partnerResult, stalls, agentStatus] =
     await Promise.all([
       vault.listDrafts().catch(() => []),
       vault
@@ -87,6 +90,16 @@ export default async function ProjectWorkbenchPage({
       detail.partner
         ? mcp.hiveMind.getPartner({ partner_slug: detail.partner })
         : Promise.resolve(null),
+      detectStallsForProject(vault, detail.slug, detail.name).catch(() => ({
+        items: [],
+        counts: {
+          force_decide: 0,
+          escalate: 0,
+          nudge: 0,
+          next_nudge_upcoming: 0,
+        },
+      })),
+      getAgentRuntimeStatus(),
     ]);
 
   const partnerProfile =
@@ -144,6 +157,11 @@ export default async function ProjectWorkbenchPage({
     <>
       <WorkbenchHeader project={detail} />
       <PageShell className="max-w-5xl">
+        <NeedsDecisionPanel
+          summary={stalls}
+          apiKeyConfigured={agentStatus.configured}
+        />
+
         <ForYouTodayPanel project={detail} />
 
         {isPartner ? <MilestonesPanel deadlines={detail.deadlines} /> : null}
