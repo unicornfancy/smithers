@@ -8,6 +8,8 @@ import {
   PenLine,
 } from "lucide-react";
 
+import type { Ping, SourceResult } from "@smithers/mcp-client";
+
 import { AppHeader } from "@/components/app-header";
 import { EmptyState, VaultMissingNotice } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
@@ -21,6 +23,7 @@ import { getAgentRuntimeStatus } from "@/lib/server/agents";
 import { getMcpClient } from "@/lib/server/mcp";
 import { detectStalls } from "@/lib/server/stalls";
 import { buildTopThreeCandidates } from "@/lib/server/top-three";
+import { listDismissedIds } from "@/lib/server/user-actions";
 import { getVault } from "@/lib/server/vault";
 
 export const metadata = {
@@ -64,9 +67,16 @@ export default async function TodayPage() {
 
   const mcp = await getMcpClient();
   const pingsResult = await mcp.contextA8C.listPings({ limit: 10 });
-  const pings = pingsResult.ok
-    ? pingsResult.data
-    : (pingsResult.cachedData ?? []);
+  const dismissedPingIds = await listDismissedIds("ping").catch(
+    () => new Set<string>(),
+  );
+  const filteredPingsResult = filterPingsResult(
+    pingsResult,
+    dismissedPingIds,
+  );
+  const pings = filteredPingsResult.ok
+    ? filteredPingsResult.data
+    : (filteredPingsResult.cachedData ?? []);
   const agentStatus = await getAgentRuntimeStatus();
   const topCandidates = status.exists
     ? await buildTopThreeCandidates({ vault, pings }).catch(() => [])
@@ -192,7 +202,7 @@ export default async function TodayPage() {
           apiKeyConfigured={agentStatus.configured}
         />
 
-        <PingsToAction result={pingsResult} />
+        <PingsToAction result={filteredPingsResult} />
 
         <RealisticShapeCard apiKeyConfigured={agentStatus.configured} />
       </PageShell>
@@ -255,4 +265,26 @@ function StatCard({
       {body}
     </Link>
   );
+}
+
+/**
+ * Strip dismissed pings out of the SourceResult while preserving its
+ * branch shape (ok / not-ok with cachedData). Component still gets to
+ * render freshness + degraded states correctly.
+ */
+function filterPingsResult(
+  result: SourceResult<Ping[]>,
+  dismissed: Set<string>,
+): SourceResult<Ping[]> {
+  if (dismissed.size === 0) return result;
+  if (result.ok) {
+    return {
+      ...result,
+      data: result.data.filter((p) => !dismissed.has(p.id)),
+    };
+  }
+  return {
+    ...result,
+    cachedData: result.cachedData?.filter((p) => !dismissed.has(p.id)),
+  };
 }

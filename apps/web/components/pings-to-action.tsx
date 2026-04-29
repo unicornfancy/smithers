@@ -7,6 +7,7 @@ import type { Ping, SourceResult } from "@smithers/mcp-client";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DismissPingButton } from "@/components/dismiss-ping-button";
 
 interface PingsToActionProps {
   result: SourceResult<Ping[]>;
@@ -62,7 +63,7 @@ export function PingsToAction({ result }: PingsToActionProps) {
 
 function PingRow({ ping }: { ping: Ping }) {
   return (
-    <li className="flex items-start gap-2.5 py-2 first:pt-0 last:pb-0">
+    <li className="group flex items-start gap-2.5 py-2 first:pt-0 last:pb-0">
       <span className="text-muted-foreground mt-0.5 shrink-0">
         <PingIcon source={ping.source} />
       </span>
@@ -104,6 +105,7 @@ function PingRow({ ping }: { ping: Ping }) {
       <span className="text-muted-foreground/80 mt-0.5 shrink-0 text-[11px] tabular-nums">
         {formatRelative(ping.timestamp)}
       </span>
+      <DismissPingButton pingId={ping.id} label={ping.from.name} />
     </li>
   );
 }

@@ -1,3 +1,8 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Native modules that may run install scripts. Listed explicitly so pnpm's
+# default block doesn't silently leave the package half-installed.
+onlyBuiltDependencies:
+  - better-sqlite3
