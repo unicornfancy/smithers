@@ -1,15 +1,19 @@
 // ContextA8C client factory.
 //
-// Today this is mock-only. The real implementation will lean on
-// `@modelcontextprotocol/sdk` to talk to the user-installed ContextA8C MCP
-// server; the per-source isolation already provided by `runIsolated` keeps
-// each sub-source (slack, github, …) independently retried and cached.
+// Two transports live behind this factory:
+// - MockContextA8CTransport: deterministic seeded fake data, used in
+//   the public template / when no real MCP is configured.
+// - RealContextA8CTransport: spawns `npx -y @automattic/mcp-context-a8c`
+//   as a long-lived stdio MCP child process and forwards calls to it.
+//
+// The factory picks based on the resolved options: `mock: true` always
+// returns the mock; otherwise we attempt the real one.
 
 import type { ResolvedMcpClientOptions } from "../config";
 import type { SwrCache } from "../cache";
 import type { HealthRegistry } from "../health";
-import { McpClientError } from "../isolation";
 import { MockContextA8CTransport } from "./mock";
+import { RealContextA8CTransport } from "./real";
 import type { ContextA8CClient } from "./types";
 
 export function createContextA8CClient(
@@ -20,10 +24,7 @@ export function createContextA8CClient(
   if (opts.mock) {
     return new MockContextA8CTransport(opts, cache, health);
   }
-  throw new McpClientError(
-    "not-implemented",
-    "Real ContextA8C transport is not yet wired. Set `mock: true` until the @modelcontextprotocol/sdk integration lands.",
-  );
+  return new RealContextA8CTransport(opts, cache, health);
 }
 
 export type { ContextA8CClient } from "./types";

@@ -1,6 +1,13 @@
 import * as React from "react";
 import Link from "next/link";
-import { AlertTriangle, Inbox, LifeBuoy, MessageSquare, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  CircleDot,
+  Inbox,
+  LifeBuoy,
+  MessageSquare,
+  Sparkles,
+} from "lucide-react";
 
 import type { Ping, SourceResult } from "@smithers/mcp-client";
 
@@ -118,6 +125,8 @@ function PingIcon({ source }: { source: Ping["source"] }) {
       return <Sparkles className="size-3.5" />;
     case "zendesk":
       return <LifeBuoy className="size-3.5" />;
+    case "linear":
+      return <CircleDot className="size-3.5" />;
   }
 }
 
@@ -129,6 +138,8 @@ function sourceLabel(source: Ping["source"]): string {
       return "P2";
     case "zendesk":
       return "Zendesk";
+    case "linear":
+      return "Linear";
   }
 }
 

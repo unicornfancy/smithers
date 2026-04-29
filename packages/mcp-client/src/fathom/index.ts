@@ -3,7 +3,6 @@
 import type { ResolvedMcpClientOptions } from "../config";
 import type { SwrCache } from "../cache";
 import type { HealthRegistry } from "../health";
-import { McpClientError } from "../isolation";
 import { MockFathomTransport } from "./mock";
 import type { FathomClient } from "./types";
 
@@ -12,13 +11,9 @@ export function createFathomClient(
   cache: SwrCache,
   health: HealthRegistry,
 ): FathomClient {
-  if (opts.mock) {
-    return new MockFathomTransport(opts, cache, health);
-  }
-  throw new McpClientError(
-    "not-implemented",
-    "Real Fathom transport is not yet wired. Set `mock: true` until the transcription adapters slice lands.",
-  );
+  // Real Fathom MCP wiring is the transcription-adapters slice — not
+  // landed yet. Fall back to mock so the call-notes panel renders.
+  return new MockFathomTransport(opts, cache, health);
 }
 
 export type { FathomClient, RecordingsQuery } from "./types";

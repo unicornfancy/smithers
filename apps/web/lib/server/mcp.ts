@@ -9,21 +9,20 @@ let cached: McpClient | null = null;
 /**
  * Lazily-built MCP client, configured from the loaded Smithers config.
  *
- * Today, every transport runs in mock mode unless all three MCPs are
- * explicitly enabled — and even then, the real transports are not yet
- * implemented (they throw NotImplementedError). The web app uses the same
- * shape regardless, so swapping in real MCP wiring later is a single-flag
- * change.
+ * `mock: false` switches ContextA8C to the real stdio transport that
+ * spawns `npx -y @automattic/mcp-context-a8c`. Hive Mind and Fathom
+ * always run in mock mode for now — their real transports land in
+ * future slices. The single client interface stays consistent.
+ *
+ * The gate is `mcps.context_a8c.enabled` from config — a fresh clone
+ * with the example config has it on by default; users without
+ * Automattic access flip it off and get mock data instead.
  */
 export async function getMcpClient(): Promise<McpClient> {
   if (cached) return cached;
   const cfg = await loadConfig();
-  const mcpsAllEnabled =
-    cfg.mcps.context_a8c.enabled &&
-    cfg.mcps.hive_mind.enabled &&
-    cfg.mcps.fathom.enabled;
   cached = createMcpClient({
-    mock: !mcpsAllEnabled,
+    mock: !cfg.mcps.context_a8c.enabled,
     internalEmailDomains: cfg.identity.internal_email_domains,
   });
   return cached;

@@ -142,7 +142,7 @@ export interface ProjectMatch {
  */
 export interface Ping {
   id: string;
-  source: "slack" | "p2" | "zendesk";
+  source: "slack" | "p2" | "zendesk" | "linear";
   timestamp: string;
   from: ActivityActor;
   excerpt: string;
