@@ -41,6 +41,9 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.1.6
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      '@smithers/mcp-client':
+        specifier: workspace:*
+        version: link:../../packages/mcp-client
       '@smithers/vault':
         specifier: workspace:*
         version: link:../../packages/vault
@@ -114,6 +117,9 @@ importers:
 
   packages/mcp-client:
     devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.17
       typescript:
         specifier: ^5.7.3
         version: 5.9.3

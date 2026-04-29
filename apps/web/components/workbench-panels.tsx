@@ -1,7 +1,5 @@
 import * as React from "react";
-import Link from "next/link";
 import {
-  Activity,
   Archive,
   CalendarDays,
   CheckCircle2,
@@ -17,6 +15,7 @@ import {
   StickyNote,
 } from "lucide-react";
 
+import type { PartnerProfile } from "@smithers/mcp-client";
 import type {
   Draft,
   FollowUp,
@@ -26,7 +25,6 @@ import type {
 } from "@smithers/vault";
 
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Markdown } from "@/components/markdown";
 
@@ -362,76 +360,6 @@ export function PersonalNotesPanel({ notes }: { notes: SiblingFile | null }) {
   );
 }
 
-// -- Live activity (placeholder) ------------------------------------------
-
-export function LiveActivityPlaceholder({ project }: { project: Project }) {
-  const sources: { label: string; configured: boolean; reason?: string }[] = [
-    {
-      label: "Slack",
-      configured: Boolean(project.primary_slack_channel),
-      reason: !project.primary_slack_channel ? "no channel configured" : undefined,
-    },
-    {
-      label: "GitHub",
-      configured: Boolean(project.github_repo),
-      reason: !project.github_repo ? "no repo configured" : undefined,
-    },
-    {
-      label: "Linear",
-      configured: Boolean(
-        project.linear_project_id || project.linear_project_slug,
-      ),
-      reason:
-        !project.linear_project_id && !project.linear_project_slug
-          ? "no project configured"
-          : undefined,
-    },
-    {
-      label: "Zendesk",
-      configured: Boolean(project.zendesk_org),
-      reason: !project.zendesk_org ? "no org configured" : undefined,
-    },
-    {
-      label: "P2",
-      configured: Boolean(project.p2_url),
-      reason: !project.p2_url ? "no post URL configured" : undefined,
-    },
-  ];
-
-  return (
-    <Section
-      icon={<Activity className="size-4" />}
-      title="Live activity"
-      meta="Lands with packages/mcp-client"
-    >
-      <ComingSoon>
-        Live activity from each connected source will appear here as a unified
-        feed once the MCP client lands. Sources configured for this project:
-      </ComingSoon>
-      <ul className="mt-2 flex flex-wrap gap-1.5">
-        {sources.map((s) => (
-          <li
-            key={s.label}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px]",
-              s.configured
-                ? "bg-emerald-100/60 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
-                : "bg-muted text-muted-foreground",
-            )}
-            title={s.reason}
-          >
-            {s.label}
-            {!s.configured ? <span className="opacity-60">·</span> : null}
-            {!s.configured ? (
-              <span className="opacity-70">{s.reason}</span>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </Section>
-  );
-}
-
 // -- Recent call notes (placeholder until transcription package lands) ----
 
 export function CallNotesPanel({ projectName }: { projectName: string }) {
@@ -485,36 +413,92 @@ export function MilestonesPanel({ deadlines }: { deadlines: SiblingFile | null }
   );
 }
 
-// -- Partner Info (placeholder; needs Hive Mind) --------------------------
+// -- Partner Info ---------------------------------------------------------
 
-export function PartnerInfoPanel({ project }: { project: Project }) {
+export function PartnerInfoPanel({
+  project,
+  partner,
+}: {
+  project: Project;
+  partner: PartnerProfile | null;
+}) {
   return (
     <Section
       icon={<ShieldCheck className="size-4" />}
-      title={project.partner ? `Partner: ${project.partner}` : "Partner info"}
-      meta="from Hive Mind"
+      title={
+        partner
+          ? `Partner: ${partner.display_name}`
+          : project.partner
+            ? `Partner: ${project.partner}`
+            : "Partner info"
+      }
+      meta={partner?.is_mock ? "demo data" : "from Hive Mind"}
     >
-      <ComingSoon>
-        {project.partner ? (
-          <>
-            Partner profile and shared partner notes for{" "}
-            <span className="text-foreground font-medium">
-              {project.partner}
-            </span>{" "}
-            will load from the local Hive Mind clone once the integration lands.
-            Personal notes stay above; partner notes will appear in their own
-            panel.
-          </>
-        ) : (
-          <>
-            This project doesn&rsquo;t have a partner assigned yet. Add{" "}
-            <code className="bg-muted rounded px-1 py-0.5 text-[11px]">
-              partner: &lt;slug&gt;
-            </code>{" "}
-            to its frontmatter to surface partner info from Hive Mind.
-          </>
-        )}
-      </ComingSoon>
+      {!project.partner ? (
+        <ComingSoon>
+          This project doesn&rsquo;t have a partner assigned yet. Add{" "}
+          <code className="bg-muted rounded px-1 py-0.5 text-[11px]">
+            partner: &lt;slug&gt;
+          </code>{" "}
+          to its frontmatter to surface partner info from Hive Mind.
+        </ComingSoon>
+      ) : !partner ? (
+        <ComingSoon>
+          No Hive Mind profile found for{" "}
+          <span className="text-foreground font-medium">{project.partner}</span>
+          . Once the local Hive Mind clone is wired and the partner has a{" "}
+          <code className="bg-muted rounded px-1 py-0.5 text-[11px]">
+            partner-knowledge.md
+          </code>
+          , it will load here.
+        </ComingSoon>
+      ) : (
+        <div className="space-y-3">
+          {partner.tags.length > 0 ? (
+            <ul className="flex flex-wrap gap-1.5">
+              {partner.tags.map((t) => (
+                <li
+                  key={t}
+                  className="bg-muted text-muted-foreground rounded-md px-2 py-0.5 text-[10px] uppercase tracking-wide"
+                >
+                  {t}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <Markdown source={partner.summary} />
+          {partner.team.length > 0 ? (
+            <div>
+              <p className="text-muted-foreground mb-1 text-[11px] font-medium uppercase tracking-wide">
+                Partner team
+              </p>
+              <ul className="flex flex-col divide-y">
+                {partner.team.map((m) => (
+                  <li
+                    key={m.name}
+                    className="flex flex-col gap-0.5 py-1.5 first:pt-0 last:pb-0"
+                  >
+                    <p className="text-sm">
+                      <span className="text-foreground font-medium">
+                        {m.name}
+                      </span>
+                      {m.role ? (
+                        <span className="text-muted-foreground">
+                          {" · "}
+                          {m.role}
+                        </span>
+                      ) : null}
+                    </p>
+                    {m.notes ? (
+                      <p className="text-muted-foreground text-xs">{m.notes}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      )}
     </Section>
   );
 }

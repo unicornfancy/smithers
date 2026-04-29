@@ -11,8 +11,10 @@ import {
 import { AppHeader } from "@/components/app-header";
 import { EmptyState, VaultMissingNotice } from "@/components/empty-state";
 import { PageShell, PlaceholderCard } from "@/components/page-shell";
+import { PingsToAction } from "@/components/pings-to-action";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getMcpClient } from "@/lib/server/mcp";
 import { getVault } from "@/lib/server/vault";
 
 export const metadata = {
@@ -53,6 +55,9 @@ export default async function TodayPage() {
 
   const inProgressDrafts = drafts.filter((d) => d.state === "in-progress");
   const latestDailyNote = dailyNotes.at(-1);
+
+  const mcp = await getMcpClient();
+  const pingsResult = await mcp.contextA8C.listPings({ limit: 10 });
 
   return (
     <>
@@ -149,10 +154,8 @@ export default async function TodayPage() {
           title="Top 3 for today"
           description="Auto-suggested from rules-based scoring + LLM picks. Pin / demote / regenerate from this card. Lands with the agents runtime."
         />
-        <PlaceholderCard
-          title="Pings to Action"
-          description="Inbound messages with full project context pre-assembled next to them (Phase 6). Lands with the MCP client + ping monitor job."
-        />
+
+        <PingsToAction result={pingsResult} />
       </PageShell>
     </>
   );
