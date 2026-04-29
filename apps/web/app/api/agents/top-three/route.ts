@@ -5,6 +5,11 @@ import { NextResponse } from "next/server";
 import { composeTopThree, type TopThreeOutput } from "@smithers/agents";
 
 import { getAgentRuntime } from "@/lib/server/agents";
+import {
+  dateCacheKey,
+  getCached,
+  setCached,
+} from "@/lib/server/llm-cache";
 import { getMcpClient } from "@/lib/server/mcp";
 import {
   applyTop3UserActions,
@@ -24,13 +29,24 @@ export interface TopThreeResponse {
   candidates?: TopThreeCandidate[];
   reasoning?: string;
   usage?: { input_tokens: number; output_tokens: number };
+  /** True when served from the day's cache, false on fresh agent call. */
+  cached?: boolean;
   error?: string;
   error_kind?: "missing_api_key" | "no_candidates" | "agent_failed";
 }
 
+interface CachedPayload {
+  output: TopThreeOutput;
+  candidates: TopThreeCandidate[];
+  reasoning?: string;
+  usage?: { input_tokens: number; output_tokens: number };
+}
+
 const TOP_N_TO_LLM = 8;
 
-export async function POST() {
+export async function POST(req: Request) {
+  const url = new URL(req.url);
+  const force = url.searchParams.get("force") === "true";
   const runtime = await getAgentRuntime();
   if (!runtime) {
     return NextResponse.json(
@@ -42,6 +58,23 @@ export async function POST() {
       } satisfies TopThreeResponse,
       { status: 412 },
     );
+  }
+
+  // Cache hit: serve the day's existing picks unless the caller forced
+  // a regenerate. Clearing happens on pin/demote and end-of-day expiry.
+  const cacheKey = dateCacheKey("top-3");
+  if (!force) {
+    const cached = await getCached<CachedPayload>("top-3", cacheKey);
+    if (cached) {
+      return NextResponse.json({
+        ok: true,
+        output: cached.output,
+        candidates: cached.candidates,
+        reasoning: cached.reasoning,
+        usage: cached.usage,
+        cached: true,
+      } satisfies TopThreeResponse);
+    }
   }
 
   const vault = await getVault();
@@ -103,8 +136,7 @@ export async function POST() {
         : undefined,
     });
 
-    return NextResponse.json({
-      ok: true,
+    const payload: CachedPayload = {
       output: result.output,
       candidates: top,
       reasoning: result.reasoning,
@@ -112,6 +144,12 @@ export async function POST() {
         input_tokens: result.usage.input_tokens,
         output_tokens: result.usage.output_tokens,
       },
+    };
+    await setCached("top-3", cacheKey, payload);
+    return NextResponse.json({
+      ok: true,
+      ...payload,
+      cached: false,
     } satisfies TopThreeResponse);
   } catch (err) {
     return NextResponse.json(

@@ -8,6 +8,11 @@ import {
 } from "@smithers/agents";
 
 import { getAgentRuntime } from "@/lib/server/agents";
+import {
+  dateCacheKey,
+  getCached,
+  setCached,
+} from "@/lib/server/llm-cache";
 import { getMcpClient } from "@/lib/server/mcp";
 import { detectStalls } from "@/lib/server/stalls";
 import {
@@ -23,11 +28,20 @@ export interface RealisticShapeResponse {
   ok: boolean;
   output?: RealisticShapeOutput;
   usage?: { input_tokens: number; output_tokens: number };
+  /** True when served from cache, false on fresh agent call. */
+  cached?: boolean;
   error?: string;
   error_kind?: "missing_api_key" | "agent_failed";
 }
 
-export async function POST() {
+interface CachedPayload {
+  output: RealisticShapeOutput;
+  usage?: { input_tokens: number; output_tokens: number };
+}
+
+export async function POST(req: Request) {
+  const url = new URL(req.url);
+  const force = url.searchParams.get("force") === "true";
   const runtime = await getAgentRuntime();
   if (!runtime) {
     return NextResponse.json(
@@ -39,6 +53,19 @@ export async function POST() {
       } satisfies RealisticShapeResponse,
       { status: 412 },
     );
+  }
+
+  const cacheKey = dateCacheKey("realistic-shape");
+  if (!force) {
+    const cached = await getCached<CachedPayload>("realistic-shape", cacheKey);
+    if (cached) {
+      return NextResponse.json({
+        ok: true,
+        output: cached.output,
+        usage: cached.usage,
+        cached: true,
+      } satisfies RealisticShapeResponse);
+    }
   }
 
   const vault = await getVault();
@@ -84,13 +111,18 @@ export async function POST() {
         : undefined,
     });
 
-    return NextResponse.json({
-      ok: true,
+    const payload: CachedPayload = {
       output: result.output,
       usage: {
         input_tokens: result.usage.input_tokens,
         output_tokens: result.usage.output_tokens,
       },
+    };
+    await setCached("realistic-shape", cacheKey, payload);
+    return NextResponse.json({
+      ok: true,
+      ...payload,
+      cached: false,
     } satisfies RealisticShapeResponse);
   } catch (err) {
     return NextResponse.json(

@@ -12,6 +12,8 @@ import { Card, CardContent } from "@/components/ui/card";
 
 interface Props {
   apiKeyConfigured: boolean;
+  /** Cached paragraph from earlier today, if any. */
+  cached?: RealisticShapeOutput;
 }
 
 type State =
@@ -20,8 +22,10 @@ type State =
   | { kind: "ready"; data: RealisticShapeOutput }
   | { kind: "error"; message: string; missingKey: boolean };
 
-export function RealisticShapeCard({ apiKeyConfigured }: Props) {
-  const [state, setState] = useState<State>({ kind: "idle" });
+export function RealisticShapeCard({ apiKeyConfigured, cached }: Props) {
+  const [state, setState] = useState<State>(
+    cached ? { kind: "ready", data: cached } : { kind: "idle" },
+  );
 
   async function generate() {
     if (!apiKeyConfigured) {
@@ -32,7 +36,10 @@ export function RealisticShapeCard({ apiKeyConfigured }: Props) {
     }
     setState({ kind: "loading" });
     try {
-      const res = await fetch("/api/agents/realistic-shape", { method: "POST" });
+      // Force-bypass the day's cache — user explicitly clicked.
+      const res = await fetch("/api/agents/realistic-shape?force=true", {
+        method: "POST",
+      });
       const json = (await res.json()) as RealisticShapeResponse;
       if (!json.ok || !json.output) {
         setState({

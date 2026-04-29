@@ -7,7 +7,7 @@ import Database, { type Database as DB } from "better-sqlite3";
 
 import { loadConfig } from "./config";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 let cached: DB | null = null;
 let cachedPath: string | null = null;
@@ -63,7 +63,8 @@ function applyMigrations(db: DB): void {
   const current = row ? Number(row.value) : 0;
 
   if (current < 1) migrationV1(db);
-  // Future migrations land here as `if (current < 2) migrationV2(db); ...`
+  if (current < 2) migrationV2(db);
+  // Future migrations land here as `if (current < 3) migrationV3(db); ...`
 
   db.prepare(
     "INSERT INTO meta(key, value) VALUES('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -85,5 +86,23 @@ function migrationV1(db: DB): void {
     );
     CREATE INDEX IF NOT EXISTS idx_user_actions_lookup
       ON user_actions(entity_type, action);
+  `);
+}
+
+function migrationV2(db: DB): void {
+  // Cache for LLM agent outputs. Keys look like "top-3:2026-04-29" or
+  // "realistic-shape:2026-04-29". Payload is the full JSON-serialized
+  // agent response. Cleared explicitly on pin/demote (handled in
+  // server actions); also expires by wall-clock at end-of-day.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS llm_cache (
+      cache_key TEXT PRIMARY KEY,
+      agent TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_llm_cache_agent
+      ON llm_cache(agent);
   `);
 }

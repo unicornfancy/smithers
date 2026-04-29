@@ -8,6 +8,7 @@ import {
   PenLine,
 } from "lucide-react";
 
+import type { RealisticShapeOutput, TopThreeOutput } from "@smithers/agents";
 import type { Ping, SourceResult } from "@smithers/mcp-client";
 
 import { AppHeader } from "@/components/app-header";
@@ -20,11 +21,16 @@ import { TopThreeCard } from "@/components/top-three-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAgentRuntimeStatus } from "@/lib/server/agents";
+import {
+  dateCacheKey,
+  getCached,
+} from "@/lib/server/llm-cache";
 import { getMcpClient } from "@/lib/server/mcp";
 import { detectStalls } from "@/lib/server/stalls";
 import {
   applyTop3UserActions,
   buildTopThreeCandidates,
+  type TopThreeCandidate,
 } from "@/lib/server/top-three";
 import {
   listDismissedIds,
@@ -100,6 +106,21 @@ export default async function TodayPage() {
     pinnedTop3Ids,
     demotedTop3Ids,
   );
+  // Cached LLM picks from earlier today, if any. Only hand them to the
+  // card if the API key is configured — otherwise the user can't
+  // regenerate when something feels off.
+  const cachedTop3 = agentStatus.configured
+    ? await getCached<{
+        output: TopThreeOutput;
+        candidates: TopThreeCandidate[];
+      }>("top-3", dateCacheKey("top-3")).catch(() => null)
+    : null;
+  const cachedShape = agentStatus.configured
+    ? await getCached<{ output: RealisticShapeOutput }>(
+        "realistic-shape",
+        dateCacheKey("realistic-shape"),
+      ).catch(() => null)
+    : null;
   const stalls = status.exists
     ? await detectStalls({ vault }).catch(() => ({
         items: [],
@@ -215,6 +236,7 @@ export default async function TodayPage() {
           initialCandidates={topCandidates}
           apiKeyConfigured={agentStatus.configured}
           pinnedIds={Array.from(pinnedTop3Ids)}
+          cachedLlm={cachedTop3 ?? undefined}
         />
 
         <StallsCard
@@ -224,7 +246,10 @@ export default async function TodayPage() {
 
         <PingsToAction result={filteredPingsResult} />
 
-        <RealisticShapeCard apiKeyConfigured={agentStatus.configured} />
+        <RealisticShapeCard
+          apiKeyConfigured={agentStatus.configured}
+          cached={cachedShape?.output}
+        />
       </PageShell>
     </>
   );

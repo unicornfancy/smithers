@@ -24,6 +24,15 @@ interface Props {
   apiKeyConfigured: boolean;
   /** Candidate ids the user has pinned. Rendered with a pin marker + unpin button. */
   pinnedIds: string[];
+  /**
+   * Cached LLM picks, hydrated server-side. When present, the card opens
+   * directly to "llm" mode without burning a fresh API call. The user
+   * can still click "Regenerate" for a forced refresh.
+   */
+  cachedLlm?: {
+    output: TopThreeOutput;
+    candidates: TopThreeCandidate[];
+  };
 }
 
 type State =
@@ -40,8 +49,13 @@ export function TopThreeCard({
   initialCandidates,
   apiKeyConfigured,
   pinnedIds,
+  cachedLlm,
 }: Props) {
-  const [state, setState] = useState<State>({ kind: "rules" });
+  const [state, setState] = useState<State>(
+    cachedLlm
+      ? { kind: "llm", output: cachedLlm.output, candidates: cachedLlm.candidates }
+      : { kind: "rules" },
+  );
   const pinnedSet = new Set(pinnedIds);
 
   async function generate() {
@@ -53,7 +67,11 @@ export function TopThreeCard({
     }
     setState({ kind: "loading" });
     try {
-      const res = await fetch("/api/agents/top-three", { method: "POST" });
+      // The user is explicitly clicking "Generate" / "Regenerate", so
+      // bypass the day's cache and always do a fresh agent call.
+      const res = await fetch("/api/agents/top-three?force=true", {
+        method: "POST",
+      });
       const json = (await res.json()) as TopThreeResponse;
       if (!json.ok || !json.output || !json.candidates) {
         setState({

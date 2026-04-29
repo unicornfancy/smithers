@@ -2,11 +2,24 @@
 
 import { revalidatePath } from "next/cache";
 
+import { clearCachedFor } from "@/lib/server/llm-cache";
 import {
   clearAction,
   dismiss,
   recordAction,
 } from "@/lib/server/user-actions";
+
+/**
+ * Drop both LLM caches whenever the candidate set changes. Top 3 picks
+ * obviously depend on which candidates are in/out; Realistic Shape
+ * depends on Top 3 + stall counts, so it's also stale.
+ */
+async function invalidateLlmCaches(): Promise<void> {
+  await Promise.all([
+    clearCachedFor("top-3"),
+    clearCachedFor("realistic-shape"),
+  ]);
+}
 
 /**
  * Dismiss an inbound ping. Records the breadcrumb in SQLite (so future
@@ -16,6 +29,9 @@ import {
 export async function dismissPingAction(pingId: string): Promise<void> {
   if (!pingId) throw new Error("pingId is required");
   await dismiss("ping", pingId);
+  // Pings drive Top 3 candidates and inform Realistic Shape's ping
+  // count — both go stale when one is dismissed.
+  await invalidateLlmCaches();
   revalidatePath("/today");
 }
 
@@ -30,12 +46,14 @@ export async function pinTop3Action(candidateId: string): Promise<void> {
   // that — they've changed their mind.
   await clearAction("top3_candidate", candidateId, "demote");
   await recordAction("top3_candidate", candidateId, "pin");
+  await invalidateLlmCaches();
   revalidatePath("/today");
 }
 
 export async function unpinTop3Action(candidateId: string): Promise<void> {
   if (!candidateId) throw new Error("candidateId is required");
   await clearAction("top3_candidate", candidateId, "pin");
+  await invalidateLlmCaches();
   revalidatePath("/today");
 }
 
@@ -49,11 +67,13 @@ export async function demoteTop3Action(candidateId: string): Promise<void> {
   // Inverse of pin: clear any existing pin, then record the demote.
   await clearAction("top3_candidate", candidateId, "pin");
   await recordAction("top3_candidate", candidateId, "demote");
+  await invalidateLlmCaches();
   revalidatePath("/today");
 }
 
 export async function restoreTop3Action(candidateId: string): Promise<void> {
   if (!candidateId) throw new Error("candidateId is required");
   await clearAction("top3_candidate", candidateId, "demote");
+  await invalidateLlmCaches();
   revalidatePath("/today");
 }
