@@ -30,3 +30,11 @@ export {
   type NudgeChannel,
   type NudgeTone,
 } from "./agents/compose-followup-nudge";
+
+export {
+  composeTopThree,
+  type ComposeTopThreeInput,
+  type TopThreeCandidateInput,
+  type TopThreeOutput,
+  type TopThreePick,
+} from "./agents/top-three";

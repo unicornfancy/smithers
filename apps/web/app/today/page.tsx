@@ -10,11 +10,14 @@ import {
 
 import { AppHeader } from "@/components/app-header";
 import { EmptyState, VaultMissingNotice } from "@/components/empty-state";
-import { PageShell, PlaceholderCard } from "@/components/page-shell";
+import { PageShell } from "@/components/page-shell";
 import { PingsToAction } from "@/components/pings-to-action";
+import { TopThreeCard } from "@/components/top-three-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getAgentRuntimeStatus } from "@/lib/server/agents";
 import { getMcpClient } from "@/lib/server/mcp";
+import { buildTopThreeCandidates } from "@/lib/server/top-three";
 import { getVault } from "@/lib/server/vault";
 
 export const metadata = {
@@ -58,6 +61,13 @@ export default async function TodayPage() {
 
   const mcp = await getMcpClient();
   const pingsResult = await mcp.contextA8C.listPings({ limit: 10 });
+  const pings = pingsResult.ok
+    ? pingsResult.data
+    : (pingsResult.cachedData ?? []);
+  const agentStatus = await getAgentRuntimeStatus();
+  const topCandidates = status.exists
+    ? await buildTopThreeCandidates({ vault, pings }).catch(() => [])
+    : [];
 
   return (
     <>
@@ -150,9 +160,9 @@ export default async function TodayPage() {
           />
         ) : null}
 
-        <PlaceholderCard
-          title="Top 3 for today"
-          description="Auto-suggested from rules-based scoring + LLM picks. Pin / demote / regenerate from this card. Lands with the agents runtime."
+        <TopThreeCard
+          initialCandidates={topCandidates}
+          apiKeyConfigured={agentStatus.configured}
         />
 
         <PingsToAction result={pingsResult} />
