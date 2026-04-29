@@ -17,7 +17,10 @@ import {
   buildTopThreeCandidates,
   type TopThreeCandidate,
 } from "@/lib/server/top-three";
-import { listEntityIdsWithAction } from "@/lib/server/user-actions";
+import {
+  listEntityIdsWithAction,
+  localMidnight,
+} from "@/lib/server/user-actions";
 import { getVault } from "@/lib/server/vault";
 
 export const dynamic = "force-dynamic";
@@ -85,9 +88,11 @@ export async function POST(req: Request) {
     ? pingsResult.data
     : (pingsResult.cachedData ?? []);
 
+  // Pins/demotes are today-scoped — see /today/page.tsx for the same.
+  const since = localMidnight();
   const [pinnedIds, demotedIds] = await Promise.all([
-    listEntityIdsWithAction("top3_candidate", "pin"),
-    listEntityIdsWithAction("top3_candidate", "demote"),
+    listEntityIdsWithAction("top3_candidate", "pin", since),
+    listEntityIdsWithAction("top3_candidate", "demote", since),
   ]);
   const rawCandidates = await buildTopThreeCandidates({ vault, pings });
   const candidates = applyTop3UserActions(

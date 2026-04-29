@@ -58,12 +58,32 @@ export async function clearAction(
   return result.changes > 0;
 }
 
-/** Return the set of entity ids with a given action recorded. */
+/**
+ * Return the set of entity ids with a given action recorded. Optionally
+ * filtered to actions taken since a given Date — used for today-scoped
+ * actions like top3_candidate pin/demote, which the design says reset
+ * at midnight. Older rows stay in the table for the audit trail; the
+ * filter just hides them from "what's currently in effect".
+ */
 export async function listEntityIdsWithAction(
   entityType: EntityType,
   action: ActionKind,
+  since?: Date,
 ): Promise<Set<string>> {
   const db = await getDb();
+  if (since) {
+    const sinceIso = sqliteTimestamp(since);
+    const rows = db
+      .prepare<
+        [EntityType, ActionKind, string],
+        { entity_id: string }
+      >(
+        `SELECT entity_id FROM user_actions
+         WHERE entity_type = ? AND action = ? AND created_at >= ?`,
+      )
+      .all(entityType, action, sinceIso);
+    return new Set(rows.map((r) => r.entity_id));
+  }
   const rows = db
     .prepare<[EntityType, ActionKind], { entity_id: string }>(
       `SELECT entity_id FROM user_actions
@@ -71,6 +91,25 @@ export async function listEntityIdsWithAction(
     )
     .all(entityType, action);
   return new Set(rows.map((r) => r.entity_id));
+}
+
+/**
+ * Local midnight as a Date. Pin/demote scoping uses this to decide
+ * "today" — anything recorded at or after midnight in the user's
+ * timezone counts as still-active.
+ */
+export function localMidnight(now: Date = new Date()): Date {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Format a Date as a SQLite-comparable timestamp matching the format
+ * we store with `datetime('now')` (UTC, "YYYY-MM-DD HH:MM:SS").
+ */
+function sqliteTimestamp(d: Date): string {
+  return d.toISOString().replace("T", " ").slice(0, 19);
 }
 
 /** Has this entity been subject to this action? */

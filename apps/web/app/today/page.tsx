@@ -36,6 +36,7 @@ import {
 import {
   listDismissedIds,
   listEntityIdsWithAction,
+  localMidnight,
 } from "@/lib/server/user-actions";
 import { getVault } from "@/lib/server/vault";
 
@@ -96,11 +97,14 @@ export default async function TodayPage() {
     ? filteredPingsResult.data
     : (filteredPingsResult.cachedData ?? []);
   const agentStatus = await getAgentRuntimeStatus();
+  // Pin/demote are today-scoped per the design — older rows stay in
+  // user_actions for the audit trail but don't affect Top 3 ranking.
+  const since = localMidnight();
   const [pinnedTop3Ids, demotedTop3Ids] = await Promise.all([
-    listEntityIdsWithAction("top3_candidate", "pin").catch(
+    listEntityIdsWithAction("top3_candidate", "pin", since).catch(
       () => new Set<string>(),
     ),
-    listEntityIdsWithAction("top3_candidate", "demote").catch(
+    listEntityIdsWithAction("top3_candidate", "demote", since).catch(
       () => new Set<string>(),
     ),
   ]);
