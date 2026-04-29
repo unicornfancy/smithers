@@ -8,6 +8,11 @@ import {
 } from "@/components/ui/card";
 import { UndoActionButton } from "@/components/undo-action-button";
 import {
+  buildResolverTables,
+  describeAction,
+  type ActionDescription,
+} from "@/lib/server/describe-action";
+import {
   listAllActions,
   type UserActionRow,
 } from "@/lib/server/user-actions";
@@ -22,7 +27,10 @@ import {
  * and it's a thin client wrapper around a server action.
  */
 export async function ActivityLogCard() {
-  const rows = await listAllActions();
+  const [rows, resolverTables] = await Promise.all([
+    listAllActions(),
+    buildResolverTables(),
+  ]);
 
   return (
     <Card>
@@ -60,7 +68,11 @@ export async function ActivityLogCard() {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <ActivityRow key={rowKey(r)} row={r} />
+                  <ActivityRow
+                    key={rowKey(r)}
+                    row={r}
+                    description={describeAction(r, resolverTables)}
+                  />
                 ))}
               </tbody>
             </table>
@@ -71,7 +83,13 @@ export async function ActivityLogCard() {
   );
 }
 
-function ActivityRow({ row }: { row: UserActionRow }) {
+function ActivityRow({
+  row,
+  description,
+}: {
+  row: UserActionRow;
+  description: ActionDescription;
+}) {
   return (
     <tr className="hover:bg-muted/40 border-b last:border-0">
       <td className="text-muted-foreground py-2 pr-4 align-top tabular-nums text-xs">
@@ -89,9 +107,20 @@ function ActivityRow({ row }: { row: UserActionRow }) {
           <span className="text-muted-foreground text-[11px] uppercase tracking-wide">
             {entityTypeLabel(row.entity_type)}
           </span>
-          <code className="text-foreground break-all font-mono text-xs">
-            {row.entity_id}
-          </code>
+          <p className="text-foreground text-sm leading-snug">
+            {description.title}
+          </p>
+          {description.subtitle ? (
+            <p className="text-muted-foreground text-xs">{description.subtitle}</p>
+          ) : null}
+          {!description.resolved ? (
+            <code
+              className="text-muted-foreground/70 break-all font-mono text-[10px]"
+              title="Entity not found in current vault snapshot"
+            >
+              {row.entity_id}
+            </code>
+          ) : null}
         </div>
       </td>
       <td className="text-muted-foreground py-2 pr-4 align-top text-xs italic">
