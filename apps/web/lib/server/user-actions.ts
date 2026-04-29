@@ -111,3 +111,23 @@ export async function listDismissedIds(
 ): Promise<Set<string>> {
   return listEntityIdsWithAction(entityType, "dismiss");
 }
+
+/**
+ * Read every recorded user action, newest first. Used by /settings'
+ * Activity Log to give the user an audit trail + undo affordance.
+ *
+ * No pagination — the data set is small (one row per user click) and
+ * we want a single render pass for the table. Add limit if it ever
+ * grows past a few hundred rows.
+ */
+export async function listAllActions(): Promise<UserActionRow[]> {
+  const db = await getDb();
+  const rows = db
+    .prepare<[], UserActionRow>(
+      `SELECT entity_type, entity_id, action, created_at, reason
+       FROM user_actions
+       ORDER BY created_at DESC`,
+    )
+    .all();
+  return rows;
+}
