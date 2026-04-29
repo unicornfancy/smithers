@@ -2,7 +2,7 @@ import type { ResolvedVaultOptions } from "./config";
 import { tryReadFile } from "./fs";
 import { deterministicId } from "./ids";
 import { vaultPaths } from "./paths";
-import type { FollowUp, FollowUpStatus } from "./types";
+import type { FollowUp, FollowUpStatus, Project } from "./types";
 
 /**
  * Parse the user's `Follow-ups.md` table-style tracker into structured rows.
@@ -34,6 +34,34 @@ export async function listFollowUps(
   active.sort((a, b) => (b.sent ?? "").localeCompare(a.sent ?? ""));
   resolved.sort((a, b) => (b.sent ?? "").localeCompare(a.sent ?? ""));
   return { active, resolved };
+}
+
+/**
+ * Pick the follow-ups that belong to a given project, fuzzily.
+ *
+ * Matches on a few candidate strings derived from the project — its name,
+ * its slug, and (for partner-kind) the partner slug. The follow-up's
+ * `project` cell is free-form text the user wrote, so we tolerate small
+ * variants like "ClimateFirst Foundation" vs "ClimateFirst" by checking
+ * either-direction substring containment after lower-casing.
+ */
+export function filterFollowUpsForProject<T extends FollowUp>(
+  rows: T[],
+  project: Pick<Project, "name" | "slug" | "partner">,
+): T[] {
+  const candidates = [project.name, project.partner, deslug(project.slug)]
+    .filter((s): s is string => Boolean(s))
+    .map((s) => s.toLowerCase().trim())
+    .filter((s) => s.length >= 3);
+  if (candidates.length === 0) return [];
+  return rows.filter((r) => {
+    const cell = r.project.toLowerCase().trim();
+    return candidates.some((c) => cell.includes(c) || c.includes(cell));
+  });
+}
+
+function deslug(slug: string): string {
+  return slug.replace(/-/g, " ");
 }
 
 // --- internals ---

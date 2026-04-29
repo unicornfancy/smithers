@@ -13,7 +13,7 @@
 // Both are equivalent; the factory just curries options. App-level code
 // usually uses the factory; one-off scripts use the function form.
 
-export const VAULT_PACKAGE_VERSION = "0.0.2";
+export const VAULT_PACKAGE_VERSION = "0.0.3";
 
 import { resolveVaultOptions, type VaultOptions } from "./config";
 import { listAgendas } from "./agendas";
@@ -28,7 +28,8 @@ import {
   listDrafts,
   readDraft,
 } from "./drafts";
-import { listFollowUps } from "./follow-ups";
+import { filterFollowUpsForProject, listFollowUps } from "./follow-ups";
+import { readProjectDetail } from "./project-detail";
 import {
   ensureProjectId,
   listProjects,
@@ -36,6 +37,7 @@ import {
 } from "./projects";
 import { readVaultStatus } from "./status";
 import { readStyleGuide, readWorkingWith } from "./style-guide";
+import { parseProjectTasks, splitTasks } from "./tasks";
 import { watchVault, type VaultEventHandler } from "./watcher";
 
 export * from "./types";
@@ -46,20 +48,26 @@ export * from "./ids";
 export * from "./slug";
 export * from "./watcher";
 export * from "./status";
+export type { ProjectDetail, SiblingFile } from "./project-detail";
+export type { ProjectTask } from "./tasks";
 export {
+  filterFollowUpsForProject,
   listAgendas,
   listCallNotes,
   listDailyNotes,
   listDrafts,
   listFollowUps,
   listProjects,
+  parseProjectTasks,
   readDailyNote,
   readDraft,
   readProject,
+  readProjectDetail,
   readStyleGuide,
   readTodayNote,
   readVaultStatus,
   readWorkingWith,
+  splitTasks,
   ensureDraftId,
   ensureProjectId,
   watchVault,
@@ -70,6 +78,7 @@ export interface Vault {
   status: () => ReturnType<typeof readVaultStatus>;
   listProjects: () => ReturnType<typeof listProjects>;
   readProject: (slug: string) => ReturnType<typeof readProject>;
+  readProjectDetail: (slug: string) => ReturnType<typeof readProjectDetail>;
   listDrafts: () => ReturnType<typeof listDrafts>;
   readDraft: (id: string) => ReturnType<typeof readDraft>;
   listFollowUps: () => ReturnType<typeof listFollowUps>;
@@ -90,6 +99,7 @@ export function createVault(options: VaultOptions): Vault {
     status: () => readVaultStatus(resolved),
     listProjects: () => listProjects(resolved),
     readProject: (slug) => readProject(resolved, slug),
+    readProjectDetail: (slug) => readProjectDetail(resolved, slug),
     listDrafts: () => listDrafts(resolved),
     readDraft: (id) => readDraft(resolved, id),
     listFollowUps: () => listFollowUps(resolved),

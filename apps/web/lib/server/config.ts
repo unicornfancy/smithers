@@ -88,7 +88,7 @@ export async function loadConfig(): Promise<SmithersConfig> {
     try {
       const raw = await readFile(path, "utf-8");
       const parsed = yaml.load(raw) as Partial<SmithersConfig> | null;
-      cached = mergeWithDefaults(parsed ?? {});
+      cached = resolvePaths(mergeWithDefaults(parsed ?? {}), repoRoot);
       return cached;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
@@ -96,7 +96,7 @@ export async function loadConfig(): Promise<SmithersConfig> {
     }
   }
 
-  cached = DEFAULTS;
+  cached = resolvePaths(DEFAULTS, repoRoot);
   return cached;
 }
 
@@ -113,6 +113,35 @@ export function expandConfigPath(p: string): string {
 function findRepoRoot(): string {
   // apps/web → repo root is two up.
   return resolve(process.cwd(), "..", "..");
+}
+
+/**
+ * Expand all user-facing path strings:
+ *   - `~`-prefixed → home directory
+ *   - relative → resolved against the repo root (so `./templates/seed-data/vault`
+ *     works regardless of where the dev server's cwd is)
+ *   - absolute → unchanged
+ */
+function resolvePaths(
+  cfg: SmithersConfig,
+  repoRoot: string,
+): SmithersConfig {
+  return {
+    ...cfg,
+    paths: {
+      vault: resolveOne(cfg.paths.vault, repoRoot),
+      hive_mind: resolveOne(cfg.paths.hive_mind, repoRoot),
+      data: resolveOne(cfg.paths.data, repoRoot),
+    },
+  };
+}
+
+function resolveOne(p: string, repoRoot: string): string {
+  if (!p) return p;
+  if (p === "~") return homedir();
+  if (p.startsWith("~/")) return resolve(homedir(), p.slice(2));
+  if (p.startsWith(".")) return resolve(repoRoot, p);
+  return resolve(p);
 }
 
 function mergeWithDefaults(
