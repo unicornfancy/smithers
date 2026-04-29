@@ -44,6 +44,13 @@ export interface SmithersConfig {
     workdays: string[];
     briefing_time: string;
   };
+  stall_thresholds: {
+    follow_up_nudge_days: number;
+    follow_up_escalate_days: number;
+    follow_up_force_decide_days: number;
+    /** Days before a project's `next_nudge` date to surface a reminder. */
+    next_nudge_lookahead_days: number;
+  };
 }
 
 const DEFAULTS: SmithersConfig = {
@@ -72,6 +79,12 @@ const DEFAULTS: SmithersConfig = {
     timezone: "America/Los_Angeles",
     workdays: ["mon", "tue", "wed", "thu", "fri"],
     briefing_time: "07:30",
+  },
+  stall_thresholds: {
+    follow_up_nudge_days: 10,
+    follow_up_escalate_days: 21,
+    follow_up_force_decide_days: 30,
+    next_nudge_lookahead_days: 14,
   },
 };
 
@@ -178,6 +191,10 @@ function mergeWithDefaults(
     working_rhythm: {
       ...DEFAULTS.working_rhythm,
       ...partial.working_rhythm,
+    },
+    stall_thresholds: {
+      ...DEFAULTS.stall_thresholds,
+      ...partial.stall_thresholds,
     },
   };
 }

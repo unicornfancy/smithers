@@ -75,6 +75,12 @@ stall_thresholds:
   follow_up_nudge_days: 10
   follow_up_escalate_days: 21
   follow_up_force_decide_days: 30
+  # Days before a project's `next_nudge` frontmatter date to surface a reminder.
+  # Used for cold projects with seasonal/annual touchpoints (e.g. Chip.Blog January nudge).
+  next_nudge_lookahead_days: 14
+  # Below: not yet enforced in v1 — kept here so the file documents the locked plan.
+  # Carrying-task and project-status-review stalls land once we have real activity
+  # data via MCP (vault file mtime is too noisy a proxy).
   carrying_task_park_days: 14
   hot_demote_prompt_days: 10
   active_demote_prompt_days: 30

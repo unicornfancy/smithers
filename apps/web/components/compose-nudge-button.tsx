@@ -19,6 +19,14 @@ interface Props {
   followUpId: string;
   /** Pre-warmed status so we can grey the button out when no API key is set. */
   apiKeyConfigured: boolean;
+  /**
+   * Force a specific tone instead of letting the agent decide. Used by the
+   * Stalls card to map severity to tone (escalate → direct, force-decide →
+   * force-decide, etc.).
+   */
+  toneOverride?: "soft" | "direct" | "force-decide";
+  /** Optional label override; defaults to "Compose nudge". */
+  label?: string;
 }
 
 type State =
@@ -27,7 +35,12 @@ type State =
   | { kind: "ready"; data: NonNullable<ComposeNudgeResponse["output"]> }
   | { kind: "error"; message: string; missingKey: boolean };
 
-export function ComposeNudgeButton({ followUpId, apiKeyConfigured }: Props) {
+export function ComposeNudgeButton({
+  followUpId,
+  apiKeyConfigured,
+  toneOverride,
+  label = "Compose nudge",
+}: Props) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<State>({ kind: "idle" });
 
@@ -42,7 +55,10 @@ export function ComposeNudgeButton({ followUpId, apiKeyConfigured }: Props) {
       const res = await fetch("/api/agents/compose-followup-nudge", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ follow_up_id: followUpId }),
+        body: JSON.stringify({
+          follow_up_id: followUpId,
+          tone_override: toneOverride,
+        }),
       });
       const json = (await res.json()) as ComposeNudgeResponse;
       if (!json.ok || !json.output) {
@@ -92,7 +108,7 @@ export function ComposeNudgeButton({ followUpId, apiKeyConfigured }: Props) {
         }
       >
         <Sparkles className="size-3" />
-        Compose nudge
+        {label}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>

@@ -12,11 +12,13 @@ import { AppHeader } from "@/components/app-header";
 import { EmptyState, VaultMissingNotice } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
 import { PingsToAction } from "@/components/pings-to-action";
+import { StallsCard } from "@/components/stalls-card";
 import { TopThreeCard } from "@/components/top-three-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAgentRuntimeStatus } from "@/lib/server/agents";
 import { getMcpClient } from "@/lib/server/mcp";
+import { detectStalls } from "@/lib/server/stalls";
 import { buildTopThreeCandidates } from "@/lib/server/top-three";
 import { getVault } from "@/lib/server/vault";
 
@@ -68,6 +70,25 @@ export default async function TodayPage() {
   const topCandidates = status.exists
     ? await buildTopThreeCandidates({ vault, pings }).catch(() => [])
     : [];
+  const stalls = status.exists
+    ? await detectStalls({ vault }).catch(() => ({
+        items: [],
+        counts: {
+          force_decide: 0,
+          escalate: 0,
+          nudge: 0,
+          next_nudge_upcoming: 0,
+        },
+      }))
+    : {
+        items: [],
+        counts: {
+          force_decide: 0,
+          escalate: 0,
+          nudge: 0,
+          next_nudge_upcoming: 0,
+        },
+      };
 
   return (
     <>
@@ -162,6 +183,11 @@ export default async function TodayPage() {
 
         <TopThreeCard
           initialCandidates={topCandidates}
+          apiKeyConfigured={agentStatus.configured}
+        />
+
+        <StallsCard
+          summary={stalls}
           apiKeyConfigured={agentStatus.configured}
         />
 
