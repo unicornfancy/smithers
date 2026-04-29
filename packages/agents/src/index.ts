@@ -38,3 +38,9 @@ export {
   type TopThreeOutput,
   type TopThreePick,
 } from "./agents/top-three";
+
+export {
+  composeRealisticShape,
+  type RealisticShapeInput,
+  type RealisticShapeOutput,
+} from "./agents/realistic-shape";

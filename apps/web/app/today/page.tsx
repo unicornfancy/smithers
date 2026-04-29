@@ -12,6 +12,7 @@ import { AppHeader } from "@/components/app-header";
 import { EmptyState, VaultMissingNotice } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
 import { PingsToAction } from "@/components/pings-to-action";
+import { RealisticShapeCard } from "@/components/realistic-shape-card";
 import { StallsCard } from "@/components/stalls-card";
 import { TopThreeCard } from "@/components/top-three-card";
 import { Button } from "@/components/ui/button";
@@ -192,6 +193,8 @@ export default async function TodayPage() {
         />
 
         <PingsToAction result={pingsResult} />
+
+        <RealisticShapeCard apiKeyConfigured={agentStatus.configured} />
       </PageShell>
     </>
   );
