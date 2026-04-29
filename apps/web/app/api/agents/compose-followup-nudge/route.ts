@@ -61,7 +61,7 @@ export async function POST(req: Request) {
         ok: false,
         error_kind: "missing_api_key",
         error:
-          "ANTHROPIC_API_KEY not set. Add it to .env.local at the repo root.",
+          "ANTHROPIC_API_KEY not set. Add it to apps/web/.env.local and restart pnpm dev.",
       } satisfies ComposeNudgeResponse,
       { status: 412 },
     );

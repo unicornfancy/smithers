@@ -30,7 +30,9 @@ mcps:
 
 agents:
   # Smithers reads your Anthropic API key from this environment variable.
-  # Put it in `.env.local` at the repo root (gitignored): ANTHROPIC_API_KEY=sk-ant-...
+  # Put it in `apps/web/.env.local` (gitignored, read by Next.js at startup):
+  #   ANTHROPIC_API_KEY=sk-ant-...
+  # Restart `pnpm dev` after editing — env vars are read once on server boot.
   api_key_env: "ANTHROPIC_API_KEY"
   # Default model for agent calls. claude-opus-4-7 is the strongest;
   # use claude-sonnet-4-6 to trade some quality for cost.

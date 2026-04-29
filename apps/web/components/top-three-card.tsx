@@ -140,9 +140,9 @@ export function TopThreeCard({ initialCandidates, apiKeyConfigured }: Props) {
                 </code>{" "}
                 to{" "}
                 <code className="bg-muted rounded px-1 py-0.5 font-mono">
-                  .env.local
-                </code>{" "}
-                at the repo root, then restart the dev server.
+                  apps/web/.env.local
+                </code>
+                , then restart the dev server.
               </p>
             ) : null}
             <RulesView candidates={initialCandidates} />

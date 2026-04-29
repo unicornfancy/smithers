@@ -156,8 +156,11 @@ function ErrorPanel({
           <code className="bg-muted rounded px-1 py-0.5 font-mono">
             ANTHROPIC_API_KEY=sk-ant-…
           </code>{" "}
-          to <code className="bg-muted rounded px-1 py-0.5 font-mono">.env.local</code>{" "}
-          at the repo root, then restart the dev server.
+          to{" "}
+          <code className="bg-muted rounded px-1 py-0.5 font-mono">
+            apps/web/.env.local
+          </code>
+          , then restart the dev server.
         </p>
       ) : null}
     </div>
