@@ -93,8 +93,9 @@ const OUTPUT_SCHEMA = {
   properties: {
     picks: {
       type: "array",
-      minItems: 3,
-      maxItems: 3,
+      // Anthropic structured-output constraint: array `minItems`/`maxItems`
+      // can only be 0 or 1. We enforce "exactly 3" via the system prompt
+      // and the validator below.
       items: {
         type: "object",
         properties: {
