@@ -3,9 +3,11 @@ import { CheckCircle2, Clock } from "lucide-react";
 import type { FollowUp } from "@smithers/vault";
 
 import { AppHeader } from "@/components/app-header";
+import { ComposeNudgeButton } from "@/components/compose-nudge-button";
 import { EmptyState, VaultMissingNotice } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getAgentRuntimeStatus } from "@/lib/server/agents";
 import { getVault } from "@/lib/server/vault";
 
 export const metadata = {
@@ -17,6 +19,7 @@ export const dynamic = "force-dynamic";
 export default async function FollowUpsPage() {
   const vault = await getVault();
   const status = vault.status();
+  const agentStatus = await getAgentRuntimeStatus();
 
   const { active, resolved } = status.exists
     ? await vault.listFollowUps().catch(() => ({ active: [], resolved: [] }))
@@ -56,7 +59,11 @@ export default async function FollowUpsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <FollowUpTable rows={active} />
+              <FollowUpTable
+                rows={active}
+                showCompose
+                apiKeyConfigured={agentStatus.configured}
+              />
             </CardContent>
           </Card>
         ) : null}
@@ -82,7 +89,18 @@ export default async function FollowUpsPage() {
   );
 }
 
-function FollowUpTable({ rows }: { rows: FollowUp[] }) {
+interface FollowUpTableProps {
+  rows: FollowUp[];
+  /** When true, render the per-row Compose-nudge action. */
+  showCompose?: boolean;
+  apiKeyConfigured?: boolean;
+}
+
+function FollowUpTable({
+  rows,
+  showCompose = false,
+  apiKeyConfigured = false,
+}: FollowUpTableProps) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -92,7 +110,8 @@ function FollowUpTable({ rows }: { rows: FollowUp[] }) {
             <th className="py-2 pr-4 font-medium">Task</th>
             <th className="py-2 pr-4 font-medium">Sent</th>
             <th className="py-2 pr-4 font-medium">Due</th>
-            <th className="py-2 font-medium">Status</th>
+            <th className="py-2 pr-4 font-medium">Status</th>
+            {showCompose ? <th className="py-2 font-medium">Action</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -120,7 +139,7 @@ function FollowUpTable({ rows }: { rows: FollowUp[] }) {
               <td className="text-muted-foreground py-2 pr-4 align-top tabular-nums">
                 {r.follow_up_by ?? "—"}
               </td>
-              <td className="py-2 align-top">
+              <td className="py-2 pr-4 align-top">
                 <span
                   className={
                     r.status === "resolved"
@@ -137,6 +156,14 @@ function FollowUpTable({ rows }: { rows: FollowUp[] }) {
                       : "⏳ waiting"}
                 </span>
               </td>
+              {showCompose ? (
+                <td className="py-2 align-top">
+                  <ComposeNudgeButton
+                    followUpId={r.follow_up_id}
+                    apiKeyConfigured={apiKeyConfigured}
+                  />
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>

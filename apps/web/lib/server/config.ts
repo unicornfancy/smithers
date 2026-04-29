@@ -27,6 +27,11 @@ export interface SmithersConfig {
     hive_mind: { enabled: boolean; endpoint?: string };
     fathom: { enabled: boolean; endpoint?: string };
   };
+  agents: {
+    api_key_env: string;
+    model: string;
+    effort: "low" | "medium" | "high" | "xhigh" | "max";
+  };
   transcription: {
     provider: "fathom" | "granola" | "manual" | "whisper" | "gemini";
   };
@@ -55,6 +60,11 @@ const DEFAULTS: SmithersConfig = {
     context_a8c: { enabled: false },
     hive_mind: { enabled: false },
     fathom: { enabled: false },
+  },
+  agents: {
+    api_key_env: "ANTHROPIC_API_KEY",
+    model: "claude-opus-4-7",
+    effort: "high",
   },
   transcription: { provider: "manual" },
   p2: {},
@@ -162,6 +172,7 @@ function mergeWithDefaults(
       hive_mind: { ...DEFAULTS.mcps.hive_mind, ...partial.mcps?.hive_mind },
       fathom: { ...DEFAULTS.mcps.fathom, ...partial.mcps?.fathom },
     },
+    agents: { ...DEFAULTS.agents, ...partial.agents },
     transcription: { ...DEFAULTS.transcription, ...partial.transcription },
     p2: { ...DEFAULTS.p2, ...partial.p2 },
     working_rhythm: {

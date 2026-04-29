@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 
 import "./globals.css";
 
+import { Toaster } from "sonner";
+
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 
@@ -42,6 +44,7 @@ export default function RootLayout({
             <AppSidebar />
             <div className="flex min-w-0 flex-1 flex-col">{children}</div>
           </div>
+          <Toaster position="bottom-right" richColors closeButton />
         </ThemeProvider>
       </body>
     </html>

@@ -28,6 +28,18 @@ mcps:
     enabled: true
     endpoint: ""
 
+agents:
+  # Smithers reads your Anthropic API key from this environment variable.
+  # Put it in `.env.local` at the repo root (gitignored): ANTHROPIC_API_KEY=sk-ant-...
+  api_key_env: "ANTHROPIC_API_KEY"
+  # Default model for agent calls. claude-opus-4-7 is the strongest;
+  # use claude-sonnet-4-6 to trade some quality for cost.
+  model: "claude-opus-4-7"
+  # Effort level: low | medium | high | xhigh | max
+  # Higher = more thorough, more tokens, more latency. high is a good
+  # balance for short drafts and nudges.
+  effort: "high"
+
 transcription:
   # One of: fathom | granola | manual | whisper (stub) | gemini (stub)
   provider: "fathom"

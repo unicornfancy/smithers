@@ -1,18 +1,32 @@
-// @smithers/agents — prompt templates + Claude/Anthropic runner.
+// @smithers/agents — prompt templates + Anthropic SDK runner.
 //
-// Implementation lands as part of the `agents_runtime` todo. This stub keeps
-// the package importable and the workspace graph wired.
+// Each agent is a typed function (input → AgentResult<output>) backed by
+// a stable system prompt and a JSON schema. The runner enforces the
+// schema via the Messages API's structured-output mode, so callers get
+// validated objects, not free-form text to parse.
+//
+// Usage from app code:
+//
+//   import { composeFollowUpNudge } from "@smithers/agents";
+//   const result = await composeFollowUpNudge(
+//     { apiKey: process.env.ANTHROPIC_API_KEY! },
+//     { followUp, project, daysWaiting: 12 },
+//   );
 
-export const AGENTS_PACKAGE_VERSION = "0.0.1";
+export const AGENTS_PACKAGE_VERSION = "0.0.2";
 
-export type AgentName =
-  | "morning-briefing"
-  | "ping-monitor"
-  | "draft-from-task"
-  | "incorporate-reference"
-  | "weekly-update"
-  | "top-3"
-  | "realistic-shape"
-  | "summarize-thread"
-  | "suggest-next-step"
-  | "compose-followup-nudge";
+export type {
+  AgentName,
+  AgentResult,
+  AgentRuntimeOptions,
+  EffortLevel,
+  StyleReference,
+} from "./types";
+
+export {
+  composeFollowUpNudge,
+  type ComposeNudgeInput,
+  type ComposeNudgeOutput,
+  type NudgeChannel,
+  type NudgeTone,
+} from "./agents/compose-followup-nudge";
