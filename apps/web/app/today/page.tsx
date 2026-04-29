@@ -22,8 +22,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAgentRuntimeStatus } from "@/lib/server/agents";
 import { getMcpClient } from "@/lib/server/mcp";
 import { detectStalls } from "@/lib/server/stalls";
-import { buildTopThreeCandidates } from "@/lib/server/top-three";
-import { listDismissedIds } from "@/lib/server/user-actions";
+import {
+  applyTop3UserActions,
+  buildTopThreeCandidates,
+} from "@/lib/server/top-three";
+import {
+  listDismissedIds,
+  listEntityIdsWithAction,
+} from "@/lib/server/user-actions";
 import { getVault } from "@/lib/server/vault";
 
 export const metadata = {
@@ -78,9 +84,22 @@ export default async function TodayPage() {
     ? filteredPingsResult.data
     : (filteredPingsResult.cachedData ?? []);
   const agentStatus = await getAgentRuntimeStatus();
-  const topCandidates = status.exists
+  const [pinnedTop3Ids, demotedTop3Ids] = await Promise.all([
+    listEntityIdsWithAction("top3_candidate", "pin").catch(
+      () => new Set<string>(),
+    ),
+    listEntityIdsWithAction("top3_candidate", "demote").catch(
+      () => new Set<string>(),
+    ),
+  ]);
+  const rawCandidates = status.exists
     ? await buildTopThreeCandidates({ vault, pings }).catch(() => [])
     : [];
+  const topCandidates = applyTop3UserActions(
+    rawCandidates,
+    pinnedTop3Ids,
+    demotedTop3Ids,
+  );
   const stalls = status.exists
     ? await detectStalls({ vault }).catch(() => ({
         items: [],
@@ -195,6 +214,7 @@ export default async function TodayPage() {
         <TopThreeCard
           initialCandidates={topCandidates}
           apiKeyConfigured={agentStatus.configured}
+          pinnedIds={Array.from(pinnedTop3Ids)}
         />
 
         <StallsCard

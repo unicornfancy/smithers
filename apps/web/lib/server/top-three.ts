@@ -136,6 +136,47 @@ export async function buildTopThreeCandidates(
 }
 
 /**
+ * Sentinel score added to pinned candidates so they sort to the top.
+ * Larger than any natural score the rules engine can produce so pinned
+ * items always win, regardless of how aggressive the underlying signals
+ * are.
+ */
+const PIN_SCORE_BOOST = 1_000;
+
+/**
+ * Apply pin/demote state to a candidate list. Demoted candidates are
+ * filtered out entirely; pinned candidates get a sentinel score boost
+ * (and a "pinned" entry in their breakdown so the UI can label them)
+ * and re-sort to the top. Pure function — easy to unit-test without
+ * touching SQLite.
+ */
+export function applyTop3UserActions(
+  candidates: TopThreeCandidate[],
+  pinnedIds: ReadonlySet<string>,
+  demotedIds: ReadonlySet<string>,
+): TopThreeCandidate[] {
+  if (pinnedIds.size === 0 && demotedIds.size === 0) return candidates;
+  const out: TopThreeCandidate[] = [];
+  for (const c of candidates) {
+    if (demotedIds.has(c.candidate_id)) continue;
+    if (pinnedIds.has(c.candidate_id)) {
+      out.push({
+        ...c,
+        score: c.score + PIN_SCORE_BOOST,
+        score_breakdown: [
+          { reason: "pinned by you", delta: PIN_SCORE_BOOST },
+          ...c.score_breakdown,
+        ],
+      });
+    } else {
+      out.push(c);
+    }
+  }
+  out.sort((a, b) => b.score - a.score);
+  return out;
+}
+
+/**
  * Whether the user has elected to skip the LLM step entirely (no API key
  * configured, or the agent failed). UI uses this to decide between
  * "rules-based picks" and "LLM-refined picks" copy.

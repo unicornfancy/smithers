@@ -14,6 +14,7 @@ import type { TopThreeOutput } from "@smithers/agents";
 
 import type { TopThreeResponse } from "@/app/api/agents/top-three/route";
 import type { TopThreeCandidate } from "@/lib/server/top-three";
+import { Top3RowActions } from "@/components/top3-row-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -21,6 +22,8 @@ interface Props {
   /** Server-computed top-N candidates for the rules-based default render. */
   initialCandidates: TopThreeCandidate[];
   apiKeyConfigured: boolean;
+  /** Candidate ids the user has pinned. Rendered with a pin marker + unpin button. */
+  pinnedIds: string[];
 }
 
 type State =
@@ -33,8 +36,13 @@ type State =
     }
   | { kind: "error"; message: string; missingKey: boolean };
 
-export function TopThreeCard({ initialCandidates, apiKeyConfigured }: Props) {
+export function TopThreeCard({
+  initialCandidates,
+  apiKeyConfigured,
+  pinnedIds,
+}: Props) {
   const [state, setState] = useState<State>({ kind: "rules" });
+  const pinnedSet = new Set(pinnedIds);
 
   async function generate() {
     if (!apiKeyConfigured) {
@@ -122,11 +130,15 @@ export function TopThreeCard({ initialCandidates, apiKeyConfigured }: Props) {
         ) : null}
 
         {state.kind === "rules" || state.kind === "loading" ? (
-          <RulesView candidates={initialCandidates} />
+          <RulesView candidates={initialCandidates} pinnedSet={pinnedSet} />
         ) : null}
 
         {state.kind === "llm" ? (
-          <LlmView output={state.output} candidates={state.candidates} />
+          <LlmView
+            output={state.output}
+            candidates={state.candidates}
+            pinnedSet={pinnedSet}
+          />
         ) : null}
 
         {state.kind === "error" ? (
@@ -145,7 +157,7 @@ export function TopThreeCard({ initialCandidates, apiKeyConfigured }: Props) {
                 , then restart the dev server.
               </p>
             ) : null}
-            <RulesView candidates={initialCandidates} />
+            <RulesView candidates={initialCandidates} pinnedSet={pinnedSet} />
           </div>
         ) : null}
       </CardContent>
@@ -155,31 +167,42 @@ export function TopThreeCard({ initialCandidates, apiKeyConfigured }: Props) {
 
 function RulesView({
   candidates,
+  pinnedSet,
 }: {
   candidates: TopThreeCandidate[];
+  pinnedSet: Set<string>;
 }) {
   const top3 = candidates.slice(0, 3);
   return (
     <ol className="flex flex-col divide-y">
-      {top3.map((c, i) => (
-        <li
-          key={c.candidate_id}
-          className="flex items-start gap-3 py-2 first:pt-0 last:pb-0"
-        >
-          <span className="text-muted-foreground w-5 shrink-0 text-sm font-semibold tabular-nums">
-            {i + 1}.
-          </span>
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <CandidateLink candidate={c} className="text-sm leading-snug" />
-            {c.context ? (
-              <p className="text-muted-foreground text-xs">{c.context}</p>
-            ) : null}
-            <p className="text-muted-foreground text-[11px] italic">
-              {sourceLabel(c.source)} · score {c.score.toFixed(1)}
-            </p>
-          </div>
-        </li>
-      ))}
+      {top3.map((c, i) => {
+        const pinned = pinnedSet.has(c.candidate_id);
+        return (
+          <li
+            key={c.candidate_id}
+            className="flex items-start gap-3 py-2 first:pt-0 last:pb-0"
+          >
+            <span className="text-muted-foreground w-5 shrink-0 text-sm font-semibold tabular-nums">
+              {i + 1}.
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <CandidateLink candidate={c} className="text-sm leading-snug" />
+              {c.context ? (
+                <p className="text-muted-foreground text-xs">{c.context}</p>
+              ) : null}
+              <p className="text-muted-foreground text-[11px] italic">
+                {pinned ? "📌 pinned" : `${sourceLabel(c.source)} · score ${c.score.toFixed(1)}`}
+                {pinned ? ` · ${sourceLabel(c.source)}` : null}
+              </p>
+            </div>
+            <Top3RowActions
+              candidateId={c.candidate_id}
+              pinned={pinned}
+              label={c.task.slice(0, 40)}
+            />
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -187,9 +210,11 @@ function RulesView({
 function LlmView({
   output,
   candidates,
+  pinnedSet,
 }: {
   output: TopThreeOutput;
   candidates: TopThreeCandidate[];
+  pinnedSet: Set<string>;
 }) {
   const byId = new Map(candidates.map((c) => [c.candidate_id, c]));
   return (
@@ -197,6 +222,7 @@ function LlmView({
       <ol className="flex flex-col divide-y">
         {output.picks.map((pick, i) => {
           const candidate = byId.get(pick.candidate_id);
+          const pinned = pinnedSet.has(pick.candidate_id);
           return (
             <li
               key={pick.candidate_id}
@@ -206,7 +232,10 @@ function LlmView({
                 {i + 1}.
               </span>
               <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <p className="text-sm font-medium leading-snug">{pick.title}</p>
+                <p className="text-sm font-medium leading-snug">
+                  {pinned ? "📌 " : ""}
+                  {pick.title}
+                </p>
                 <p className="text-muted-foreground text-sm leading-snug">
                   {pick.why}
                 </p>
@@ -228,6 +257,11 @@ function LlmView({
                   ) : null}
                 </div>
               </div>
+              <Top3RowActions
+                candidateId={pick.candidate_id}
+                pinned={pinned}
+                label={pick.title.slice(0, 40)}
+              />
             </li>
           );
         })}

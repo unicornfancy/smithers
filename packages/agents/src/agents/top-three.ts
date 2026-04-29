@@ -42,6 +42,13 @@ export interface ComposeTopThreeInput {
     | "Sun";
   /** Total candidates considered — the model mentions concentration in reasoning when relevant. */
   candidateCount: number;
+  /**
+   * Candidate ids the user has pinned for today. The agent MUST include
+   * each one in its picks. If pinned.length >= 3, the agent picks among
+   * them; if pinned.length < 3, it fills the rest from the highest-
+   * scoring unpinned candidates.
+   */
+  pinnedIds?: string[];
   /** Optional voice reference. */
   style?: StyleReference;
 }
@@ -68,7 +75,8 @@ Your job: pick exactly 3 of the candidates and write a "why this matters" line p
 
 Rules:
 - Pick 3 — never 2, never 4.
-- Score is a strong prior. Don't pick a score-1 candidate over a score-7 candidate without naming the reason.
+- If the user has pinned candidates, EVERY pinned candidate MUST appear in your picks. They override score. If pinned.length >= 3, pick from among the pinned. If pinned.length < 3, include all pinned + fill the rest from the highest-scoring unpinned candidates.
+- Score is a strong prior for unpinned candidates. Don't pick a score-1 candidate over a score-7 candidate without naming the reason.
 - No artificial diversity. If one project genuinely owns the day (multiple force-decide stalls, or a hot thread + calendar prep), let it. Acknowledge the concentration in your framing.
 - Write in the user's voice if a style guide is provided. Default voice: terse, action-oriented, no corporate filler.
 - "why" sentences should reference what's at stake, not just restate the task. Examples:
@@ -141,7 +149,8 @@ export async function composeTopThree(
     effort: "high",
     thinking: true,
     maxTokens: 4096,
-    validate: (raw) => validateOutput(raw, input.candidates),
+    validate: (raw) =>
+      validateOutput(raw, input.candidates, input.pinnedIds ?? []),
   });
 }
 
@@ -149,12 +158,23 @@ function renderUserPrompt(input: ComposeTopThreeInput): string {
   const lines: string[] = [];
   lines.push(`# Today: ${input.dayOfWeek} · ${input.timeOfDay}`);
   lines.push(`Total candidates considered: ${input.candidateCount}`);
+
+  const pinnedIds = input.pinnedIds ?? [];
+  if (pinnedIds.length > 0) {
+    lines.push("");
+    lines.push("# Pinned by user (must appear in your picks)");
+    for (const id of pinnedIds) {
+      lines.push(`- ${id}`);
+    }
+  }
+
   lines.push("");
   lines.push("# Candidates (sorted highest score first)");
 
   for (const c of input.candidates) {
     lines.push("");
-    lines.push(`## [${c.candidate_id}] score ${c.score.toFixed(1)}`);
+    const pinMarker = pinnedIds.includes(c.candidate_id) ? " 📌 PINNED" : "";
+    lines.push(`## [${c.candidate_id}]${pinMarker} score ${c.score.toFixed(1)}`);
     lines.push(`- Source: ${c.source}`);
     if (c.project_name) lines.push(`- Project: ${c.project_name}`);
     if (c.project_status) lines.push(`- Status: ${c.project_status}`);
@@ -190,6 +210,7 @@ function formatBreakdown(
 function validateOutput(
   raw: unknown,
   candidates: TopThreeCandidateInput[],
+  pinnedIds: readonly string[],
 ): TopThreeOutput {
   if (!raw || typeof raw !== "object") {
     throw new Error("output is not an object");
@@ -201,6 +222,14 @@ function validateOutput(
   }
   const validIds = new Set(candidates.map((c) => c.candidate_id));
   const validatedPicks = picks.map((p, i) => validatePick(p, i, validIds));
+  const pickedIds = new Set(validatedPicks.map((p) => p.candidate_id));
+  for (const pinnedId of pinnedIds) {
+    if (!pickedIds.has(pinnedId)) {
+      throw new Error(
+        `pinned candidate "${pinnedId}" is missing from picks — agent ignored a pin`,
+      );
+    }
+  }
   const framing = typeof obj.framing === "string" ? obj.framing : "";
   return {
     picks: [validatedPicks[0]!, validatedPicks[1]!, validatedPicks[2]!],

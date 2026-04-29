@@ -7,9 +7,11 @@ import { composeTopThree, type TopThreeOutput } from "@smithers/agents";
 import { getAgentRuntime } from "@/lib/server/agents";
 import { getMcpClient } from "@/lib/server/mcp";
 import {
+  applyTop3UserActions,
   buildTopThreeCandidates,
   type TopThreeCandidate,
 } from "@/lib/server/top-three";
+import { listEntityIdsWithAction } from "@/lib/server/user-actions";
 import { getVault } from "@/lib/server/vault";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +51,16 @@ export async function POST() {
     ? pingsResult.data
     : (pingsResult.cachedData ?? []);
 
-  const candidates = await buildTopThreeCandidates({ vault, pings });
+  const [pinnedIds, demotedIds] = await Promise.all([
+    listEntityIdsWithAction("top3_candidate", "pin"),
+    listEntityIdsWithAction("top3_candidate", "demote"),
+  ]);
+  const rawCandidates = await buildTopThreeCandidates({ vault, pings });
+  const candidates = applyTop3UserActions(
+    rawCandidates,
+    pinnedIds,
+    demotedIds,
+  );
 
   if (candidates.length === 0) {
     return NextResponse.json(
@@ -63,7 +74,12 @@ export async function POST() {
     );
   }
 
-  const top = candidates.slice(0, TOP_N_TO_LLM);
+  // applyTop3UserActions has already pushed pinned items to the top via
+  // a sentinel score boost, so the natural slice grabs them. Belt-and-
+  // suspenders: union with the explicit pin set in case top-N is < the
+  // number of pins (unlikely but guards against silent loss).
+  const topByScore = candidates.slice(0, TOP_N_TO_LLM);
+  const top = ensurePinnedIncluded(topByScore, candidates, pinnedIds);
   const styleGuide = await vault.readStyleGuide().catch(() => null);
 
   try {
@@ -81,6 +97,7 @@ export async function POST() {
       timeOfDay: timeOfDay(),
       dayOfWeek: dayOfWeek(),
       candidateCount: candidates.length,
+      pinnedIds: Array.from(pinnedIds),
       style: styleGuide?.body
         ? { label: "Katie's writing style", body: styleGuide.body }
         : undefined,
@@ -106,6 +123,26 @@ export async function POST() {
       { status: 502 },
     );
   }
+}
+
+/**
+ * Ensure every pinned candidate is in the slice we send to the LLM.
+ * applyTop3UserActions already boosts pinned candidates' scores so they
+ * sort to the top, but we hedge against future changes to that ordering
+ * by explicitly unioning the pinned set.
+ */
+function ensurePinnedIncluded(
+  topByScore: TopThreeCandidate[],
+  all: TopThreeCandidate[],
+  pinnedIds: ReadonlySet<string>,
+): TopThreeCandidate[] {
+  if (pinnedIds.size === 0) return topByScore;
+  const present = new Set(topByScore.map((c) => c.candidate_id));
+  const missing = all.filter(
+    (c) => pinnedIds.has(c.candidate_id) && !present.has(c.candidate_id),
+  );
+  if (missing.length === 0) return topByScore;
+  return [...missing, ...topByScore];
 }
 
 function timeOfDay(): "morning" | "midday" | "afternoon" {

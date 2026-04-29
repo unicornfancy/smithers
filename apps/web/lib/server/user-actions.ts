@@ -12,7 +12,7 @@ export type EntityType =
   | "top3_candidate"
   | "follow_up";
 
-export type ActionKind = "dismiss" | "pin" | "accept";
+export type ActionKind = "dismiss" | "pin" | "accept" | "demote";
 
 export interface UserActionRow {
   entity_type: EntityType;
