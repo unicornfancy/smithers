@@ -5,6 +5,7 @@ import type {
   TopThreeOutput,
 } from "@smithers/agents";
 
+import { detectStalls, type StallItem, type StallSummary } from "./stalls";
 import { getVault } from "./vault";
 
 /**
@@ -33,6 +34,37 @@ export function formatRealisticShapeSection(
   output: RealisticShapeOutput,
 ): string {
   return ["## Realistic shape", "", output.paragraph.trim()].join("\n");
+}
+
+/**
+ * Render the day's stalls grouped by severity bucket. Returns the
+ * empty-state line when nothing's stalled, so the daily note still
+ * documents that fact rather than leaving the section absent.
+ */
+export function formatStallsSection(summary: StallSummary): string {
+  if (summary.items.length === 0) {
+    return "## Stalls & closures\n\n*Nothing stalled today.*";
+  }
+  const lines: string[] = ["## Stalls & closures", ""];
+  const groups: ReadonlyArray<{
+    severity: StallItem["severity"];
+    label: string;
+  }> = [
+    { severity: "force_decide", label: "Force a decision" },
+    { severity: "escalate", label: "Escalate or accept" },
+    { severity: "nudge", label: "Send a nudge" },
+    { severity: "next_nudge_upcoming", label: "Touchpoint reminders" },
+  ];
+  for (const group of groups) {
+    const items = summary.items.filter((i) => i.severity === group.severity);
+    if (items.length === 0) continue;
+    lines.push(`### ${group.label} · ${items.length}`);
+    for (const item of items) {
+      lines.push(`- **${item.title}** — ${item.context}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trimEnd();
 }
 
 /**
@@ -69,6 +101,28 @@ export async function writeRealisticShapeToDailyNote(
       "[smithers] Realistic Shape daily-note writeback failed:",
       err,
     );
+  }
+}
+
+/**
+ * Snapshot the current stall state into the daily note. Triggered
+ * alongside the Top 3 writeback (the morning-briefing moment), so
+ * the markdown captures the state of the day's decision queue at
+ * the time the user generated their picks.
+ */
+export async function writeStallsToDailyNote(
+  date: string = isoDate(),
+): Promise<void> {
+  try {
+    const vault = await getVault();
+    const summary = await detectStalls({ vault });
+    await vault.upsertDailySection(
+      date,
+      "stalls",
+      formatStallsSection(summary),
+    );
+  } catch (err) {
+    console.error("[smithers] Stalls daily-note writeback failed:", err);
   }
 }
 

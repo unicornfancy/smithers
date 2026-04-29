@@ -5,7 +5,10 @@ import { NextResponse } from "next/server";
 import { composeTopThree, type TopThreeOutput } from "@smithers/agents";
 
 import { getAgentRuntime } from "@/lib/server/agents";
-import { writeTopThreeToDailyNote } from "@/lib/server/daily-note-writeback";
+import {
+  writeStallsToDailyNote,
+  writeTopThreeToDailyNote,
+} from "@/lib/server/daily-note-writeback";
 import {
   dateCacheKey,
   getCached,
@@ -152,10 +155,14 @@ export async function POST(req: Request) {
       },
     };
     await setCached("top-3", cacheKey, payload);
-    // Side-effect: persist the picks to today's daily note so the vault
-    // keeps a permanent journal entry. Errors are logged but don't
-    // affect the response.
-    await writeTopThreeToDailyNote(result.output);
+    // Side-effect: persist the picks AND a snapshot of the current
+    // stalls to today's daily note so the vault keeps a permanent
+    // journal entry of the morning briefing. Errors are logged but
+    // don't affect the response.
+    await Promise.all([
+      writeTopThreeToDailyNote(result.output),
+      writeStallsToDailyNote(),
+    ]);
     return NextResponse.json({
       ok: true,
       ...payload,
