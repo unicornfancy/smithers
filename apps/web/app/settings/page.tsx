@@ -1,5 +1,6 @@
 import { ActivityLogCard } from "@/components/activity-log-card";
 import { AppHeader } from "@/components/app-header";
+import { McpHealthCard } from "@/components/mcp-health-card";
 import { PageShell, PlaceholderCard } from "@/components/page-shell";
 
 export const metadata = {
@@ -13,6 +14,8 @@ export default function SettingsPage() {
     <>
       <AppHeader title="Settings" subtitle="Identity, paths, MCPs, thresholds" />
       <PageShell>
+        <McpHealthCard />
+
         <ActivityLogCard />
 
         <PlaceholderCard
