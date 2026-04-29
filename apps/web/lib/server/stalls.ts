@@ -8,6 +8,7 @@ import {
 } from "@smithers/vault";
 
 import { loadConfig } from "./config";
+import { listEntityIdsWithAction } from "./user-actions";
 
 export type StallSeverity =
   | "force_decide"
@@ -81,6 +82,9 @@ export async function detectStalls(input: DetectInput): Promise<StallSummary> {
   const cfg = await loadConfig();
   const now = input.now ?? new Date();
   const t = cfg.stall_thresholds;
+  const acceptedStallIds = await listEntityIdsWithAction("stall", "accept").catch(
+    () => new Set<string>(),
+  );
 
   const projects = await input.vault.listProjects();
   const projectsByName = new Map(
@@ -99,7 +103,11 @@ export async function detectStalls(input: DetectInput): Promise<StallSummary> {
     const project = matchProject(row.project, projectsByName);
     const severity = classifyFollowUp(days, t);
     if (!severity) continue;
-    items.push(buildFollowUpStall(row, project, days, severity));
+    const stall = buildFollowUpStall(row, project, days, severity);
+    // User explicitly accepted this stall — drop from /today + project
+    // panels but leave the underlying follow-up untouched.
+    if (acceptedStallIds.has(stall.stall_id)) continue;
+    items.push(stall);
   }
 
   // Cold-project next-nudge reminders.
@@ -109,7 +117,9 @@ export async function detectStalls(input: DetectInput): Promise<StallSummary> {
     if (daysUntil === undefined) continue;
     if (daysUntil < 0) continue; // already past — handled separately if we ever add that bucket
     if (daysUntil > t.next_nudge_lookahead_days) continue;
-    items.push(buildNextNudgeStall(project, daysUntil));
+    const stall = buildNextNudgeStall(project, daysUntil);
+    if (acceptedStallIds.has(stall.stall_id)) continue;
+    items.push(stall);
   }
 
   // Sort: severity priority first, then days descending within bucket.

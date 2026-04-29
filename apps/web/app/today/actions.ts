@@ -77,3 +77,27 @@ export async function restoreTop3Action(candidateId: string): Promise<void> {
   await invalidateLlmCaches();
   revalidatePath("/today");
 }
+
+/**
+ * Accept a stall: "I've decided. This is going to sit. Stop surfacing
+ * it." Removes the row from /today's Stalls card AND from the per-
+ * project Needs Decision panel, AND from Top 3 candidate scoring. The
+ * underlying follow-up row is left alone — /follow-ups still shows it
+ * with its waiting status, so the user can flip the decision later.
+ */
+export async function acceptStallAction(stallId: string): Promise<void> {
+  if (!stallId) throw new Error("stallId is required");
+  await recordAction("stall", stallId, "accept");
+  await invalidateLlmCaches();
+  // Both /today and the project workbench surface stalls.
+  revalidatePath("/today");
+  revalidatePath("/projects/[slug]", "page");
+}
+
+export async function unacceptStallAction(stallId: string): Promise<void> {
+  if (!stallId) throw new Error("stallId is required");
+  await clearAction("stall", stallId, "accept");
+  await invalidateLlmCaches();
+  revalidatePath("/today");
+  revalidatePath("/projects/[slug]", "page");
+}

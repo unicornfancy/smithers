@@ -10,6 +10,8 @@ import {
   type Vault,
 } from "@smithers/vault";
 
+import { listEntityIdsWithAction } from "./user-actions";
+
 /**
  * Locked-in scoring rules for Top 3 candidate ranking. Numbers come from
  * the design doc; keep them in one place so we can tune without hunting.
@@ -94,10 +96,16 @@ export async function buildTopThreeCandidates(
   }
 
   // Follow-ups — fuzzy-match to projects so we can reuse status weight.
+  // Skip any whose stall the user has explicitly accepted: they want
+  // it deprioritized, not dominating Top 3.
+  const acceptedStallIds = await listEntityIdsWithAction("stall", "accept").catch(
+    () => new Set<string>(),
+  );
   const followUpRows = await input.vault
     .listFollowUps()
     .catch(() => ({ active: [] as FollowUp[], resolved: [] as FollowUp[] }));
   for (const fu of followUpRows.active) {
+    if (acceptedStallIds.has(`fu:${fu.follow_up_id}`)) continue;
     const project = matchProjectByName(fu.project, projectsByName);
     candidates.push(buildFollowUpCandidate(fu, project, now));
   }

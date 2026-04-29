@@ -5,6 +5,7 @@ import {
   CalendarClock,
 } from "lucide-react";
 
+import { AcceptStallButton } from "@/components/accept-stall-button";
 import { ComposeNudgeButton } from "@/components/compose-nudge-button";
 import {
   Card,
@@ -121,14 +122,17 @@ function StallRow({
           <p className="text-muted-foreground text-xs">{item.context}</p>
         </div>
       </div>
-      {item.follow_up_id ? (
-        <ComposeNudgeButton
-          followUpId={item.follow_up_id}
-          apiKeyConfigured={apiKeyConfigured}
-          toneOverride={severityToTone(item.severity)}
-          label={composeLabel(item.severity)}
-        />
-      ) : null}
+      <div className="flex shrink-0 items-center gap-1">
+        {item.follow_up_id ? (
+          <ComposeNudgeButton
+            followUpId={item.follow_up_id}
+            apiKeyConfigured={apiKeyConfigured}
+            toneOverride={severityToTone(item.severity)}
+            label={composeLabel(item.severity)}
+          />
+        ) : null}
+        <AcceptStallButton stallId={item.stall_id} label={item.title} />
+      </div>
     </li>
   );
 }

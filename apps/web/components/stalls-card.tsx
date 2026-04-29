@@ -6,6 +6,7 @@ import {
   CalendarClock,
 } from "lucide-react";
 
+import { AcceptStallButton } from "@/components/accept-stall-button";
 import { ComposeNudgeButton } from "@/components/compose-nudge-button";
 import {
   Card,
@@ -163,6 +164,7 @@ function StallRow({
             label={severityLabel(item.severity)}
           />
         ) : null}
+        <AcceptStallButton stallId={item.stall_id} label={item.title} />
         {item.project_slug ? (
           <Link
             href={`/projects/${item.project_slug}` as never}
