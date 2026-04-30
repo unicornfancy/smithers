@@ -1,4 +1,8 @@
+import type { ResolvedVaultOptions } from "./config";
+import { parseMarkdown, serializeMarkdown } from "./frontmatter";
+import { tryReadFile, writeFileAtomic } from "./fs";
 import { deterministicId } from "./ids";
+import { readProject } from "./projects";
 
 export interface ProjectTask {
   /** Stable id derived from the line content + section. */
@@ -65,4 +69,75 @@ export function splitTasks(tasks: ProjectTask[]): {
     open: tasks.filter((t) => !t.done),
     done: tasks.filter((t) => t.done),
   };
+}
+
+export interface ToggleProjectTaskResult {
+  task_id: string;
+  done: boolean;
+  line_number: number;
+}
+
+/**
+ * Flip a single checkbox task in a project's markdown body. We re-parse the
+ * file at toggle time so a stale `task_id` from the UI (the file may have
+ * grown new lines since render) still resolves — the id is content-derived,
+ * not position-derived, so it survives unrelated edits.
+ *
+ * Throws if the project or task can't be located so the caller (server
+ * action) can surface a user-visible error instead of silently no-op-ing.
+ */
+export async function toggleProjectTask(
+  opts: ResolvedVaultOptions,
+  slug: string,
+  taskId: string,
+  done: boolean,
+): Promise<ToggleProjectTaskResult> {
+  const project = await readProject(opts, slug);
+  if (!project) {
+    throw new Error(`Project "${slug}" not found`);
+  }
+  if (project.source.kind === "hive-mind") {
+    throw new Error(
+      `Project "${slug}" lives in Hive Mind; task edits go through the shared-notes flow`,
+    );
+  }
+  const path = project.source.absolute_path;
+  const raw = await tryReadFile(path);
+  if (raw === null) {
+    throw new Error(`Project file disappeared at ${path}`);
+  }
+
+  const { data, content } = parseMarkdown(raw);
+  const tasks = parseProjectTasks(content);
+  const target = tasks.find((t) => t.task_id === taskId);
+  if (!target) {
+    throw new Error(
+      `Task ${taskId} no longer present in ${slug} — file may have changed`,
+    );
+  }
+
+  const lines = content.split(/\r?\n/);
+  const idx = target.line_number - 1;
+  const line = lines[idx];
+  if (line === undefined) {
+    throw new Error(
+      `Line ${target.line_number} out of bounds in ${slug} body`,
+    );
+  }
+  const updated = line.replace(
+    /^(\s*[-*+]\s+\[)( |x|X)(\]\s+)/,
+    (_m, pre: string, _state: string, post: string) =>
+      `${pre}${done ? "x" : " "}${post}`,
+  );
+  if (updated === line) {
+    // No regex match — unlikely since parseProjectTasks already matched, but
+    // guard so we don't write an unchanged file and bump mtime for nothing.
+    return { task_id: target.task_id, done: target.done, line_number: target.line_number };
+  }
+  lines[idx] = updated;
+
+  const newContent = lines.join("\n");
+  await writeFileAtomic(path, serializeMarkdown(data, newContent));
+
+  return { task_id: target.task_id, done, line_number: target.line_number };
 }

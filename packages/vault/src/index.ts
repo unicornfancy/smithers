@@ -43,7 +43,7 @@ import {
 } from "./projects";
 import { readVaultStatus } from "./status";
 import { readStyleGuide, readWorkingWith } from "./style-guide";
-import { parseProjectTasks, splitTasks } from "./tasks";
+import { parseProjectTasks, splitTasks, toggleProjectTask } from "./tasks";
 import { watchVault, type VaultEventHandler } from "./watcher";
 
 export * from "./types";
@@ -55,7 +55,7 @@ export * from "./slug";
 export * from "./watcher";
 export * from "./status";
 export type { ProjectDetail, SiblingFile } from "./project-detail";
-export type { ProjectTask } from "./tasks";
+export type { ProjectTask, ToggleProjectTaskResult } from "./tasks";
 export type { CreateProjectInput, CreateProjectResult } from "./projects";
 export {
   applyDailySectionEdit,
@@ -78,6 +78,7 @@ export {
   readVaultStatus,
   readWorkingWith,
   splitTasks,
+  toggleProjectTask,
   upsertDailySection,
   ensureDraftId,
   ensureProjectId,
@@ -109,6 +110,11 @@ export interface Vault {
   listAgendas: () => ReturnType<typeof listAgendas>;
   readStyleGuide: () => ReturnType<typeof readStyleGuide>;
   readWorkingWith: () => ReturnType<typeof readWorkingWith>;
+  toggleProjectTask: (
+    slug: string,
+    taskId: string,
+    done: boolean,
+  ) => ReturnType<typeof toggleProjectTask>;
   watch: (handler: VaultEventHandler) => ReturnType<typeof watchVault>;
 }
 
@@ -134,6 +140,8 @@ export function createVault(options: VaultOptions): Vault {
     listAgendas: () => listAgendas(resolved),
     readStyleGuide: () => readStyleGuide(resolved),
     readWorkingWith: () => readWorkingWith(resolved),
+    toggleProjectTask: (slug, taskId, done) =>
+      toggleProjectTask(resolved, slug, taskId, done),
     watch: (handler) => watchVault(resolved, handler),
   };
 }

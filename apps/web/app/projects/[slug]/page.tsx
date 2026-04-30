@@ -219,7 +219,11 @@ export default async function ProjectWorkbenchPage({
         <ProjectBriefPanel project={detail} body={detail.body} />
 
         <div className="grid gap-3 lg:grid-cols-2">
-          <OpenItemsPanel open={open} done={done} />
+          <OpenItemsPanel
+            projectSlug={detail.slug}
+            open={open}
+            done={done}
+          />
           <DraftsForProjectPanel
             drafts={projectDrafts}
             projectName={detail.name}

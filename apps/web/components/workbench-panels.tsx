@@ -3,7 +3,6 @@ import {
   Archive,
   CalendarDays,
   CheckCircle2,
-  Circle,
   Clock,
   FileEdit,
   FolderOpen,
@@ -30,6 +29,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Markdown } from "@/components/markdown";
+import { ProjectTaskCheckbox } from "@/components/project-task-checkbox";
 
 // -- Section primitive ----------------------------------------------------
 
@@ -126,9 +126,11 @@ export function ProjectBriefPanel({
 // -- Open items (parsed checkboxes) ---------------------------------------
 
 export function OpenItemsPanel({
+  projectSlug,
   open,
   done,
 }: {
+  projectSlug: string;
   open: ProjectTask[];
   done: ProjectTask[];
 }) {
@@ -154,7 +156,12 @@ export function OpenItemsPanel({
               key={t.task_id}
               className="flex items-start gap-2 py-1.5 first:pt-0"
             >
-              <Circle className="text-muted-foreground mt-0.5 size-3.5 shrink-0" />
+              <ProjectTaskCheckbox
+                projectSlug={projectSlug}
+                taskId={t.task_id}
+                done={false}
+                label={t.text}
+              />
               <div className="flex min-w-0 flex-col gap-0.5">
                 <p className="text-sm leading-snug">{t.text}</p>
                 {t.section ? (
@@ -170,7 +177,12 @@ export function OpenItemsPanel({
               key={t.task_id}
               className="text-muted-foreground flex items-start gap-2 py-1.5 last:pb-0"
             >
-              <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
+              <ProjectTaskCheckbox
+                projectSlug={projectSlug}
+                taskId={t.task_id}
+                done={true}
+                label={t.text}
+              />
               <p className="text-sm leading-snug line-through">{t.text}</p>
             </li>
           ))}
