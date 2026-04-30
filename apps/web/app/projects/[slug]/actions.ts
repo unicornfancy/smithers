@@ -67,3 +67,21 @@ export async function editProjectTaskTextAction(
 
   revalidatePath(`/projects/${slug}`);
 }
+
+/**
+ * Remove a single task line from the project body. No confirmation here —
+ * the click is intentional and the file lives in git/Obsidian, so recovery
+ * is cheap if it was a mistake.
+ */
+export async function deleteProjectTaskAction(
+  slug: string,
+  taskId: string,
+): Promise<void> {
+  if (!slug) throw new Error("slug is required");
+  if (!taskId) throw new Error("taskId is required");
+
+  const vault = await getVault();
+  await vault.deleteProjectTask(slug, taskId);
+
+  revalidatePath(`/projects/${slug}`);
+}

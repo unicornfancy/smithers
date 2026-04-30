@@ -325,3 +325,66 @@ export async function editProjectTaskText(
     line_number: updatedTask.line_number,
   };
 }
+
+export interface DeleteProjectTaskResult {
+  task_id: string;
+  text: string;
+  line_number: number;
+}
+
+/**
+ * Remove a single task line from a project body. Splices just the matched
+ * line — section headings, surrounding blanks, and other content stay put
+ * (heuristic clean-up of empty sections is brittle and the user can tidy
+ * up by hand if needed).
+ *
+ * Returns the deleted task's metadata so callers can offer an undo / log
+ * entry without having to hold the data themselves.
+ */
+export async function deleteProjectTask(
+  opts: ResolvedVaultOptions,
+  slug: string,
+  taskId: string,
+): Promise<DeleteProjectTaskResult> {
+  const project = await readProject(opts, slug);
+  if (!project) {
+    throw new Error(`Project "${slug}" not found`);
+  }
+  if (project.source.kind === "hive-mind") {
+    throw new Error(
+      `Project "${slug}" lives in Hive Mind; task edits go through the shared-notes flow`,
+    );
+  }
+  const path = project.source.absolute_path;
+  const raw = await tryReadFile(path);
+  if (raw === null) {
+    throw new Error(`Project file disappeared at ${path}`);
+  }
+
+  const { data, content } = parseMarkdown(raw);
+  const tasks = parseProjectTasks(content);
+  const target = tasks.find((t) => t.task_id === taskId);
+  if (!target) {
+    throw new Error(
+      `Task ${taskId} no longer present in ${slug} — file may have changed`,
+    );
+  }
+
+  const lines = content.split(/\r?\n/);
+  const idx = target.line_number - 1;
+  if (idx < 0 || idx >= lines.length) {
+    throw new Error(
+      `Line ${target.line_number} out of bounds in ${slug} body`,
+    );
+  }
+  lines.splice(idx, 1);
+
+  const newContent = lines.join("\n");
+  await writeFileAtomic(path, serializeMarkdown(data, newContent));
+
+  return {
+    task_id: target.task_id,
+    text: target.text,
+    line_number: target.line_number,
+  };
+}

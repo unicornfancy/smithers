@@ -45,6 +45,7 @@ import { readVaultStatus } from "./status";
 import { readStyleGuide, readWorkingWith } from "./style-guide";
 import {
   appendProjectTask,
+  deleteProjectTask,
   editProjectTaskText,
   parseProjectTasks,
   splitTasks,
@@ -63,6 +64,7 @@ export * from "./status";
 export type { ProjectDetail, SiblingFile } from "./project-detail";
 export type {
   AppendProjectTaskResult,
+  DeleteProjectTaskResult,
   EditProjectTaskTextResult,
   ProjectTask,
   ToggleProjectTaskResult,
@@ -72,6 +74,7 @@ export {
   appendProjectTask,
   applyDailySectionEdit,
   createProject,
+  deleteProjectTask,
   editProjectTaskText,
   dailyNotePath,
   filterFollowUpsForProject,
@@ -137,6 +140,10 @@ export interface Vault {
     taskId: string,
     newText: string,
   ) => ReturnType<typeof editProjectTaskText>;
+  deleteProjectTask: (
+    slug: string,
+    taskId: string,
+  ) => ReturnType<typeof deleteProjectTask>;
   watch: (handler: VaultEventHandler) => ReturnType<typeof watchVault>;
 }
 
@@ -168,6 +175,8 @@ export function createVault(options: VaultOptions): Vault {
       appendProjectTask(resolved, slug, text),
     editProjectTaskText: (slug, taskId, newText) =>
       editProjectTaskText(resolved, slug, taskId, newText),
+    deleteProjectTask: (slug, taskId) =>
+      deleteProjectTask(resolved, slug, taskId),
     watch: (handler) => watchVault(resolved, handler),
   };
 }

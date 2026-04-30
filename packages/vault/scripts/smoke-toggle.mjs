@@ -9,6 +9,7 @@ import { join } from "node:path";
 import {
   appendProjectTask,
   createVault,
+  deleteProjectTask,
   editProjectTaskText,
   parseProjectTasks,
   toggleProjectTask,
@@ -209,5 +210,46 @@ try {
 if (!editRejected) throw new Error("expected empty edit text to be rejected");
 
 console.log("[edit] OK — preserves indent + state, no-op short-circuits, whitespace rejected");
+
+// --- Delete: remove a task, leave siblings + headings intact ---
+const beforeDelete = readFileSync(indentedPath, "utf8");
+const indentedTasks2 = parseProjectTasks(
+  beforeDelete.split(/---\n/).slice(2).join("---\n"),
+);
+const toDelete = indentedTasks2.find((t) => t.text === "Top-level task");
+if (!toDelete) throw new Error("could not find target for delete");
+
+const d1 = await deleteProjectTask(opts, "indented-project", toDelete.task_id);
+console.log(`[delete] removed "${d1.text}" from line ${d1.line_number}`);
+const afterDelete = readFileSync(indentedPath, "utf8");
+if (afterDelete.includes("- [ ] Top-level task")) {
+  throw new Error("expected deleted line to be gone:\n" + afterDelete);
+}
+// Sibling tasks still present
+if (
+  !afterDelete.includes("Renamed nested task") ||
+  !afterDelete.includes("- [ ] Another top-level")
+) {
+  throw new Error("siblings should be intact after delete");
+}
+// Heading still present
+if (!afterDelete.includes("## Open items")) {
+  throw new Error("section heading should be intact");
+}
+// Frontmatter still present
+if (!afterDelete.startsWith("---\nslug: indented-project")) {
+  throw new Error("frontmatter should be intact");
+}
+
+// --- Delete: stale id should error cleanly ---
+let deleteRejected = false;
+try {
+  await deleteProjectTask(opts, "indented-project", toDelete.task_id);
+} catch {
+  deleteRejected = true;
+}
+if (!deleteRejected) throw new Error("expected stale-id delete to throw");
+
+console.log("[delete] OK — line removed, siblings + headings + frontmatter intact, stale id rejected");
 console.log(`[smoke] cleaning up ${root}`);
 rmSync(root, { recursive: true, force: true });

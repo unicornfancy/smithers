@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Markdown } from "@/components/markdown";
 import { AddProjectTaskInput } from "@/components/add-project-task-input";
+import { DeleteProjectTaskButton } from "@/components/delete-project-task-button";
 import { EditableTaskText } from "@/components/editable-task-text";
 import { ProjectTaskCheckbox } from "@/components/project-task-checkbox";
 
@@ -156,7 +157,7 @@ export function OpenItemsPanel({
           {open.map((t) => (
             <li
               key={t.task_id}
-              className="flex items-start gap-2 py-1.5 first:pt-0"
+              className="group flex items-start gap-2 py-1.5 first:pt-0"
             >
               <ProjectTaskCheckbox
                 projectSlug={projectSlug}
@@ -176,12 +177,17 @@ export function OpenItemsPanel({
                   </p>
                 ) : null}
               </div>
+              <DeleteProjectTaskButton
+                projectSlug={projectSlug}
+                taskId={t.task_id}
+                label={t.text}
+              />
             </li>
           ))}
           {done.slice(0, 4).map((t) => (
             <li
               key={t.task_id}
-              className="text-muted-foreground flex items-start gap-2 py-1.5 last:pb-0"
+              className="text-muted-foreground group flex items-start gap-2 py-1.5 last:pb-0"
             >
               <ProjectTaskCheckbox
                 projectSlug={projectSlug}
@@ -197,6 +203,11 @@ export function OpenItemsPanel({
                   dim
                 />
               </div>
+              <DeleteProjectTaskButton
+                projectSlug={projectSlug}
+                taskId={t.task_id}
+                label={t.text}
+              />
             </li>
           ))}
           {done.length > 4 ? (
