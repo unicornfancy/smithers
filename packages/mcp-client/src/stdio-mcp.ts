@@ -57,11 +57,16 @@ export class StdioMcpClient {
    * payload. context-a8c (and most MCPs) wrap responses as a
    * `content[0].text` JSON string; we unwrap and parse it here so
    * callers work with typed objects.
+   *
+   * Throws when the response has no text content. Returns null when
+   * text is present but isn't JSON — that's a common shape for
+   * upstream errors like "Project not found", and the caller usually
+   * wants to degrade to an empty result rather than crash.
    */
   async callJsonTool<T>(
     name: string,
     args: Record<string, unknown>,
-  ): Promise<T> {
+  ): Promise<T | null> {
     const client = await this.getClient();
     const result = await client.callTool({ name, arguments: args });
     const content = (result.content ?? []) as Array<{ type: string; text?: string }>;
@@ -74,10 +79,8 @@ export class StdioMcpClient {
     try {
       return JSON.parse(text) as T;
     } catch {
-      // Some tools return plain text; let the caller decide.
-      throw new Error(
-        `MCP tool "${name}" on ${this.opts.label} returned non-JSON text: ${text.slice(0, 200)}`,
-      );
+      // Plain-text responses (usually upstream errors): caller decides.
+      return null;
     }
   }
 

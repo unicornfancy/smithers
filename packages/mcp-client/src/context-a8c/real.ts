@@ -2,14 +2,15 @@
  * Real ContextA8C transport — talks to the user-installed
  * `@automattic/mcp-context-a8c` MCP server via stdio.
  *
- * Coverage today (intentional v1 scope):
+ * Coverage today:
  * - listPings → Linear inbox (assignments, comments, mentions). Linear is
  *   the highest-signal "someone needs you" feed in this MCP and maps
  *   cleanly to the Ping shape. Slack DMs / mentions land in a follow-up.
- * - listProjectActivity → not yet wired against the real MCP. Falls back
- *   to a degraded (empty) response so project workbench panels render
- *   without crashing; the caller can layer mock or future real wiring on
- *   top.
+ * - listProjectActivity → fans out across linear/issues, github/commits,
+ *   github/pull-requests, and slack/messages based on which refs the
+ *   project's frontmatter declares. Each source is independently
+ *   isolated + cached via runIsolated so a flaky one doesn't take the
+ *   whole feed down.
  */
 
 import type { ResolvedMcpClientOptions } from "../config";
@@ -19,6 +20,7 @@ import { runIsolated } from "../isolation";
 import { StdioMcpClient } from "../stdio-mcp";
 import type { ActivityEvent, Ping, SourceResult } from "../types";
 import type {
+  ActivitySourceFilter,
   ContextA8CClient,
   PingsQuery,
   ProjectActivityQuery,
@@ -55,6 +57,83 @@ interface LinearInboxResult {
 }
 
 const PING_TTL = { freshMs: 5 * 60 * 1000 } as const;
+const ACTIVITY_TTL = { freshMs: 5 * 60 * 1000 } as const;
+
+// --- response shapes from each provider's tools ---
+//
+// Defined narrowly: only the fields we actually map. We don't try to
+// model the full upstream types — the MCP responses are already JSON
+// strings inside content blocks, so misshapen fields just become
+// undefined and the mapper degrades.
+
+interface LinearIssue {
+  identifier?: string;
+  title?: string;
+  url?: string;
+  status?: string;
+  status_type?: string;
+  priority_label?: string;
+  project?: string;
+  team?: string;
+  updated_at?: string;
+  due_date?: string | null;
+  assignee?: { name?: string; display_name?: string; email?: string } | null;
+}
+interface LinearIssuesResult {
+  count?: number;
+  issues?: LinearIssue[];
+}
+
+interface GithubCommit {
+  sha?: string;
+  html_url?: string;
+  commit?: {
+    message?: string;
+    author?: { name?: string; email?: string; date?: string };
+  };
+  author?: { login?: string; profile_url?: string; avatar_url?: string };
+}
+interface GithubCommitsResult {
+  result?: GithubCommit[];
+}
+
+interface GithubPull {
+  number?: number;
+  title?: string;
+  html_url?: string;
+  state?: string;
+  merged_at?: string | null;
+  closed_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  user?: { login?: string; avatar_url?: string };
+}
+interface GithubPullsResult {
+  result?: GithubPull[];
+}
+
+interface SlackMessage {
+  ts?: string;
+  date?: string;
+  user?: string;
+  username?: string;
+  text?: string;
+  permalink?: string;
+  subtype?: string;
+}
+interface SlackMessagesResult {
+  channel?: string;
+  messages?: SlackMessage[];
+}
+
+interface SlackChannel {
+  id?: string;
+  name?: string;
+  is_private?: boolean;
+}
+interface SlackChannelsResult {
+  channels?: SlackChannel[];
+}
 
 export class RealContextA8CTransport implements ContextA8CClient {
   private readonly mcp: StdioMcpClient;
@@ -90,7 +169,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
             },
           );
           return mapLinearInboxToPings(
-            result.notifications ?? [],
+            asArray(result?.notifications),
             this.opts.internalEmailDomains,
           );
         },
@@ -99,22 +178,295 @@ export class RealContextA8CTransport implements ContextA8CClient {
   }
 
   async listProjectActivity(
-    _query: ProjectActivityQuery,
+    query: ProjectActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>> {
-    // Per-project activity feed via the real MCP isn't wired yet — needs
-    // careful per-source mapping (Slack channel history, Linear project
-    // issues, GitHub commits) that's bigger than today's slice. Surface
-    // an empty success so the workbench renders without a degraded
-    // banner; the per-source "configured" pills already explain that
-    // those slots are pending.
+    const limit = query.limit ?? 20;
+    const allow = (s: ActivitySourceFilter) =>
+      !query.sources || query.sources.length === 0 || query.sources.includes(s);
+
+    const tasks: Array<Promise<SourceResult<ActivityEvent[]>>> = [];
+    if (allow("linear") && hasLinearRef(query.refs)) {
+      tasks.push(this.fetchLinearIssues(query));
+    }
+    if (allow("github") && query.refs.github_repo) {
+      tasks.push(this.fetchGithubCommits(query));
+      tasks.push(this.fetchGithubPullRequests(query));
+    }
+    if (allow("slack") && query.refs.primary_slack_channel) {
+      tasks.push(this.fetchSlackMessages(query));
+    }
+
+    if (tasks.length === 0) {
+      return {
+        ok: true,
+        data: [],
+        from: "fresh",
+        fetched_at: new Date().toISOString(),
+      };
+    }
+
+    // Each per-source result already went through runIsolated, so a
+    // failure on one doesn't take the others down. Merge whatever
+    // succeeded; if all failed, surface a degraded result.
+    const results = await Promise.all(tasks);
+    const events: ActivityEvent[] = [];
+    let anyOk = false;
+    let firstError: SourceResult<ActivityEvent[]> | null = null;
+    for (const r of results) {
+      if (r.ok) {
+        anyOk = true;
+        events.push(...r.data);
+      } else if (!firstError) {
+        firstError = r;
+      }
+    }
+
+    if (!anyOk && firstError && !firstError.ok) {
+      return firstError;
+    }
+
+    events.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     return {
       ok: true,
-      data: [],
+      data: events.slice(0, limit),
       from: "fresh",
       fetched_at: new Date().toISOString(),
     };
   }
+
+  // --- per-source fetchers (each isolated + cached independently) ---
+
+  private async fetchLinearIssues(
+    query: ProjectActivityQuery,
+  ): Promise<SourceResult<ActivityEvent[]>> {
+    const projectKey =
+      query.refs.linear_project_id ??
+      query.refs.linear_project_slug ??
+      query.project_name;
+    return runIsolated(
+      { cache: this.cache, health: this.health },
+      {
+        source: "context_a8c.linear",
+        cacheKey: `real:context_a8c:project_activity:linear:${query.project_slug}`,
+        ttl: ACTIVITY_TTL,
+        fetcher: async () => {
+          const result = await this.mcp.callJsonTool<LinearIssuesResult>(
+            "context-a8c-execute-tool",
+            {
+              provider: "linear",
+              tool: "issues",
+              params: {
+                project: projectKey,
+                state_name_not_in: ["Done", "Canceled", "Duplicate"],
+                limit: 20,
+              },
+            },
+          );
+          return mapLinearIssuesToActivity(
+            asArray(result?.issues),
+            query.project_slug,
+            this.opts.internalEmailDomains,
+          );
+        },
+      },
+    );
+  }
+
+  private async fetchGithubCommits(
+    query: ProjectActivityQuery,
+  ): Promise<SourceResult<ActivityEvent[]>> {
+    const repo = query.refs.github_repo!;
+    const [owner, name] = repo.split("/");
+    if (!owner || !name) {
+      return failedResult(
+        "context_a8c.github",
+        "invalid",
+        `Bad github_repo "${repo}" — expected owner/name`,
+      );
+    }
+    return runIsolated(
+      { cache: this.cache, health: this.health },
+      {
+        source: "context_a8c.github",
+        cacheKey: `real:context_a8c:project_activity:github_commits:${repo}`,
+        ttl: ACTIVITY_TTL,
+        fetcher: async () => {
+          const result = await this.mcp.callJsonTool<GithubCommitsResult>(
+            "context-a8c-execute-tool",
+            {
+              provider: "github",
+              tool: "commits",
+              params: { owner, repo: name, perPage: 10 },
+            },
+          );
+          return mapGithubCommitsToActivity(
+            asArray(result?.result),
+            repo,
+            query.project_slug,
+            this.opts.internalEmailDomains,
+          );
+        },
+      },
+    );
+  }
+
+  private async fetchGithubPullRequests(
+    query: ProjectActivityQuery,
+  ): Promise<SourceResult<ActivityEvent[]>> {
+    const repo = query.refs.github_repo!;
+    const [owner, name] = repo.split("/");
+    if (!owner || !name) {
+      return failedResult(
+        "context_a8c.github",
+        "invalid",
+        `Bad github_repo "${repo}" — expected owner/name`,
+      );
+    }
+    return runIsolated(
+      { cache: this.cache, health: this.health },
+      {
+        source: "context_a8c.github",
+        cacheKey: `real:context_a8c:project_activity:github_prs:${repo}`,
+        ttl: ACTIVITY_TTL,
+        fetcher: async () => {
+          const result = await this.mcp.callJsonTool<GithubPullsResult>(
+            "context-a8c-execute-tool",
+            {
+              provider: "github",
+              tool: "pull-requests",
+              params: {
+                owner,
+                repo: name,
+                state: "all",
+                sort: "updated",
+                direction: "desc",
+                perPage: 5,
+              },
+            },
+          );
+          return mapGithubPullsToActivity(
+            asArray(result?.result),
+            repo,
+            query.project_slug,
+            this.opts.internalEmailDomains,
+          );
+        },
+      },
+    );
+  }
+
+  private async fetchSlackMessages(
+    query: ProjectActivityQuery,
+  ): Promise<SourceResult<ActivityEvent[]>> {
+    const channelName = query.refs.primary_slack_channel!;
+    return runIsolated(
+      { cache: this.cache, health: this.health },
+      {
+        source: "context_a8c.slack",
+        cacheKey: `real:context_a8c:project_activity:slack:${channelName}`,
+        ttl: ACTIVITY_TTL,
+        fetcher: async () => {
+          // Slack `messages` needs a channel ID, not a name. Resolve
+          // through `channels` (the SwrCache de-dupes the lookup so we
+          // don't refetch the channel list per project).
+          const channelId = await this.resolveSlackChannelId(channelName);
+          if (!channelId) return [];
+
+          const result = await this.mcp.callJsonTool<SlackMessagesResult>(
+            "context-a8c-execute-tool",
+            {
+              provider: "slack",
+              tool: "messages",
+              params: { channel: channelId, limit: 15 },
+            },
+          );
+          return mapSlackMessagesToActivity(
+            asArray(result?.messages),
+            channelName,
+            channelId,
+            query.project_slug,
+            this.opts.internalEmailDomains,
+          );
+        },
+      },
+    );
+  }
+
+  /**
+   * Resolve a Slack channel name to its ID. Cached for an hour because
+   * the channel list rarely changes and pulling the whole workspace
+   * (1000+ channels paginated) is expensive.
+   */
+  private async resolveSlackChannelId(name: string): Promise<string | null> {
+    const cached = this.slackChannelMap;
+    if (cached && Date.now() < this.slackChannelMapExpiresAt) {
+      return cached.get(name) ?? null;
+    }
+    try {
+      const result = await this.mcp.callJsonTool<SlackChannelsResult>(
+        "context-a8c-execute-tool",
+        {
+          provider: "slack",
+          tool: "channels",
+          params: { limit: 1000 },
+        },
+      );
+      const map = new Map<string, string>();
+      for (const c of asArray<SlackChannel>(result?.channels)) {
+        if (c.name && c.id) {
+          map.set(c.name, c.id);
+          // Frontmatter channels often carry a leading "#"; index both
+          // forms so resolveSlackChannelId(name) works either way.
+          map.set(`#${c.name}`, c.id);
+        }
+      }
+      this.slackChannelMap = map;
+      this.slackChannelMapExpiresAt = Date.now() + 60 * 60 * 1000;
+      return map.get(name) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private slackChannelMap: Map<string, string> | null = null;
+  private slackChannelMapExpiresAt = 0;
 }
+
+function hasLinearRef(refs: ProjectActivityQuery["refs"]): boolean {
+  return Boolean(refs.linear_project_id || refs.linear_project_slug);
+}
+
+/**
+ * Build a synthetic SourceResult for the rare case where we can detect a
+ * malformed input (e.g. a github_repo that doesn't split into owner/name)
+ * before ever talking to the MCP. Most failures bubble up through
+ * runIsolated which wraps the actual fetcher exceptions.
+ */
+function failedResult(
+  source: ContextA8CSourceId,
+  code: string,
+  message: string,
+): SourceResult<ActivityEvent[]> {
+  return {
+    ok: false,
+    error: {
+      code,
+      message,
+      source,
+      retried: false,
+      at: new Date().toISOString(),
+    },
+    cachedData: undefined,
+  };
+}
+
+type ContextA8CSourceId =
+  | "context_a8c.linear"
+  | "context_a8c.github"
+  | "context_a8c.slack"
+  | "context_a8c.zendesk"
+  | "context_a8c.p2"
+  | "context_a8c.wpcom";
 
 /**
  * Translate a Linear inbox notification into a Ping. Inbox items don't
@@ -213,4 +565,237 @@ function isExternalEmail(
   // Linear notifications come from teammates ~always, so default
   // unknown-domain to internal=false (skipping the partner-tint).
   return !internalDomains.some((d) => domain === d.toLowerCase());
+}
+
+// --- per-source mappers (exported for unit-testability) ---
+
+export function mapLinearIssuesToActivity(
+  issues: LinearIssue[],
+  projectSlug: string,
+  internalDomains: readonly string[],
+): ActivityEvent[] {
+  return issues
+    .map((i) => mapLinearIssue(i, projectSlug, internalDomains))
+    .filter((e): e is ActivityEvent => e !== null);
+}
+
+function mapLinearIssue(
+  issue: LinearIssue,
+  projectSlug: string,
+  internalDomains: readonly string[],
+): ActivityEvent | null {
+  if (!issue.identifier || !issue.updated_at) return null;
+  const kind: ActivityEvent["kind"] =
+    issue.status_type === "completed"
+      ? "linear-issue-completed"
+      : issue.status_type === "started" || issue.status_type === "unstarted"
+        ? "linear-issue-updated"
+        : "linear-issue-created";
+
+  const assignee = issue.assignee;
+  return {
+    id: `linear:${issue.identifier}`,
+    source: "linear",
+    kind,
+    timestamp: issue.updated_at,
+    actor: assignee
+      ? {
+          name: assignee.display_name ?? assignee.name ?? "Linear",
+          handle: assignee.email,
+          is_external: isExternalEmail(assignee.email, internalDomains),
+        }
+      : undefined,
+    title: issue.title ?? issue.identifier,
+    excerpt: composeLinearExcerpt(issue),
+    url: issue.url,
+    project_match: {
+      project_slug: projectSlug,
+      matched_by: "linear_project",
+    },
+    is_mock: false,
+  };
+}
+
+function composeLinearExcerpt(issue: LinearIssue): string {
+  const parts: string[] = [];
+  if (issue.identifier) parts.push(issue.identifier);
+  if (issue.status) parts.push(issue.status);
+  if (issue.priority_label && issue.priority_label !== "No priority") {
+    parts.push(issue.priority_label);
+  }
+  return parts.join(" · ");
+}
+
+export function mapGithubCommitsToActivity(
+  commits: GithubCommit[],
+  repo: string,
+  projectSlug: string,
+  internalDomains: readonly string[],
+): ActivityEvent[] {
+  return commits
+    .map((c) => mapGithubCommit(c, repo, projectSlug, internalDomains))
+    .filter((e): e is ActivityEvent => e !== null);
+}
+
+function mapGithubCommit(
+  commit: GithubCommit,
+  repo: string,
+  projectSlug: string,
+  internalDomains: readonly string[],
+): ActivityEvent | null {
+  const sha = commit.sha;
+  const date = commit.commit?.author?.date;
+  if (!sha || !date) return null;
+  const message = commit.commit?.message ?? "";
+  const firstLine = message.split("\n", 1)[0]!;
+  return {
+    id: `github:${repo}:commit:${sha}`,
+    source: "github",
+    kind: "commit",
+    timestamp: date,
+    actor: {
+      name:
+        commit.author?.login ??
+        commit.commit?.author?.name ??
+        "github",
+      handle: commit.author?.login,
+      is_external: isExternalEmail(
+        commit.commit?.author?.email,
+        internalDomains,
+      ),
+      avatar_url: commit.author?.avatar_url,
+    },
+    title: firstLine,
+    excerpt: `${repo} · ${sha.slice(0, 7)}`,
+    url: commit.html_url,
+    project_match: { project_slug: projectSlug, matched_by: "github_repo" },
+    is_mock: false,
+  };
+}
+
+export function mapGithubPullsToActivity(
+  pulls: GithubPull[],
+  repo: string,
+  projectSlug: string,
+  internalDomains: readonly string[],
+): ActivityEvent[] {
+  return pulls
+    .map((p) => mapGithubPull(p, repo, projectSlug, internalDomains))
+    .filter((e): e is ActivityEvent => e !== null);
+}
+
+function mapGithubPull(
+  pull: GithubPull,
+  repo: string,
+  projectSlug: string,
+  internalDomains: readonly string[],
+): ActivityEvent | null {
+  const num = pull.number;
+  const title = pull.title;
+  if (!num || !title) return null;
+  const merged = !!pull.merged_at;
+  const timestamp =
+    pull.merged_at ?? pull.closed_at ?? pull.updated_at ?? pull.created_at;
+  if (!timestamp) return null;
+  return {
+    id: `github:${repo}:pr:${num}`,
+    source: "github",
+    kind: merged ? "pr-merged" : "pr-opened",
+    timestamp,
+    actor: pull.user
+      ? {
+          name: pull.user.login ?? "github",
+          handle: pull.user.login,
+          // GitHub PR authors don't expose email here; default to internal.
+          is_external: false,
+          avatar_url: pull.user.avatar_url,
+        }
+      : undefined,
+    title,
+    excerpt: `${repo} · #${num}${merged ? " · merged" : ` · ${pull.state ?? "open"}`}`,
+    url: pull.html_url,
+    project_match: { project_slug: projectSlug, matched_by: "github_repo" },
+    is_mock: false,
+  };
+}
+
+export function mapSlackMessagesToActivity(
+  messages: SlackMessage[],
+  channelName: string,
+  channelId: string,
+  projectSlug: string,
+  _internalDomains: readonly string[],
+): ActivityEvent[] {
+  return messages
+    .map((m) =>
+      mapSlackMessage(m, channelName, channelId, projectSlug),
+    )
+    .filter((e): e is ActivityEvent => e !== null);
+}
+
+function mapSlackMessage(
+  msg: SlackMessage,
+  channelName: string,
+  channelId: string,
+  projectSlug: string,
+): ActivityEvent | null {
+  // Skip auto-generated subtype messages — joins, leaves, archives, etc.
+  // — they're noise in a project activity feed.
+  if (msg.subtype && SLACK_NOISE_SUBTYPES.has(msg.subtype)) return null;
+  if (!msg.ts || !msg.text) return null;
+  const tsSec = Number(msg.ts.split(".")[0]);
+  if (!Number.isFinite(tsSec)) return null;
+  const iso = new Date(tsSec * 1000).toISOString();
+  return {
+    id: `slack:${channelId}:${msg.ts}`,
+    source: "slack",
+    kind: "message",
+    timestamp: iso,
+    actor: msg.username
+      ? {
+          name: msg.username,
+          handle: msg.user,
+          // Without email visibility we can't tell internal/external;
+          // workspace-internal is the safe default for a8c slack.
+          is_external: false,
+        }
+      : undefined,
+    title: truncateText(msg.text, 100),
+    excerpt: `#${channelName}`,
+    url: msg.permalink,
+    project_match: {
+      project_slug: projectSlug,
+      matched_by: "slack_channel",
+    },
+    is_mock: false,
+  };
+}
+
+const SLACK_NOISE_SUBTYPES = new Set([
+  "channel_join",
+  "channel_leave",
+  "channel_archive",
+  "channel_unarchive",
+  "channel_topic",
+  "channel_purpose",
+  "channel_name",
+  "bot_add",
+  "bot_remove",
+  "pinned_item",
+  "unpinned_item",
+]);
+
+function truncateText(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1).trimEnd() + "…";
+}
+
+/**
+ * Defensive array unwrap. The upstream MCP responses occasionally have
+ * `result` or `notifications` set to something that isn't an array
+ * (e.g. an error object) — this guards every mapper against the
+ * "x.map is not a function" class of bug.
+ */
+function asArray<T>(maybe: unknown): T[] {
+  return Array.isArray(maybe) ? (maybe as T[]) : [];
 }
