@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  appendProjectTask,
   createVault,
   parseProjectTasks,
   toggleProjectTask,
@@ -76,5 +77,56 @@ if (!after2.includes("- [ ] Already done")) {
 }
 
 console.log("[toggle] OK — both directions wrote correctly");
-console.log(`[toggle] cleaning up ${root}`);
+
+// --- Append: populated body ---
+const a1 = await appendProjectTask(opts, "smoke-project", "Third task added in-app");
+console.log(`[append] inserted "${a1.text}" at line ${a1.line_number} (id=${a1.task_id.slice(0, 8)})`);
+const after3 = readFileSync(filePath, "utf8");
+if (!after3.includes("- [ ] Third task added in-app")) {
+  throw new Error("expected appended task in file:\n" + after3);
+}
+// Should land after the last existing task line ("Already done"), before the
+// "## Notes" heading. Check ordering by line index.
+const linesAfter3 = after3.split(/\r?\n/);
+const idxAlready = linesAfter3.findIndex((l) => l.includes("Already done"));
+const idxNew = linesAfter3.findIndex((l) => l.includes("Third task added in-app"));
+const idxNotes = linesAfter3.findIndex((l) => l.startsWith("## Notes"));
+if (!(idxAlready < idxNew && idxNew < idxNotes)) {
+  throw new Error(`append landed in wrong place: already=${idxAlready} new=${idxNew} notes=${idxNotes}\n${after3}`);
+}
+
+// --- Append: empty-body project (no tasks at all) ---
+const emptyPath = join(projectsDir, "Empty Project.md");
+writeFileSync(
+  emptyPath,
+  `---
+slug: empty-project
+name: Empty Project
+kind: personal
+status: active
+---
+
+# Empty Project
+
+Just prose, no checkboxes yet.
+`,
+);
+const a2 = await appendProjectTask(opts, "empty-project", "First-ever task");
+console.log(`[append] empty-body inserted "${a2.text}" at line ${a2.line_number}`);
+const afterEmpty = readFileSync(emptyPath, "utf8");
+if (!afterEmpty.includes("- [ ] First-ever task")) {
+  throw new Error("expected appended task in empty body:\n" + afterEmpty);
+}
+
+// --- Empty / whitespace text should be rejected ---
+let rejected = false;
+try {
+  await appendProjectTask(opts, "smoke-project", "   ");
+} catch {
+  rejected = true;
+}
+if (!rejected) throw new Error("expected empty task text to be rejected");
+
+console.log("[append] OK — populated, empty-body, and whitespace-rejection paths all pass");
+console.log(`[smoke] cleaning up ${root}`);
 rmSync(root, { recursive: true, force: true });

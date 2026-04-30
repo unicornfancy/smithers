@@ -29,6 +29,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Markdown } from "@/components/markdown";
+import { AddProjectTaskInput } from "@/components/add-project-task-input";
 import { ProjectTaskCheckbox } from "@/components/project-task-checkbox";
 
 // -- Section primitive ----------------------------------------------------
@@ -143,11 +144,11 @@ export function OpenItemsPanel({
     >
       {open.length === 0 && done.length === 0 ? (
         <p className="text-muted-foreground text-sm italic">
-          No checkbox items found in the project body. Add{" "}
+          No checkbox items yet. Add one below, or write{" "}
           <code className="bg-muted rounded px-1 py-0.5 text-[11px]">
             - [ ] Task
           </code>{" "}
-          lines to track them here.
+          lines directly in the file.
         </p>
       ) : (
         <ul className="flex flex-col divide-y">
@@ -193,6 +194,7 @@ export function OpenItemsPanel({
           ) : null}
         </ul>
       )}
+      <AddProjectTaskInput projectSlug={projectSlug} />
     </Section>
   );
 }

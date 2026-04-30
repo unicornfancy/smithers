@@ -27,3 +27,22 @@ export async function toggleProjectTaskAction(
 
   revalidatePath(`/projects/${slug}`);
 }
+
+/**
+ * Append a new `- [ ] <text>` task to the project body. Mirrors the
+ * toggle action: writes the file, then revalidates the workbench so
+ * the new row appears.
+ */
+export async function addProjectTaskAction(
+  slug: string,
+  text: string,
+): Promise<void> {
+  if (!slug) throw new Error("slug is required");
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("Task text is required");
+
+  const vault = await getVault();
+  await vault.appendProjectTask(slug, trimmed);
+
+  revalidatePath(`/projects/${slug}`);
+}

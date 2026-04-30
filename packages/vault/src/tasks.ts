@@ -141,3 +141,91 @@ export async function toggleProjectTask(
 
   return { task_id: target.task_id, done, line_number: target.line_number };
 }
+
+export interface AppendProjectTaskResult {
+  task_id: string;
+  text: string;
+  line_number: number;
+}
+
+/**
+ * Append a new `- [ ] <text>` line to a project's markdown body. Inserts
+ * directly after the last existing task line so additions stay grouped
+ * with the existing checklist; if the body has no tasks yet, appends at
+ * the end with a trailing blank line.
+ *
+ * Section-aware insertion (e.g. always under `## Open items`) is left for
+ * a later slice — for now the user gets predictable "added at the bottom
+ * of the existing list" behavior, which matches how todo lists usually grow.
+ */
+export async function appendProjectTask(
+  opts: ResolvedVaultOptions,
+  slug: string,
+  text: string,
+): Promise<AppendProjectTaskResult> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error("Task text is required");
+  }
+  const project = await readProject(opts, slug);
+  if (!project) {
+    throw new Error(`Project "${slug}" not found`);
+  }
+  if (project.source.kind === "hive-mind") {
+    throw new Error(
+      `Project "${slug}" lives in Hive Mind; task edits go through the shared-notes flow`,
+    );
+  }
+  const path = project.source.absolute_path;
+  const raw = await tryReadFile(path);
+  if (raw === null) {
+    throw new Error(`Project file disappeared at ${path}`);
+  }
+
+  const { data, content } = parseMarkdown(raw);
+  const lines = content.split(/\r?\n/);
+  const newLine = `- [ ] ${trimmed}`;
+
+  let insertedLineIndex: number;
+  // Walk backwards to find the last task line; insert right after it.
+  let lastTaskIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (TASK_RE.test(lines[i]!)) {
+      lastTaskIdx = i;
+      break;
+    }
+  }
+  if (lastTaskIdx >= 0) {
+    lines.splice(lastTaskIdx + 1, 0, newLine);
+    insertedLineIndex = lastTaskIdx + 1;
+  } else {
+    // No tasks yet — drop trailing blanks so we don't grow whitespace,
+    // then append the line + a single trailing newline for cleanliness.
+    while (lines.length > 0 && lines[lines.length - 1] === "") {
+      lines.pop();
+    }
+    lines.push(newLine);
+    insertedLineIndex = lines.length - 1;
+    lines.push("");
+  }
+
+  const newContent = lines.join("\n");
+  await writeFileAtomic(path, serializeMarkdown(data, newContent));
+
+  // Look up the freshly-created task by its line number so we can return
+  // its real task_id (deterministicId depends on section + index, which we
+  // don't know without re-parsing).
+  const reparsed = parseProjectTasks(newContent);
+  const inserted = reparsed.find(
+    (t) => t.line_number === insertedLineIndex + 1,
+  );
+  if (!inserted) {
+    throw new Error("internal: failed to locate appended task after write");
+  }
+
+  return {
+    task_id: inserted.task_id,
+    text: inserted.text,
+    line_number: inserted.line_number,
+  };
+}
