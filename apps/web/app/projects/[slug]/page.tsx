@@ -66,8 +66,15 @@ export default async function ProjectWorkbenchPage({
 
   // Pull project-scoped data in parallel.
   const mcp = await getMcpClient();
-  const [allDrafts, allFollowUps, activityResult, partnerResult, stalls, agentStatus] =
-    await Promise.all([
+  const [
+    allDrafts,
+    allFollowUps,
+    activityResult,
+    partnerResult,
+    recordingsResult,
+    stalls,
+    agentStatus,
+  ] = await Promise.all([
       vault.listDrafts().catch(() => []),
       vault
         .listFollowUps()
@@ -90,6 +97,7 @@ export default async function ProjectWorkbenchPage({
       detail.partner
         ? mcp.hiveMind.getPartner({ partner_slug: detail.partner })
         : Promise.resolve(null),
+      mcp.fathom.listRecordings({ limit: 50 }),
       detectStallsForProject(vault, detail.slug, detail.name).catch(() => ({
         items: [],
         counts: {
@@ -106,6 +114,24 @@ export default async function ProjectWorkbenchPage({
     partnerResult && partnerResult.ok
       ? partnerResult.data
       : (partnerResult?.cachedData ?? null);
+
+  // Filter Fathom recordings to those whose title looks like it
+  // belongs to this project — match against project name, partner
+  // slug, or partner display name. Imperfect but cheap; the user
+  // gets to see what hit and can tweak naming if matches are off.
+  const allRecordings = recordingsResult.ok
+    ? recordingsResult.data
+    : (recordingsResult.cachedData ?? []);
+  const projectRecordings = allRecordings
+    .filter((r) =>
+      recordingMatchesProject(
+        r.title,
+        detail.name,
+        detail.partner,
+        partnerProfile?.display_name,
+      ),
+    )
+    .slice(0, 8);
 
   const projectDrafts = allDrafts.filter(
     (d) => d.project_slug === detail.slug,
@@ -186,7 +212,10 @@ export default async function ProjectWorkbenchPage({
             followUps={projectFollowUps}
             projectName={detail.name}
           />
-          <CallNotesPanel projectName={detail.name} />
+          <CallNotesPanel
+            projectName={detail.name}
+            recordings={projectRecordings}
+          />
         </div>
 
         {isPartner ? (
@@ -198,3 +227,49 @@ export default async function ProjectWorkbenchPage({
     </>
   );
 }
+
+/**
+ * Cheap title-match for routing Fathom recordings to a project. Splits
+ * each candidate string into normalized tokens and looks for any token
+ * (≥3 chars) appearing in the recording title. This catches:
+ *   - "ClimateFirst Foundation Phase 2" matching titles with
+ *     "ClimateFirst" or "Foundation" alone
+ *   - Partner slugs like "the-pocket-nyc" matching "Pocket NYC"
+ *   - The partner's display name matching its abbreviation
+ *
+ * False-positive prone for short common tokens; the ≥3 chars filter
+ * + dropping noise words keeps it usable.
+ */
+function recordingMatchesProject(
+  title: string | undefined,
+  projectName: string,
+  partnerSlug: string | undefined,
+  partnerName: string | undefined,
+): boolean {
+  if (!title) return false;
+  const haystack = title.toLowerCase();
+  const tokens = new Set<string>();
+  for (const s of [projectName, partnerSlug, partnerName]) {
+    if (!s) continue;
+    for (const t of s.toLowerCase().split(/[\s\-_/.]+/)) {
+      if (t.length >= 3 && !STOP_TOKENS.has(t)) tokens.add(t);
+    }
+  }
+  for (const t of tokens) {
+    if (haystack.includes(t)) return true;
+  }
+  return false;
+}
+
+const STOP_TOKENS = new Set([
+  "the",
+  "and",
+  "for",
+  "phase",
+  "project",
+  "foundation",
+  "inc",
+  "llc",
+  "corp",
+  "team",
+]);

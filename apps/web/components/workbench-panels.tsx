@@ -15,7 +15,10 @@ import {
   StickyNote,
 } from "lucide-react";
 
-import type { PartnerProfile } from "@smithers/mcp-client";
+import type {
+  CallRecordingRef,
+  PartnerProfile,
+} from "@smithers/mcp-client";
 import type {
   Draft,
   FollowUp,
@@ -362,21 +365,63 @@ export function PersonalNotesPanel({ notes }: { notes: SiblingFile | null }) {
 
 // -- Recent call notes (placeholder until transcription package lands) ----
 
-export function CallNotesPanel({ projectName }: { projectName: string }) {
+export function CallNotesPanel({
+  projectName,
+  recordings,
+}: {
+  projectName: string;
+  recordings: CallRecordingRef[];
+}) {
+  if (recordings.length === 0) {
+    return (
+      <Section
+        icon={<Phone className="size-4" />}
+        title="Recent calls"
+        meta="Last 30 days"
+      >
+        <p className="text-muted-foreground text-sm">
+          No recent calls matched to {projectName}. Fathom recordings whose
+          titles include the project or partner name will surface here.
+        </p>
+      </Section>
+    );
+  }
   return (
     <Section
       icon={<Phone className="size-4" />}
       title="Recent calls"
-      meta="Lands with packages/transcription"
+      count={recordings.length}
+      meta="Last 30 days · via Fathom"
     >
-      <ComingSoon>
-        Call notes attached to {projectName} will surface here as your
-        transcription provider drops them into{" "}
-        <code className="bg-muted rounded px-1 py-0.5 text-[11px]">
-          Call Notes/
-        </code>
-        . The vault watcher will tag each one to its project automatically.
-      </ComingSoon>
+      <ul className="flex flex-col divide-y">
+        {recordings.map((r) => (
+          <li
+            key={r.recording_id}
+            className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0"
+          >
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <p className="text-sm leading-snug">{r.title ?? r.recording_id}</p>
+              <p className="text-muted-foreground text-xs tabular-nums">
+                {new Date(r.recorded_at).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </p>
+            </div>
+            {r.source_url ? (
+              <a
+                href={r.source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-muted-foreground hover:text-foreground shrink-0 text-xs underline-offset-2 hover:underline"
+              >
+                Open
+              </a>
+            ) : null}
+          </li>
+        ))}
+      </ul>
     </Section>
   );
 }

@@ -21,7 +21,7 @@ export function createContextA8CClient(
   cache: SwrCache,
   health: HealthRegistry,
 ): ContextA8CClient {
-  if (opts.mock) {
+  if (opts.mockContextA8C) {
     return new MockContextA8CTransport(opts, cache, health);
   }
   return new RealContextA8CTransport(opts, cache, health);

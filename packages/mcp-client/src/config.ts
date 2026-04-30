@@ -6,11 +6,17 @@ import type { SwrTtl } from "./cache";
 
 export interface McpClientOptions {
   /**
-   * When true (default), every transport runs in mock mode and returns
-   * deterministic seed data. When false, the client attempts to use real MCP
-   * transports — currently a NotImplementedError until the SDK is wired up.
+   * Default mock-mode flag. Each per-source flag (mockContextA8C,
+   * mockFathom, mockHiveMind) inherits this when not set. Defaults to
+   * true so a fresh clone with no MCPs configured Just Works.
    */
   mock?: boolean;
+  /** Override the default for ContextA8C only. */
+  mockContextA8C?: boolean;
+  /** Override the default for Fathom only. */
+  mockFathom?: boolean;
+  /** Override the default for Hive Mind only. */
+  mockHiveMind?: boolean;
   /**
    * Email domains treated as internal — used to classify activity actors.
    * Defaults to ["automattic.com"].
@@ -32,7 +38,11 @@ export interface DefaultTtls {
 }
 
 export interface ResolvedMcpClientOptions {
+  /** Legacy flag kept for back-compat — equals mockContextA8C. */
   mock: boolean;
+  mockContextA8C: boolean;
+  mockFathom: boolean;
+  mockHiveMind: boolean;
   internalEmailDomains: string[];
   ttl: DefaultTtls;
 }
@@ -47,8 +57,15 @@ const DEFAULT_TTLS: DefaultTtls = {
 export function resolveMcpClientOptions(
   opts: McpClientOptions = {},
 ): ResolvedMcpClientOptions {
+  const defaultMock = opts.mock ?? true;
+  const mockContextA8C = opts.mockContextA8C ?? defaultMock;
+  const mockFathom = opts.mockFathom ?? defaultMock;
+  const mockHiveMind = opts.mockHiveMind ?? defaultMock;
   return {
-    mock: opts.mock ?? true,
+    mock: mockContextA8C,
+    mockContextA8C,
+    mockFathom,
+    mockHiveMind,
     internalEmailDomains:
       opts.internalEmailDomains?.length
         ? opts.internalEmailDomains
