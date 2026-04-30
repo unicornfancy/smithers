@@ -34,9 +34,12 @@ import {
 import { filterFollowUpsForProject, listFollowUps } from "./follow-ups";
 import { readProjectDetail } from "./project-detail";
 import {
+  createProject,
   ensureProjectId,
   listProjects,
   readProject,
+  type CreateProjectInput,
+  type CreateProjectResult,
 } from "./projects";
 import { readVaultStatus } from "./status";
 import { readStyleGuide, readWorkingWith } from "./style-guide";
@@ -53,8 +56,10 @@ export * from "./watcher";
 export * from "./status";
 export type { ProjectDetail, SiblingFile } from "./project-detail";
 export type { ProjectTask } from "./tasks";
+export type { CreateProjectInput, CreateProjectResult } from "./projects";
 export {
   applyDailySectionEdit,
+  createProject,
   dailyNotePath,
   filterFollowUpsForProject,
   listAgendas,
@@ -85,6 +90,9 @@ export interface Vault {
   listProjects: () => ReturnType<typeof listProjects>;
   readProject: (slug: string) => ReturnType<typeof readProject>;
   readProjectDetail: (slug: string) => ReturnType<typeof readProjectDetail>;
+  createProject: (
+    input: CreateProjectInput,
+  ) => ReturnType<typeof createProject>;
   listDrafts: () => ReturnType<typeof listDrafts>;
   readDraft: (id: string) => ReturnType<typeof readDraft>;
   listFollowUps: () => ReturnType<typeof listFollowUps>;
@@ -112,6 +120,7 @@ export function createVault(options: VaultOptions): Vault {
     listProjects: () => listProjects(resolved),
     readProject: (slug) => readProject(resolved, slug),
     readProjectDetail: (slug) => readProjectDetail(resolved, slug),
+    createProject: (input) => createProject(resolved, input),
     listDrafts: () => listDrafts(resolved),
     readDraft: (id) => readDraft(resolved, id),
     listFollowUps: () => listFollowUps(resolved),

@@ -234,3 +234,110 @@ async function projectFromFile(
 function deriveStableLocalId(source: ProjectSource): string {
   return `local:${source.relative_path}`;
 }
+
+export interface CreateProjectInput {
+  /** Display name. Used for the H1 + filename. */
+  name: string;
+  /**
+   * Optional explicit slug. When omitted, derived from `name` via the
+   * existing slugify helper. Slugs determine both the filename and the
+   * URL of the project workbench, so the user typically wants control.
+   */
+  slug?: string;
+  kind: ProjectKind;
+  status?: ProjectStatus;
+  /** Optional initial body. Defaults to a single H1 derived from name. */
+  body?: string;
+  /** Frontmatter overrides; merged on top of derived defaults. */
+  frontmatter?: Partial<ProjectFrontmatter>;
+}
+
+export interface CreateProjectResult {
+  slug: string;
+  absolute_path: string;
+  relative_path: string;
+}
+
+/**
+ * Create a new project markdown file in `Projects/`. Defaults to the
+ * flat-file layout (`Projects/<Display Name>.md`); the folder layout
+ * is for projects that grow siblings later. Refuses to overwrite an
+ * existing file by either name or slug — caller picks a different
+ * slug or edits the existing project.
+ *
+ * Atomic write: a partial crash mid-write doesn't corrupt the vault.
+ */
+export async function createProject(
+  opts: ResolvedVaultOptions,
+  input: CreateProjectInput,
+): Promise<CreateProjectResult> {
+  const trimmedName = input.name.trim();
+  if (!trimmedName) {
+    throw new Error("Project name is required");
+  }
+  const slug = (input.slug?.trim() || slugify(trimmedName)).trim();
+  if (!slug || !/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
+    throw new Error(
+      `Slug "${slug}" must be lowercase alphanumeric + hyphens, starting with a letter or digit`,
+    );
+  }
+
+  const paths = vaultPaths(opts);
+  // Filename uses the display name (Obsidian-friendly); the slug field
+  // in frontmatter is what Smithers keys off internally. Strip
+  // filesystem-unsafe characters from the display name to avoid path
+  // surprises.
+  const fileName = `${sanitizeFileName(trimmedName)}.md`;
+  const absolutePath = join(paths.projects, fileName);
+
+  // Refuse to overwrite an existing project file (either by display
+  // name or by slug — slug collisions cause routing surprises).
+  const existingByName = await tryReadFile(absolutePath);
+  if (existingByName !== null) {
+    throw new Error(
+      `A project file already exists at ${relative(opts.vaultPath, absolutePath)}. Pick a different name or edit the existing file.`,
+    );
+  }
+  const existingProjects = await listProjects(opts).catch(() => []);
+  if (existingProjects.some((p) => p.slug === slug)) {
+    throw new Error(
+      `Slug "${slug}" is already used by another project. Pick a different slug.`,
+    );
+  }
+
+  // Caller frontmatter applies first; identity + locked fields win at
+  // the end so a stray override can't break slug/name/kind.
+  const frontmatter: ProjectFrontmatter = {
+    ...(input.frontmatter ?? {}),
+    project_id: newId(),
+    slug,
+    name: trimmedName,
+    kind: input.kind,
+    status: input.status ?? input.frontmatter?.status ?? "active",
+  };
+
+  const body = input.body ?? `\n\n# ${trimmedName}\n`;
+  const content = serializeMarkdown(
+    frontmatter as unknown as Record<string, unknown>,
+    body,
+  );
+  await writeFileAtomic(absolutePath, content);
+
+  return {
+    slug,
+    absolute_path: absolutePath,
+    relative_path: relative(opts.vaultPath, absolutePath),
+  };
+}
+
+/**
+ * Strip path-unsafe characters from a display name so it works on
+ * macOS / Linux filesystems. Leaves spaces and most punctuation alone
+ * because Obsidian-style filenames look like "The Pocket NYC | Phase 2".
+ */
+function sanitizeFileName(name: string): string {
+  return name
+    .replace(/[\\/:*?"<>]/g, "-") // path-illegal characters
+    .replace(/\s+/g, " ") // collapse runs of whitespace
+    .trim();
+}

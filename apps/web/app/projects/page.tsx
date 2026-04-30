@@ -42,8 +42,8 @@ export default async function ProjectsPage() {
             : "Vault not configured yet"
         }
         actions={
-          <Button size="sm" variant="outline" asChild>
-            <Link href="/setup">New project</Link>
+          <Button size="sm" asChild>
+            <Link href="/projects/new">+ New project</Link>
           </Button>
         }
       />
