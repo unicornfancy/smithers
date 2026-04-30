@@ -27,7 +27,11 @@ export function createContextA8CClient(
   return new RealContextA8CTransport(opts, cache, health);
 }
 
-export type { ContextA8CClient, ZendeskTicketSummary } from "./types";
+export type {
+  ContextA8CClient,
+  ZendeskSearchResult,
+  ZendeskTicketSummary,
+} from "./types";
 export type {
   PingsQuery,
   ProjectActivityQuery,

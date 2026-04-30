@@ -241,7 +241,14 @@ export default async function ProjectWorkbenchPage({
           />
         </div>
 
-        <ZendeskThreadsPanel tickets={zendeskTickets} />
+        <ZendeskThreadsPanel
+          projectSlug={detail.slug}
+          tickets={zendeskTickets}
+          defaultSearchQuery={
+            partnerProfile?.display_name ?? detail.partner ?? detail.name
+          }
+          alwaysShow={isPartner}
+        />
 
         {isPartner ? (
           <PartnerInfoPanel project={detail} partner={partnerProfile} />

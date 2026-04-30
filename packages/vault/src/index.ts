@@ -34,10 +34,12 @@ import {
 import { filterFollowUpsForProject, listFollowUps } from "./follow-ups";
 import { readProjectDetail } from "./project-detail";
 import {
+  addProjectZendeskTicket,
   createProject,
   ensureProjectId,
   listProjects,
   readProject,
+  type AddProjectZendeskTicketResult,
   type CreateProjectInput,
   type CreateProjectResult,
 } from "./projects";
@@ -69,8 +71,13 @@ export type {
   ProjectTask,
   ToggleProjectTaskResult,
 } from "./tasks";
-export type { CreateProjectInput, CreateProjectResult } from "./projects";
+export type {
+  AddProjectZendeskTicketResult,
+  CreateProjectInput,
+  CreateProjectResult,
+} from "./projects";
 export {
+  addProjectZendeskTicket,
   appendProjectTask,
   applyDailySectionEdit,
   createProject,
@@ -144,6 +151,10 @@ export interface Vault {
     slug: string,
     taskId: string,
   ) => ReturnType<typeof deleteProjectTask>;
+  addProjectZendeskTicket: (
+    slug: string,
+    ticketRef: string,
+  ) => ReturnType<typeof addProjectZendeskTicket>;
   watch: (handler: VaultEventHandler) => ReturnType<typeof watchVault>;
 }
 
@@ -177,6 +188,8 @@ export function createVault(options: VaultOptions): Vault {
       editProjectTaskText(resolved, slug, taskId, newText),
     deleteProjectTask: (slug, taskId) =>
       deleteProjectTask(resolved, slug, taskId),
+    addProjectZendeskTicket: (slug, ticketRef) =>
+      addProjectZendeskTicket(resolved, slug, ticketRef),
     watch: (handler) => watchVault(resolved, handler),
   };
 }

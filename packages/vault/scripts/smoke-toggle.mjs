@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  addProjectZendeskTicket,
   appendProjectTask,
   createVault,
   deleteProjectTask,
@@ -251,5 +252,77 @@ try {
 if (!deleteRejected) throw new Error("expected stale-id delete to throw");
 
 console.log("[delete] OK — line removed, siblings + headings + frontmatter intact, stale id rejected");
+
+// --- Zendesk: attach by raw id, then by URL pointing to a different ticket ---
+const zPath = join(projectsDir, "Zendesk Project.md");
+writeFileSync(
+  zPath,
+  `---
+slug: zendesk-project
+name: Zendesk Project
+kind: partner
+status: active
+partner: example-partner
+---
+
+# Zendesk Project
+
+Some prose.
+`,
+);
+const z1 = await addProjectZendeskTicket(opts, "zendesk-project", "11134851");
+if (!z1.added || z1.zendesk_tickets.length !== 1) {
+  throw new Error("expected first attach to add: " + JSON.stringify(z1));
+}
+console.log(`[zendesk] attached id 11134851 -> ${JSON.stringify(z1.zendesk_tickets)}`);
+
+const z2 = await addProjectZendeskTicket(
+  opts,
+  "zendesk-project",
+  "https://automattic.zendesk.com/agent/tickets/12000123",
+);
+if (!z2.added || z2.zendesk_tickets.length !== 2) {
+  throw new Error("expected URL form to add as second: " + JSON.stringify(z2));
+}
+
+// --- Idempotency: attaching same id again (different form) should no-op ---
+const z3 = await addProjectZendeskTicket(
+  opts,
+  "zendesk-project",
+  "https://automattic.zendesk.com/agent/tickets/11134851",
+);
+if (z3.added) {
+  throw new Error("expected URL form of existing id to be a no-op");
+}
+if (z3.zendesk_tickets.length !== 2) {
+  throw new Error("array length should not change on duplicate");
+}
+console.log("[zendesk] URL form of existing id correctly de-duped");
+
+// --- Idempotency: attaching exact same string ---
+const z4 = await addProjectZendeskTicket(opts, "zendesk-project", "11134851");
+if (z4.added) {
+  throw new Error("expected exact-string duplicate to be a no-op");
+}
+
+// --- Empty / whitespace ref rejected ---
+let zRejected = false;
+try {
+  await addProjectZendeskTicket(opts, "zendesk-project", "  ");
+} catch {
+  zRejected = true;
+}
+if (!zRejected) throw new Error("expected empty ticket ref to be rejected");
+
+// --- Frontmatter persisted as YAML array, original prose intact ---
+const finalContent = readFileSync(zPath, "utf8");
+if (!finalContent.includes("zendesk_tickets:")) {
+  throw new Error("expected zendesk_tickets in frontmatter:\n" + finalContent);
+}
+if (!finalContent.includes("Some prose.")) {
+  throw new Error("body should be untouched");
+}
+
+console.log("[zendesk] OK — append + URL/id de-dup + idempotent same-string + body intact");
 console.log(`[smoke] cleaning up ${root}`);
 rmSync(root, { recursive: true, force: true });

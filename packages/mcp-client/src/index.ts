@@ -83,6 +83,7 @@ export type {
 } from "./types";
 export type {
   ContextA8CClient,
+  ZendeskSearchResult,
   ZendeskTicketSummary,
 } from "./context-a8c/index";
 export type {

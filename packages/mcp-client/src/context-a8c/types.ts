@@ -75,4 +75,19 @@ export interface ContextA8CClient {
   fetchZendeskTicketSummary(
     ticketRef: string,
   ): Promise<ZendeskTicketSummary | null>;
+
+  /**
+   * Search Zendesk tickets by subject / requester / tags. Used by the
+   * "Attach Zendesk thread" modal — interactive, so we surface a hard
+   * ok/error rather than a SourceResult (no caching: each query is
+   * different and freshness matters more than resilience).
+   */
+  searchZendeskTickets(
+    query: string,
+    opts?: { limit?: number },
+  ): Promise<ZendeskSearchResult>;
 }
+
+export type ZendeskSearchResult =
+  | { ok: true; tickets: ZendeskTicketSummary[] }
+  | { ok: false; error: string };

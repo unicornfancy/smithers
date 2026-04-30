@@ -182,6 +182,14 @@ interface ZendeskTicketResult {
   ticket?: ZendeskTicket;
   result?: ZendeskTicket;
 }
+interface ZendeskSearchResultRaw {
+  /** Standard Zendesk search response. */
+  results?: ZendeskTicket[];
+  /** Some upstream wrappers nest under `tickets`. */
+  tickets?: ZendeskTicket[];
+  /** Or under `result`. */
+  result?: ZendeskTicket[];
+}
 
 export class RealContextA8CTransport implements ContextA8CClient {
   private readonly mcp: StdioMcpClient;
@@ -524,6 +532,76 @@ export class RealContextA8CTransport implements ContextA8CClient {
         priority: null,
         updated_at: null,
         url: zendeskTicketUrl(ticketId),
+      };
+    }
+  }
+
+  /**
+   * Search Zendesk tickets by free-text query. Interactive endpoint —
+   * called from the "Attach Zendesk thread" modal as the user types,
+   * so we skip the runIsolated cache (each keystroke is a new query)
+   * and surface a clean ok/error shape instead of a SourceResult.
+   *
+   * Zendesk's search syntax accepts free text plus filters like
+   * `type:ticket subject:foo organization:bar` — we pass the query
+   * through verbatim and let the user lean on syntax if they want.
+   */
+  async searchZendeskTickets(
+    query: string,
+    opts: { limit?: number } = {},
+  ): Promise<
+    | { ok: true; tickets: ZendeskTicketSummary[] }
+    | { ok: false; error: string }
+  > {
+    const trimmed = query.trim();
+    if (!trimmed) return { ok: true, tickets: [] };
+    // Default to type:ticket so the search doesn't return user/org
+    // records the user can't attach. Only prepend if the caller
+    // hasn't already specified a type filter.
+    const fullQuery = /\btype:/i.test(trimmed)
+      ? trimmed
+      : `type:ticket ${trimmed}`;
+    try {
+      const result = await this.mcp.callJsonTool<ZendeskSearchResultRaw>(
+        "context-a8c-execute-tool",
+        {
+          provider: "zendesk",
+          tool: "search",
+          params: {
+            query: fullQuery,
+            per_page: Math.max(1, Math.min(50, opts.limit ?? 20)),
+          },
+        },
+      );
+      const rawTickets = asArray<ZendeskTicket>(
+        result?.results ?? result?.tickets ?? result?.result,
+      );
+      const tickets: ZendeskTicketSummary[] = rawTickets
+        .map((t) => {
+          const id =
+            typeof t.id === "number"
+              ? String(t.id)
+              : typeof t.id === "string"
+                ? t.id
+                : null;
+          if (!id || !/^\d+$/.test(id)) return null;
+          return {
+            id,
+            subject: typeof t.subject === "string" ? t.subject : null,
+            status: typeof t.status === "string" ? t.status : null,
+            priority: typeof t.priority === "string" ? t.priority : null,
+            updated_at:
+              typeof t.updated_at === "string" ? t.updated_at : null,
+            url: zendeskTicketUrl(id),
+          };
+        })
+        .filter((t): t is ZendeskTicketSummary => t !== null);
+      return { ok: true, tickets };
+    } catch (err) {
+      return {
+        ok: false,
+        error:
+          err instanceof Error ? err.message : "Zendesk search failed",
       };
     }
   }

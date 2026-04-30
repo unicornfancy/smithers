@@ -142,6 +142,46 @@ export class MockContextA8CTransport implements ContextA8CClient {
     };
   }
 
+  async searchZendeskTickets(
+    query: string,
+    opts: { limit?: number } = {},
+  ): Promise<
+    | { ok: true; tickets: import("./types").ZendeskTicketSummary[] }
+    | { ok: false; error: string }
+  > {
+    const trimmed = query.trim().toLowerCase();
+    if (!trimmed) return { ok: true, tickets: [] };
+    const limit = Math.max(1, Math.min(50, opts.limit ?? 20));
+    // Deterministic seed off the query so the same input gives stable
+    // results between renders/screenshots.
+    const rng = createRng(dailySeed(`zendesk-search:${trimmed}`));
+    const subjects = [
+      `${capitalize(trimmed)} — escalation thread`,
+      `Plan dashboard polish for ${capitalize(trimmed)}`,
+      `${capitalize(trimmed)} donor flow regression`,
+      `Layout adjustments — ${capitalize(trimmed)}`,
+      `Phase 2 data import for ${capitalize(trimmed)}`,
+      `Billing question from ${capitalize(trimmed)} team`,
+    ];
+    const statuses = ["open", "pending", "open", "solved", "open"];
+    const count = Math.min(subjects.length, limit, 1 + Math.floor(rng() * 5));
+    const tickets = Array.from({ length: count }, (_, i) => {
+      const id = String(11000000 + Math.floor(rng() * 99999));
+      const updatedDaysAgo = 1 + Math.floor(rng() * 30);
+      return {
+        id,
+        subject: subjects[i] ?? `${capitalize(trimmed)} ticket #${i + 1}`,
+        status: statuses[i % statuses.length] ?? null,
+        priority: "normal",
+        updated_at: new Date(
+          Date.now() - updatedDaysAgo * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+        url: `https://automattic.zendesk.com/agent/tickets/${id}`,
+      };
+    });
+    return { ok: true, tickets };
+  }
+
   async listPings(query: PingsQuery): Promise<SourceResult<Ping[]>> {
     const cacheKey = `mock:context_a8c:pings:${query.limit ?? 25}:${query.since ?? "*"}:${(query.sources ?? []).join(",")}`;
     return runIsolated(
@@ -438,4 +478,8 @@ function shortHash(rng: () => number): string {
     out += chars.charAt(Math.floor(rng() * chars.length));
   }
   return out;
+}
+
+function capitalize(s: string): string {
+  return s.length > 0 ? s[0]!.toUpperCase() + s.slice(1) : s;
 }

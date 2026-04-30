@@ -354,6 +354,76 @@ export async function createProject(
   };
 }
 
+export interface AddProjectZendeskTicketResult {
+  zendesk_tickets: string[];
+  /** True when the ticket was newly added; false when it was a no-op duplicate. */
+  added: boolean;
+}
+
+/**
+ * Append a Zendesk ticket reference to the project's `zendesk_tickets`
+ * frontmatter array. Idempotent: if a ticket with the same numeric id is
+ * already present (regardless of whether the existing entry is a raw id
+ * or a full URL), this is a no-op and `added` is false.
+ *
+ * The new ref is appended to the *end* of the array — the first entry
+ * is treated as the primary thread, so existing primary stays primary.
+ */
+export async function addProjectZendeskTicket(
+  opts: ResolvedVaultOptions,
+  slug: string,
+  ticketRef: string,
+): Promise<AddProjectZendeskTicketResult> {
+  const trimmed = ticketRef.trim();
+  if (!trimmed) {
+    throw new Error("Ticket reference is required");
+  }
+  const project = await readProject(opts, slug);
+  if (!project) {
+    throw new Error(`Project "${slug}" not found`);
+  }
+  if (project.source.kind === "hive-mind") {
+    throw new Error(
+      `Project "${slug}" lives in Hive Mind; ticket edits go through the shared-notes flow`,
+    );
+  }
+  const path = project.source.absolute_path;
+  const raw = await tryReadFile(path);
+  if (raw === null) {
+    throw new Error(`Project file disappeared at ${path}`);
+  }
+  const { data, content } = parseMarkdown(raw);
+
+  const existing = normalizeZendeskTickets(data["zendesk_tickets"]) ?? [];
+  const newId = extractTicketIdLocal(trimmed);
+  const isDuplicate = existing.some((ref) => {
+    const refId = extractTicketIdLocal(ref);
+    if (newId && refId) return newId === refId;
+    return ref === trimmed;
+  });
+  if (isDuplicate) {
+    return { zendesk_tickets: existing, added: false };
+  }
+  const next = [...existing, trimmed];
+  const merged = { ...data, zendesk_tickets: next };
+  await writeFileAtomic(path, serializeMarkdown(merged, content));
+  return { zendesk_tickets: next, added: true };
+}
+
+/**
+ * Local copy of the ticket-id extractor — vault package keeps zero
+ * dependencies on @smithers/mcp-client to avoid a circular import.
+ * Recognizes raw numeric ids and the standard Automattic Zendesk
+ * agent-ticket URL shape.
+ */
+function extractTicketIdLocal(ref: string): string | null {
+  const trimmed = ref.trim();
+  if (!trimmed) return null;
+  if (/^\d+$/.test(trimmed)) return trimmed;
+  const m = trimmed.match(/\/tickets\/(\d+)\b/);
+  return m ? m[1]! : null;
+}
+
 /**
  * Strip path-unsafe characters from a display name so it works on
  * macOS / Linux filesystems. Leaves spaces and most punctuation alone

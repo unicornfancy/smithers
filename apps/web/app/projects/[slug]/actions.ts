@@ -2,6 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 
+import type { ZendeskSearchResult } from "@smithers/mcp-client";
+
+import { getMcpClient } from "@/lib/server/mcp";
 import { getVault } from "@/lib/server/vault";
 
 /**
@@ -84,4 +87,37 @@ export async function deleteProjectTaskAction(
   await vault.deleteProjectTask(slug, taskId);
 
   revalidatePath(`/projects/${slug}`);
+}
+
+/**
+ * Free-text Zendesk ticket search for the "Attach Zendesk thread" modal.
+ * Returns the typed result shape directly so the client can branch on
+ * ok/error without parsing strings.
+ */
+export async function searchZendeskTicketsAction(
+  query: string,
+): Promise<ZendeskSearchResult> {
+  if (!query.trim()) return { ok: true, tickets: [] };
+  const mcp = await getMcpClient();
+  return mcp.contextA8C.searchZendeskTickets(query, { limit: 20 });
+}
+
+/**
+ * Attach a Zendesk ticket reference (raw id or full URL) to the project's
+ * frontmatter. Idempotent — duplicates are silently skipped, surfaced via
+ * the `added` flag so the UI can give the right feedback.
+ */
+export async function attachZendeskTicketAction(
+  slug: string,
+  ticketRef: string,
+): Promise<{ added: boolean; total: number }> {
+  if (!slug) throw new Error("slug is required");
+  const trimmed = ticketRef.trim();
+  if (!trimmed) throw new Error("Ticket reference is required");
+
+  const vault = await getVault();
+  const result = await vault.addProjectZendeskTicket(slug, trimmed);
+
+  revalidatePath(`/projects/${slug}`);
+  return { added: result.added, total: result.zendesk_tickets.length };
 }

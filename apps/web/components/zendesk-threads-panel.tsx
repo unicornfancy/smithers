@@ -4,21 +4,44 @@ import type { ZendeskTicketSummary } from "@smithers/mcp-client";
 
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ZendeskAttachModal } from "@/components/zendesk-attach-modal";
 
 interface Props {
+  projectSlug: string;
   /** Resolved ticket summaries, in the same order the user listed them. */
   tickets: ZendeskTicketSummary[];
+  /**
+   * Hint passed into the Attach modal as the default search query —
+   * usually the partner display name so a partner workbench gets a
+   * one-click "show me what's open" experience.
+   */
+  defaultSearchQuery?: string;
+  /**
+   * When true, render even with zero tickets so the user can attach
+   * one. Partner workbenches always render; non-partner projects only
+   * render when at least one ticket is wired up (no point cluttering
+   * personal projects with an Attach button they'll never use).
+   */
+  alwaysShow?: boolean;
 }
 
 /**
- * Panel-format renderer for a project's Zendesk threads. Renders
- * nothing when the list is empty so partner workbenches without
- * tickets stay clean. The first ticket is marked "primary" so the
- * user can spot the main thread at a glance even when there are
- * several.
+ * Panel-format renderer for a project's Zendesk threads. The first
+ * ticket is marked "primary" so the user can spot the main thread at
+ * a glance even when there are several. An "Attach Zendesk thread"
+ * button in the header opens a search-and-attach modal so the user
+ * can wire up additional threads from the workbench without editing
+ * frontmatter by hand.
  */
-export function ZendeskThreadsPanel({ tickets }: Props) {
-  if (tickets.length === 0) return null;
+export function ZendeskThreadsPanel({
+  projectSlug,
+  tickets,
+  defaultSearchQuery,
+  alwaysShow,
+}: Props) {
+  if (tickets.length === 0 && !alwaysShow) return null;
+
+  const existingIds = tickets.map((t) => t.id);
 
   return (
     <Card>
@@ -26,17 +49,33 @@ export function ZendeskThreadsPanel({ tickets }: Props) {
         <CardTitle className="flex items-center gap-2 text-base">
           <LifeBuoy className="text-muted-foreground size-4" />
           Zendesk threads
-          <span className="text-muted-foreground text-xs font-normal">
-            · {tickets.length}
+          {tickets.length > 0 ? (
+            <span className="text-muted-foreground text-xs font-normal">
+              · {tickets.length}
+            </span>
+          ) : null}
+          <span className="ml-auto">
+            <ZendeskAttachModal
+              projectSlug={projectSlug}
+              existingTicketIds={existingIds}
+              defaultQuery={defaultSearchQuery}
+            />
           </span>
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <ul className="flex flex-col divide-y">
-          {tickets.map((t, i) => (
-            <ZendeskRow key={t.id} ticket={t} primary={i === 0} />
-          ))}
-        </ul>
+        {tickets.length === 0 ? (
+          <p className="text-muted-foreground text-sm italic">
+            No Zendesk threads attached yet. Use the Attach button above
+            to search and pick one.
+          </p>
+        ) : (
+          <ul className="flex flex-col divide-y">
+            {tickets.map((t, i) => (
+              <ZendeskRow key={t.id} ticket={t} primary={i === 0} />
+            ))}
+          </ul>
+        )}
       </CardContent>
     </Card>
   );
