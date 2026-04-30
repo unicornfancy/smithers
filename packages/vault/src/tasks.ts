@@ -229,3 +229,99 @@ export async function appendProjectTask(
     line_number: inserted.line_number,
   };
 }
+
+export interface EditProjectTaskTextResult {
+  /** New task_id — the deterministic id is text-derived, so it changes. */
+  task_id: string;
+  text: string;
+  line_number: number;
+}
+
+/**
+ * Replace the text portion of a single task line, preserving the line's
+ * indent, bullet character, and checkbox state. The `task_id` changes as
+ * a result (the deterministic id hashes the text), so callers should use
+ * the returned id when keying UI rows.
+ *
+ * No-op + early return if the trimmed new text matches the existing text,
+ * so a blur-without-changes doesn't bump the file mtime.
+ */
+export async function editProjectTaskText(
+  opts: ResolvedVaultOptions,
+  slug: string,
+  taskId: string,
+  newText: string,
+): Promise<EditProjectTaskTextResult> {
+  const trimmed = newText.trim();
+  if (!trimmed) {
+    throw new Error("Task text is required");
+  }
+  const project = await readProject(opts, slug);
+  if (!project) {
+    throw new Error(`Project "${slug}" not found`);
+  }
+  if (project.source.kind === "hive-mind") {
+    throw new Error(
+      `Project "${slug}" lives in Hive Mind; task edits go through the shared-notes flow`,
+    );
+  }
+  const path = project.source.absolute_path;
+  const raw = await tryReadFile(path);
+  if (raw === null) {
+    throw new Error(`Project file disappeared at ${path}`);
+  }
+
+  const { data, content } = parseMarkdown(raw);
+  const tasks = parseProjectTasks(content);
+  const target = tasks.find((t) => t.task_id === taskId);
+  if (!target) {
+    throw new Error(
+      `Task ${taskId} no longer present in ${slug} — file may have changed`,
+    );
+  }
+  if (target.text === trimmed) {
+    return {
+      task_id: target.task_id,
+      text: target.text,
+      line_number: target.line_number,
+    };
+  }
+
+  const lines = content.split(/\r?\n/);
+  const idx = target.line_number - 1;
+  const line = lines[idx];
+  if (line === undefined) {
+    throw new Error(
+      `Line ${target.line_number} out of bounds in ${slug} body`,
+    );
+  }
+  // Capture indent + bullet + checkbox state, swap the text after the
+  // closing `]`. Anchored on `\s+` after the bracket so we don't mangle
+  // a trailing comment or markdown link in the new text.
+  const updated = line.replace(
+    /^(\s*[-*+]\s+\[(?: |x|X)\]\s+).+?\s*$/,
+    (_m, prefix: string) => `${prefix}${trimmed}`,
+  );
+  if (updated === line) {
+    throw new Error(
+      `Could not match task line shape for ${slug} task ${taskId}`,
+    );
+  }
+  lines[idx] = updated;
+
+  const newContent = lines.join("\n");
+  await writeFileAtomic(path, serializeMarkdown(data, newContent));
+
+  const reparsed = parseProjectTasks(newContent);
+  const updatedTask = reparsed.find(
+    (t) => t.line_number === target.line_number,
+  );
+  if (!updatedTask) {
+    throw new Error("internal: failed to locate task after edit");
+  }
+  return {
+    task_id: updatedTask.task_id,
+    text: updatedTask.text,
+    line_number: updatedTask.line_number,
+  };
+}

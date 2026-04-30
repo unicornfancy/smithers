@@ -46,3 +46,24 @@ export async function addProjectTaskAction(
 
   revalidatePath(`/projects/${slug}`);
 }
+
+/**
+ * Replace a task's text. The vault helper preserves the line's indent,
+ * bullet, and checkbox state and returns the new task_id (which is
+ * text-derived and changes with the rename).
+ */
+export async function editProjectTaskTextAction(
+  slug: string,
+  taskId: string,
+  newText: string,
+): Promise<void> {
+  if (!slug) throw new Error("slug is required");
+  if (!taskId) throw new Error("taskId is required");
+  const trimmed = newText.trim();
+  if (!trimmed) throw new Error("Task text is required");
+
+  const vault = await getVault();
+  await vault.editProjectTaskText(slug, taskId, trimmed);
+
+  revalidatePath(`/projects/${slug}`);
+}

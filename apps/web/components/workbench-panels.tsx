@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Markdown } from "@/components/markdown";
 import { AddProjectTaskInput } from "@/components/add-project-task-input";
+import { EditableTaskText } from "@/components/editable-task-text";
 import { ProjectTaskCheckbox } from "@/components/project-task-checkbox";
 
 // -- Section primitive ----------------------------------------------------
@@ -163,8 +164,12 @@ export function OpenItemsPanel({
                 done={false}
                 label={t.text}
               />
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <p className="text-sm leading-snug">{t.text}</p>
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <EditableTaskText
+                  projectSlug={projectSlug}
+                  taskId={t.task_id}
+                  text={t.text}
+                />
                 {t.section ? (
                   <p className="text-muted-foreground text-[11px] uppercase tracking-wide">
                     {t.section}
@@ -184,7 +189,14 @@ export function OpenItemsPanel({
                 done={true}
                 label={t.text}
               />
-              <p className="text-sm leading-snug line-through">{t.text}</p>
+              <div className="min-w-0 flex-1">
+                <EditableTaskText
+                  projectSlug={projectSlug}
+                  taskId={t.task_id}
+                  text={t.text}
+                  dim
+                />
+              </div>
             </li>
           ))}
           {done.length > 4 ? (

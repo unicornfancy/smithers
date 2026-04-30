@@ -9,6 +9,7 @@ import { join } from "node:path";
 import {
   appendProjectTask,
   createVault,
+  editProjectTaskText,
   parseProjectTasks,
   toggleProjectTask,
   resolveVaultOptions,
@@ -128,5 +129,85 @@ try {
 if (!rejected) throw new Error("expected empty task text to be rejected");
 
 console.log("[append] OK — populated, empty-body, and whitespace-rejection paths all pass");
+
+// --- Edit: rename a task, preserving indent + checkbox state ---
+// Add an indented sub-task so we can verify indent is preserved.
+const indentedPath = join(projectsDir, "Indented Project.md");
+writeFileSync(
+  indentedPath,
+  `---
+slug: indented-project
+name: Indented Project
+kind: personal
+status: active
+---
+
+# Indented Project
+
+## Open items
+
+- [ ] Top-level task
+  - [x] Nested done task
+- [ ] Another top-level
+`,
+);
+const indentedTasks = parseProjectTasks(
+  readFileSync(indentedPath, "utf8").split(/---\n/).slice(2).join("---\n"),
+);
+const nested = indentedTasks.find((t) => t.text === "Nested done task");
+if (!nested) throw new Error("could not find nested task");
+
+const e1 = await editProjectTaskText(
+  opts,
+  "indented-project",
+  nested.task_id,
+  "Renamed nested task",
+);
+console.log(`[edit] renamed nested task -> "${e1.text}" (new id=${e1.task_id.slice(0, 8)})`);
+const afterEdit = readFileSync(indentedPath, "utf8");
+if (!afterEdit.includes("  - [x] Renamed nested task")) {
+  throw new Error("expected indent + done state preserved:\n" + afterEdit);
+}
+if (afterEdit.includes("Nested done task")) {
+  throw new Error("old text should be gone");
+}
+// Sibling tasks untouched
+if (
+  !afterEdit.includes("- [ ] Top-level task") ||
+  !afterEdit.includes("- [ ] Another top-level")
+) {
+  throw new Error("sibling tasks should be untouched");
+}
+// id changed
+if (e1.task_id === nested.task_id) {
+  throw new Error("expected new task_id after rename");
+}
+
+// --- Edit: same text → no-op (returns existing id, doesn't bump file) ---
+const beforeNoop = readFileSync(indentedPath, "utf8");
+const e2 = await editProjectTaskText(
+  opts,
+  "indented-project",
+  e1.task_id,
+  "Renamed nested task",
+);
+const afterNoop = readFileSync(indentedPath, "utf8");
+if (afterNoop !== beforeNoop) {
+  throw new Error("no-op edit should not rewrite the file");
+}
+if (e2.task_id !== e1.task_id) {
+  throw new Error("no-op edit should return same id");
+}
+
+// --- Edit: empty / whitespace text rejected ---
+let editRejected = false;
+try {
+  await editProjectTaskText(opts, "indented-project", e1.task_id, "   ");
+} catch {
+  editRejected = true;
+}
+if (!editRejected) throw new Error("expected empty edit text to be rejected");
+
+console.log("[edit] OK — preserves indent + state, no-op short-circuits, whitespace rejected");
 console.log(`[smoke] cleaning up ${root}`);
 rmSync(root, { recursive: true, force: true });
