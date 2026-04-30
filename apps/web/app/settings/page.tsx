@@ -1,5 +1,6 @@
 import { ActivityLogCard } from "@/components/activity-log-card";
 import { AppHeader } from "@/components/app-header";
+import { HiveMindReconcileCard } from "@/components/hive-mind-reconcile-card";
 import { McpHealthCard } from "@/components/mcp-health-card";
 import { PageShell, PlaceholderCard } from "@/components/page-shell";
 
@@ -14,6 +15,8 @@ export default function SettingsPage() {
     <>
       <AppHeader title="Settings" subtitle="Identity, paths, MCPs, thresholds" />
       <PageShell>
+        <HiveMindReconcileCard />
+
         <McpHealthCard />
 
         <ActivityLogCard />
