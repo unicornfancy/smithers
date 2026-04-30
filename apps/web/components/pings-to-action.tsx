@@ -107,7 +107,18 @@ function PingRow({ ping }: { ping: Ping }) {
             ) : null}
           </span>
         </div>
-        <p className="text-foreground text-sm leading-snug">{ping.excerpt}</p>
+        {ping.url ? (
+          <a
+            href={ping.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-foreground hover:underline text-sm leading-snug underline-offset-2"
+          >
+            {ping.excerpt}
+          </a>
+        ) : (
+          <p className="text-foreground text-sm leading-snug">{ping.excerpt}</p>
+        )}
       </div>
       <span className="text-muted-foreground/80 mt-0.5 shrink-0 text-[11px] tabular-nums">
         {formatRelative(ping.timestamp)}

@@ -2,6 +2,7 @@ import * as React from "react";
 import {
   Activity,
   AlertTriangle,
+  ExternalLink,
   GitCommit,
   GitMerge,
   GitPullRequest,
@@ -98,8 +99,25 @@ export function LiveActivityFeed({
 }
 
 function ActivityRow({ event }: { event: ActivityEvent }) {
+  // Whole-row link when we have a URL — bigger click target than a
+  // title-only anchor and matches how Linear/GitHub/Slack feeds work.
+  // Keep the timestamp outside so it doesn't underline awkwardly with
+  // the rest on hover.
+  const Title = event.url ? (
+    <a
+      href={event.url}
+      target="_blank"
+      rel="noreferrer"
+      className="hover:text-foreground hover:underline truncate text-sm leading-snug underline-offset-2"
+    >
+      {event.title}
+    </a>
+  ) : (
+    <span className="truncate text-sm leading-snug">{event.title}</span>
+  );
+
   return (
-    <li className="flex items-start gap-2.5 py-2 first:pt-0 last:pb-0">
+    <li className="group flex items-start gap-2.5 py-2 first:pt-0 last:pb-0">
       <span className="text-muted-foreground mt-0.5 shrink-0">
         <ActivityIcon event={event} />
       </span>
@@ -123,7 +141,10 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
               partner
             </Badge>
           ) : null}
-          <span className="truncate text-sm leading-snug">{event.title}</span>
+          {Title}
+          {event.url ? (
+            <ExternalLink className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" />
+          ) : null}
         </div>
         <p className="text-muted-foreground truncate text-[11px]">
           <SourceLabel source={event.source} />
