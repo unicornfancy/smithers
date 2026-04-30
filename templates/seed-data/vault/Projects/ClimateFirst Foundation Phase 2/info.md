@@ -7,7 +7,9 @@ partner: climatefirst-foundation
 status: active
 github_repo: a8cteam51/climatefirst-foundation
 linear_project_slug: team51/climatefirst-phase-2
-zendesk_org: climatefirst
+zendesk_tickets:
+  - "11134851"
+  - "https://automattic.zendesk.com/agent/tickets/12000123"
 p2_url: https://team51.wordpress.com/?p=99001
 primary_slack_channel: "#climatefirst-foundation"
 team_slack_channel: "#team51-internal"

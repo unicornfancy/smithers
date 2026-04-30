@@ -26,7 +26,7 @@ const project = {
     linear_project_slug: "climatefirst-phase-2",
     primary_slack_channel: "team-climatefirst",
     p2_url: "https://team51.wordpress.com/2026/02/01/phase-2-kickoff/",
-    zendesk_org: "climatefirst-foundation",
+    zendesk_tickets: ["11134851"],
     partner: "climatefirst-foundation",
   },
 };

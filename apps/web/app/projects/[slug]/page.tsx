@@ -8,6 +8,7 @@ import {
 
 import { LiveActivityFeed } from "@/components/live-activity-feed";
 import { NeedsDecisionPanel } from "@/components/needs-decision-panel";
+import { ZendeskThreadsPanel } from "@/components/zendesk-threads-panel";
 import { PageShell } from "@/components/page-shell";
 import { WorkbenchHeader } from "@/components/workbench-header";
 import {
@@ -87,7 +88,7 @@ export default async function ProjectWorkbenchPage({
           github_repo: detail.github_repo,
           linear_project_id: detail.linear_project_id,
           linear_project_slug: detail.linear_project_slug,
-          zendesk_org: detail.zendesk_org,
+          zendesk_tickets: detail.zendesk_tickets,
           p2_url: detail.p2_url,
           primary_slack_channel: detail.primary_slack_channel,
           team_slack_channel: detail.team_slack_channel,
@@ -114,6 +115,21 @@ export default async function ProjectWorkbenchPage({
     partnerResult && partnerResult.ok
       ? partnerResult.data
       : (partnerResult?.cachedData ?? null);
+
+  // Per-ticket summaries for the threads panel. One MCP call per
+  // configured ticket — fan out in parallel, drop any that resolve to
+  // null (parse failures or already-deleted tickets).
+  const zendeskTicketRefs = detail.zendesk_tickets ?? [];
+  const zendeskTickets =
+    zendeskTicketRefs.length === 0
+      ? []
+      : (
+          await Promise.all(
+            zendeskTicketRefs.map((ref) =>
+              mcp.contextA8C.fetchZendeskTicketSummary(ref).catch(() => null),
+            ),
+          )
+        ).filter((t): t is NonNullable<typeof t> => t !== null);
 
   // Filter Fathom recordings to those whose title looks like it
   // belongs to this project — match against project name, partner
@@ -169,8 +185,11 @@ export default async function ProjectWorkbenchPage({
     },
     {
       label: "Zendesk",
-      configured: Boolean(detail.zendesk_org),
-      reason: !detail.zendesk_org ? "no org configured" : undefined,
+      configured: (detail.zendesk_tickets ?? []).length > 0,
+      reason:
+        (detail.zendesk_tickets ?? []).length > 0
+          ? undefined
+          : "no tickets configured",
     },
     {
       label: "P2",
@@ -217,6 +236,8 @@ export default async function ProjectWorkbenchPage({
             recordings={projectRecordings}
           />
         </div>
+
+        <ZendeskThreadsPanel tickets={zendeskTickets} />
 
         {isPartner ? (
           <PartnerInfoPanel project={detail} partner={partnerProfile} />

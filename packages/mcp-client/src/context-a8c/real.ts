@@ -25,6 +25,21 @@ import type {
   PingsQuery,
   ProjectActivityQuery,
 } from "./types";
+import { extractTicketId, zendeskTicketUrl } from "./zendesk-refs";
+
+export interface ZendeskTicketSummary {
+  /** Numeric ticket id. */
+  id: string;
+  subject: string | null;
+  /** Zendesk status, when present (e.g. "open", "pending", "solved"). */
+  status: string | null;
+  /** Priority string, when present. */
+  priority: string | null;
+  /** ISO timestamp of last update. */
+  updated_at: string | null;
+  /** Canonical URL into the Automattic Zendesk admin. */
+  url: string;
+}
 
 interface LinearInboxNotification {
   id?: string;
@@ -135,6 +150,39 @@ interface SlackChannelsResult {
   channels?: SlackChannel[];
 }
 
+interface ZendeskAuthor {
+  id?: number | string;
+  name?: string;
+  email?: string;
+  is_external?: boolean;
+}
+interface ZendeskComment {
+  id?: number | string;
+  body?: string;
+  plain_body?: string;
+  html_body?: string;
+  public?: boolean;
+  created_at?: string;
+  author?: ZendeskAuthor;
+  via?: { channel?: string };
+}
+interface ZendeskCommentsResult {
+  comments?: ZendeskComment[];
+  /** Some response shapes wrap the array in `result`. */
+  result?: ZendeskComment[];
+}
+interface ZendeskTicket {
+  id?: number | string;
+  subject?: string;
+  status?: string;
+  priority?: string;
+  updated_at?: string;
+}
+interface ZendeskTicketResult {
+  ticket?: ZendeskTicket;
+  result?: ZendeskTicket;
+}
+
 export class RealContextA8CTransport implements ContextA8CClient {
   private readonly mcp: StdioMcpClient;
 
@@ -194,6 +242,13 @@ export class RealContextA8CTransport implements ContextA8CClient {
     }
     if (allow("slack") && query.refs.primary_slack_channel) {
       tasks.push(this.fetchSlackMessages(query));
+    }
+    if (allow("zendesk") && (query.refs.zendesk_tickets ?? []).length > 0) {
+      // One task per ticket so each thread caches independently and a
+      // 404 on one ticket doesn't poison the others.
+      for (const ref of query.refs.zendesk_tickets!) {
+        tasks.push(this.fetchZendeskTicketComments(query, ref));
+      }
     }
 
     if (tasks.length === 0) {
@@ -390,6 +445,87 @@ export class RealContextA8CTransport implements ContextA8CClient {
         },
       },
     );
+  }
+
+  private async fetchZendeskTicketComments(
+    query: ProjectActivityQuery,
+    ticketRef: string,
+  ): Promise<SourceResult<ActivityEvent[]>> {
+    const ticketId = extractTicketId(ticketRef);
+    if (!ticketId) {
+      return failedResult(
+        "context_a8c.zendesk",
+        "invalid",
+        `Could not parse ticket id from "${ticketRef}"`,
+      );
+    }
+    return runIsolated(
+      { cache: this.cache, health: this.health },
+      {
+        source: "context_a8c.zendesk",
+        cacheKey: `real:context_a8c:project_activity:zendesk_comments:${ticketId}`,
+        ttl: ACTIVITY_TTL,
+        fetcher: async () => {
+          const result = await this.mcp.callJsonTool<ZendeskCommentsResult>(
+            "context-a8c-execute-tool",
+            {
+              provider: "zendesk",
+              tool: "comments",
+              params: { ticket_id: Number(ticketId), per_page: 10 },
+            },
+          );
+          return mapZendeskCommentsToActivity(
+            asArray<ZendeskComment>(result?.comments ?? result?.result),
+            ticketId,
+            query.project_slug,
+            this.opts.internalEmailDomains,
+          );
+        },
+      },
+    );
+  }
+
+  /**
+   * One-shot ticket-metadata fetch (subject + status + requester) for
+   * the workbench's ZendeskThreadsPanel. No isolation wrapper because
+   * this is called outside the activity fan-out — caller decides how
+   * to handle failures (typically: degrade the row in the panel).
+   */
+  async fetchZendeskTicketSummary(
+    ticketRef: string,
+  ): Promise<ZendeskTicketSummary | null> {
+    const ticketId = extractTicketId(ticketRef);
+    if (!ticketId) return null;
+    try {
+      const result = await this.mcp.callJsonTool<ZendeskTicketResult>(
+        "context-a8c-execute-tool",
+        {
+          provider: "zendesk",
+          tool: "ticket",
+          params: { ticket_id: Number(ticketId) },
+        },
+      );
+      const ticket = result?.ticket ?? result?.result ?? result;
+      if (!ticket || typeof ticket !== "object") return null;
+      const t = ticket as ZendeskTicket;
+      return {
+        id: ticketId,
+        subject: typeof t.subject === "string" ? t.subject : null,
+        status: typeof t.status === "string" ? t.status : null,
+        priority: typeof t.priority === "string" ? t.priority : null,
+        updated_at: typeof t.updated_at === "string" ? t.updated_at : null,
+        url: zendeskTicketUrl(ticketId),
+      };
+    } catch {
+      return {
+        id: ticketId,
+        subject: null,
+        status: null,
+        priority: null,
+        updated_at: null,
+        url: zendeskTicketUrl(ticketId),
+      };
+    }
   }
 
   /**
@@ -819,6 +955,54 @@ const SLACK_NOISE_SUBTYPES = new Set([
   "pinned_item",
   "unpinned_item",
 ]);
+
+export function mapZendeskCommentsToActivity(
+  comments: ZendeskComment[],
+  ticketId: string,
+  projectSlug: string,
+  internalDomains: readonly string[],
+): ActivityEvent[] {
+  return comments
+    .map((c) => mapZendeskComment(c, ticketId, projectSlug, internalDomains))
+    .filter((e): e is ActivityEvent => e !== null);
+}
+
+function mapZendeskComment(
+  comment: ZendeskComment,
+  ticketId: string,
+  projectSlug: string,
+  internalDomains: readonly string[],
+): ActivityEvent | null {
+  if (!comment.created_at) return null;
+  const body = comment.plain_body ?? comment.body ?? "";
+  if (!body.trim()) return null;
+  const author = comment.author ?? {};
+  // Zendesk's `is_external` flag is sometimes set; prefer it when
+  // present, fall back to internal-domain detection on the email.
+  const isExternal =
+    typeof author.is_external === "boolean"
+      ? author.is_external
+      : isExternalEmail(author.email, internalDomains);
+  return {
+    id: `zendesk:${ticketId}:${comment.id ?? comment.created_at}`,
+    source: "zendesk",
+    kind: "zendesk-comment",
+    timestamp: comment.created_at,
+    actor: {
+      name: author.name ?? "Zendesk",
+      handle: author.email,
+      is_external: isExternal,
+    },
+    title: truncateText(body, 100),
+    excerpt: `Ticket #${ticketId}`,
+    url: zendeskTicketUrl(ticketId),
+    project_match: {
+      project_slug: projectSlug,
+      matched_by: "zendesk_ticket",
+    },
+    is_mock: false,
+  };
+}
 
 function truncateText(s: string, max: number): string {
   if (s.length <= max) return s;

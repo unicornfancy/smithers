@@ -76,6 +76,28 @@ export function normalizeSlackChannel(input: string): string {
   return trimmed;
 }
 
+/**
+ * Parse a multi-line textarea input into a clean array of Zendesk
+ * ticket refs. Each non-empty line is one ticket — raw IDs and full
+ * URLs both pass through as-is; the activity fetcher + threads
+ * panel re-parse them via extractTicketId from @smithers/mcp-client.
+ */
+export function parseZendeskTicketsInput(
+  text: string | undefined,
+): string[] {
+  if (!text) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
 export interface CreateProjectFormInput {
   name: string;
   /** Optional explicit slug; derived from name when blank. */
@@ -90,7 +112,11 @@ export interface CreateProjectFormInput {
   github_input?: string;
   primary_slack_channel?: string;
   team_slack_channel?: string;
-  zendesk_org?: string;
+  /**
+   * Zendesk threads (Automattic Zendesk). One per line, raw IDs or
+   * full URLs. First entry becomes the primary thread.
+   */
+  zendesk_tickets_text?: string;
   p2_url?: string;
   nda?: boolean;
   /** Comma-separated tag list. */
@@ -132,7 +158,8 @@ export function buildProjectFrontmatterFromForm(
   if (input.team_slack_channel?.trim()) {
     out.team_slack_channel = normalizeSlackChannel(input.team_slack_channel);
   }
-  if (input.zendesk_org?.trim()) out.zendesk_org = input.zendesk_org.trim();
+  const tickets = parseZendeskTicketsInput(input.zendesk_tickets_text);
+  if (tickets.length > 0) out.zendesk_tickets = tickets;
   if (input.p2_url?.trim()) out.p2_url = input.p2_url.trim();
   if (input.nda) out.nda = true;
   if (input.next_nudge?.trim()) out.next_nudge = input.next_nudge.trim();

@@ -130,7 +130,7 @@ export interface ProjectMatch {
     | "github_repo"
     | "linear_project"
     | "slack_channel"
-    | "zendesk_org"
+    | "zendesk_ticket"
     | "p2_url"
     | "partner";
 }

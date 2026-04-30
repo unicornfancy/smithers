@@ -27,7 +27,14 @@ export interface ProjectFrontmatter {
   production_url?: string;
   linear_project_id?: string;
   linear_project_slug?: string;
-  zendesk_org?: string;
+  /**
+   * Zendesk tickets (Automattic Zendesk) attached to this project.
+   * Each entry is either a raw ticket id ("11134851") or a full URL
+   * ("https://automattic.zendesk.com/agent/tickets/11134851"). The
+   * first entry is treated as the primary thread; everything after
+   * is secondary.
+   */
+  zendesk_tickets?: string[];
   p2_url?: string;
 
   primary_slack_channel?: string;
@@ -63,7 +70,14 @@ export interface Project {
   production_url?: string;
   linear_project_id?: string;
   linear_project_slug?: string;
-  zendesk_org?: string;
+  /**
+   * Zendesk tickets (Automattic Zendesk) attached to this project.
+   * Each entry is either a raw ticket id ("11134851") or a full URL
+   * ("https://automattic.zendesk.com/agent/tickets/11134851"). The
+   * first entry is treated as the primary thread; everything after
+   * is secondary.
+   */
+  zendesk_tickets?: string[];
   p2_url?: string;
   primary_slack_channel?: string;
   team_slack_channel?: string;

@@ -35,7 +35,7 @@ interface FormState {
   github_input: string;
   primary_slack_channel: string;
   team_slack_channel: string;
-  zendesk_org: string;
+  zendesk_tickets_text: string;
   p2_url: string;
   nda: boolean;
   tags_csv: string;
@@ -52,7 +52,7 @@ const initial: FormState = {
   github_input: "",
   primary_slack_channel: "",
   team_slack_channel: "",
-  zendesk_org: "",
+  zendesk_tickets_text: "",
   p2_url: "",
   nda: false,
   tags_csv: "",
@@ -102,7 +102,7 @@ export function NewProjectForm() {
         github_input: state.github_input || undefined,
         primary_slack_channel: state.primary_slack_channel || undefined,
         team_slack_channel: state.team_slack_channel || undefined,
-        zendesk_org: state.zendesk_org || undefined,
+        zendesk_tickets_text: state.zendesk_tickets_text || undefined,
         p2_url: state.p2_url || undefined,
         nda: state.nda,
         tags_csv: state.tags_csv || undefined,
@@ -232,13 +232,17 @@ export function NewProjectForm() {
               placeholder="pocket-nyc-foundation"
             />
           </Field>
-          <Field label="Zendesk org">
-            <input
-              type="text"
-              className={inputClass}
-              value={state.zendesk_org}
-              onChange={(e) => update("zendesk_org", e.target.value)}
-              placeholder="pocket-nyc"
+          <Field
+            label="Zendesk threads"
+            hint="One per line. Raw IDs (11134851) or full URLs both work. The first line is treated as the primary thread."
+          >
+            <textarea
+              className={`${inputClass} h-24 py-2`}
+              value={state.zendesk_tickets_text}
+              onChange={(e) =>
+                update("zendesk_tickets_text", e.target.value)
+              }
+              placeholder={`11134851\nhttps://automattic.zendesk.com/agent/tickets/12000123`}
             />
           </Field>
           <Field label="P2 URL">
@@ -396,7 +400,16 @@ function buildPreviewYaml(s: PreviewState): string {
     const ch = s.team_slack_channel.trim().replace(/^#/, "");
     lines.push(`team_slack_channel: ${ch}`);
   }
-  if (s.zendesk_org.trim()) lines.push(`zendesk_org: ${s.zendesk_org.trim()}`);
+  const tickets = s.zendesk_tickets_text
+    .split(/\r?\n/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  if (tickets.length > 0) {
+    lines.push("zendesk_tickets:");
+    for (const t of tickets) {
+      lines.push(`  - "${t.replace(/"/g, '\\"')}"`);
+    }
+  }
   if (s.p2_url.trim()) lines.push(`p2_url: ${s.p2_url.trim()}`);
   if (s.nda) lines.push(`nda: true`);
   if (s.next_nudge.trim()) lines.push(`next_nudge: ${s.next_nudge.trim()}`);

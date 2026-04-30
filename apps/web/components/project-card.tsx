@@ -119,7 +119,12 @@ function collectQuickLinks(p: Project): QuickLink[] {
   if (p.p2_url) out.push({ label: "P2" });
   if (p.github_repo) out.push({ label: "GitHub" });
   if (p.linear_project_id || p.linear_project_slug) out.push({ label: "Linear" });
-  if (p.zendesk_org) out.push({ label: "Zendesk" });
+  const ticketCount = (p.zendesk_tickets ?? []).length;
+  if (ticketCount > 0) {
+    out.push({
+      label: ticketCount > 1 ? `Zendesk · ${ticketCount}` : "Zendesk",
+    });
+  }
   if (p.staging_url) out.push({ label: "Staging" });
   if (p.production_url) out.push({ label: "Live" });
   if (p.primary_slack_channel) out.push({ label: p.primary_slack_channel });

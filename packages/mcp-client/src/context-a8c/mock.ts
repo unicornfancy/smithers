@@ -12,6 +12,7 @@ import type {
   PingsQuery,
   ProjectActivityQuery,
 } from "./types";
+import { extractTicketId } from "./zendesk-refs";
 import type { SourceResult } from "../types";
 import type { ResolvedMcpClientOptions } from "../config";
 import type { SwrCache } from "../cache";
@@ -103,6 +104,42 @@ export class MockContextA8CTransport implements ContextA8CClient {
         fetcher: async () => this.generateActivity(query),
       },
     );
+  }
+
+  async fetchZendeskTicketSummary(
+    ticketRef: string,
+  ): Promise<{
+    id: string;
+    subject: string | null;
+    status: string | null;
+    priority: string | null;
+    updated_at: string | null;
+    url: string;
+  } | null> {
+    const id = extractTicketId(ticketRef) ?? ticketRef;
+    if (!id || !/^\d+$/.test(id)) return null;
+    // Deterministic seeded values so demo screenshots stay stable.
+    const rng = createRng(dailySeed(`zendesk-ticket:${id}`));
+    const subjects = [
+      "Plan dashboard polish",
+      "Donor flow regression check",
+      "Layout adjustments — accessible",
+      "Phase 2 data import handoff",
+    ];
+    const statuses = ["open", "pending", "open", "solved"];
+    const subj = subjects[Math.floor(rng() * subjects.length)]!;
+    const status = statuses[Math.floor(rng() * statuses.length)]!;
+    const updatedDaysAgo = 1 + Math.floor(rng() * 14);
+    return {
+      id,
+      subject: subj,
+      status,
+      priority: "normal",
+      updated_at: new Date(
+        Date.now() - updatedDaysAgo * 24 * 60 * 60 * 1000,
+      ).toISOString(),
+      url: `https://automattic.zendesk.com/agent/tickets/${id}`,
+    };
   }
 
   async listPings(query: PingsQuery): Promise<SourceResult<Ping[]>> {
@@ -271,8 +308,13 @@ export class MockContextA8CTransport implements ContextA8CClient {
       });
     }
 
-    if (query.refs.zendesk_org && allow("zendesk")) {
-      if (rng() < 0.6) {
+    const tickets = query.refs.zendesk_tickets ?? [];
+    if (tickets.length > 0 && allow("zendesk")) {
+      // One mock comment per configured ticket so the workbench shows
+      // the fan-out shape even in demo mode.
+      tickets.forEach((ticketRef, i) => {
+        if (rng() >= 0.6) return;
+        const ticketId = extractTicketId(ticketRef) ?? ticketRef;
         const hoursAgo = 6 + Math.floor(rng() * 4 * 24);
         const subj = pickN(rng, ZENDESK_SUBJECTS, 1)[0]!;
         const partner = query.refs.partner ?? "default";
@@ -281,7 +323,7 @@ export class MockContextA8CTransport implements ContextA8CClient {
           EXTERNAL_PEOPLE_BY_PARTNER.default!;
         const actor = pickN(rng, externals, 1)[0]!;
         events.push({
-          id: `zendesk:${query.project_slug}`,
+          id: `zendesk:${query.project_slug}:${ticketId}:${i}`,
           source: "zendesk",
           kind: "zendesk-ticket",
           timestamp: new Date(now - hoursAgo * 60 * 60_000).toISOString(),
@@ -291,14 +333,14 @@ export class MockContextA8CTransport implements ContextA8CClient {
             is_external: true,
           },
           title: subj,
-          excerpt: `From ${query.refs.zendesk_org}`,
+          excerpt: `Ticket #${ticketId}`,
           project_match: {
             project_slug: query.project_slug,
-            matched_by: "zendesk_org",
+            matched_by: "zendesk_ticket",
           },
           is_mock: true,
         });
-      }
+      });
     }
 
     events.sort(
@@ -375,7 +417,7 @@ export class MockContextA8CTransport implements ContextA8CClient {
               ? "slack_channel"
               : sample.source === "p2"
                 ? "p2_url"
-                : "zendesk_org",
+                : "zendesk_ticket",
         },
         is_mock: true,
       });

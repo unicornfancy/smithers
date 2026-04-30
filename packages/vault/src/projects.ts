@@ -210,7 +210,7 @@ async function projectFromFile(
     production_url: fm.production_url,
     linear_project_id: fm.linear_project_id,
     linear_project_slug: fm.linear_project_slug,
-    zendesk_org: fm.zendesk_org,
+    zendesk_tickets: normalizeZendeskTickets(fm.zendesk_tickets),
     p2_url: fm.p2_url,
     primary_slack_channel: fm.primary_slack_channel,
     team_slack_channel: fm.team_slack_channel,
@@ -233,6 +233,30 @@ async function projectFromFile(
  */
 function deriveStableLocalId(source: ProjectSource): string {
   return `local:${source.relative_path}`;
+}
+
+/**
+ * Coerce a frontmatter zendesk_tickets value to a clean string array.
+ * Accepts either an array (the canonical shape) or a single string for
+ * tolerance — older notes that started with one ticket may still have
+ * the scalar form. Returns undefined when nothing usable is present so
+ * downstream consumers can skip the field cleanly.
+ */
+function normalizeZendeskTickets(raw: unknown): string[] | undefined {
+  if (Array.isArray(raw)) {
+    const cleaned = raw
+      .map((t) => (t == null ? "" : String(t).trim()))
+      .filter(Boolean);
+    return cleaned.length > 0 ? cleaned : undefined;
+  }
+  if (typeof raw === "string") {
+    const cleaned = raw.trim();
+    return cleaned ? [cleaned] : undefined;
+  }
+  if (typeof raw === "number") {
+    return [String(raw)];
+  }
+  return undefined;
 }
 
 export interface CreateProjectInput {

@@ -33,7 +33,8 @@ export interface ProjectActivityRefs {
   github_repo?: string;
   linear_project_slug?: string;
   linear_project_id?: string;
-  zendesk_org?: string;
+  /** Raw IDs or full URLs; first is the primary thread. */
+  zendesk_tickets?: string[];
   p2_url?: string;
   primary_slack_channel?: string;
   team_slack_channel?: string;
@@ -49,10 +50,29 @@ export interface PingsQuery {
   sources?: ("slack" | "p2" | "zendesk")[];
 }
 
+export interface ZendeskTicketSummary {
+  id: string;
+  subject: string | null;
+  status: string | null;
+  priority: string | null;
+  updated_at: string | null;
+  url: string;
+}
+
 export interface ContextA8CClient {
   listProjectActivity(
     query: ProjectActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>>;
 
   listPings(query: PingsQuery): Promise<SourceResult<Ping[]>>;
+
+  /**
+   * Per-ticket metadata fetch for the workbench's Zendesk threads
+   * panel. Returns null when the ref can't be parsed; degraded
+   * (subject=null) when the upstream call fails so the caller can
+   * still surface "we have a ticket id but no live data" rows.
+   */
+  fetchZendeskTicketSummary(
+    ticketRef: string,
+  ): Promise<ZendeskTicketSummary | null>;
 }

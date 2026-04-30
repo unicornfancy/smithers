@@ -12,6 +12,7 @@ import {
   Slack,
 } from "lucide-react";
 
+import { extractTicketId, zendeskTicketUrl } from "@smithers/mcp-client";
 import type { Project, ProjectKind, ProjectStatus } from "@smithers/vault";
 
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -139,10 +140,15 @@ function collectQuickLinks(p: Project): QuickLink[] {
       icon: <KanbanSquare className="size-3.5" />,
     });
   }
-  if (p.zendesk_org) {
+  const tickets = p.zendesk_tickets ?? [];
+  if (tickets.length > 0) {
+    // Link the header pill at the primary thread; the workbench's
+    // ZendeskThreadsPanel surfaces the rest with their own links.
+    const primary = tickets[0]!;
+    const primaryId = extractTicketId(primary) ?? primary;
     out.push({
-      label: "Zendesk",
-      href: `https://team51.zendesk.com/agent/organizations/${p.zendesk_org}`,
+      label: tickets.length > 1 ? `Zendesk · ${tickets.length}` : "Zendesk",
+      href: zendeskTicketUrl(primaryId),
       icon: <LifeBuoy className="size-3.5" />,
     });
   }

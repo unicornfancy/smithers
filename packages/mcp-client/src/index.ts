@@ -81,13 +81,22 @@ export type {
   PartnerTeamMember,
   CallRecordingRef,
 } from "./types";
-export type { ContextA8CClient } from "./context-a8c/index";
+export type {
+  ContextA8CClient,
+  ZendeskTicketSummary,
+} from "./context-a8c/index";
 export type {
   ProjectActivityQuery,
   ProjectActivityRefs,
   PingsQuery,
   ActivitySourceFilter,
 } from "./context-a8c/index";
+export {
+  extractTicketId,
+  parseTicketRefs,
+  zendeskTicketUrl,
+  type ParsedTicketRef,
+} from "./context-a8c/zendesk-refs";
 export type {
   HiveMindClient,
   PartnerLookupQuery,
