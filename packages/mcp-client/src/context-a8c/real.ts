@@ -477,9 +477,21 @@ export function mapLinearInboxToPings(
   notifications: LinearInboxNotification[],
   internalDomains: readonly string[],
 ): Ping[] {
-  return notifications
-    .map((n, i) => mapOne(n, i, internalDomains))
-    .filter((p): p is Ping => p !== null);
+  const seen = new Set<string>();
+  const out: Ping[] = [];
+  for (let i = 0; i < notifications.length; i++) {
+    const ping = mapOne(notifications[i]!, i, internalDomains);
+    if (!ping) continue;
+    // Belt-and-suspenders: even with the more-unique fallback id we
+    // build below, two notifications occasionally arrive with truly
+    // identical metadata (assignment + comment on the same issue at
+    // the same timestamp). Drop later duplicates so React's key
+    // invariant holds.
+    if (seen.has(ping.id)) continue;
+    seen.add(ping.id);
+    out.push(ping);
+  }
+  return out;
 }
 
 function mapOne(
@@ -487,7 +499,11 @@ function mapOne(
   index: number,
   internalDomains: readonly string[],
 ): Ping | null {
-  const id = n.id ?? `linear-inbox:${n.issue?.identifier ?? index}`;
+  // Linear notification IDs are sometimes absent on inbox rows. Build
+  // a fallback that combines type + issue identifier + timestamp so
+  // two different notifications about the same issue (e.g. assignment
+  // + new comment) get distinct keys. Index is a final tiebreaker.
+  const id = n.id ?? buildLinearInboxFallbackId(n, index);
   const timestamp = n.createdAt ?? n.updatedAt ?? new Date().toISOString();
   const actor = n.actor ?? {};
   const actorName =
@@ -520,6 +536,25 @@ function mapOne(
       : undefined,
     is_mock: false,
   };
+}
+
+/**
+ * Compose a stable-but-unique id for a Linear inbox notification when
+ * the upstream didn't give us one. Type + issue + timestamp covers
+ * the common collision (multi-event same-issue), index is the final
+ * tiebreaker for the rare case where everything else matches.
+ */
+function buildLinearInboxFallbackId(
+  n: LinearInboxNotification,
+  index: number,
+): string {
+  const parts: string[] = ["linear-inbox"];
+  if (n.type) parts.push(n.type);
+  if (n.issue?.identifier) parts.push(n.issue.identifier);
+  if (n.createdAt) parts.push(n.createdAt);
+  else if (n.updatedAt) parts.push(n.updatedAt);
+  parts.push(String(index));
+  return parts.join(":");
 }
 
 function formatExcerpt(
