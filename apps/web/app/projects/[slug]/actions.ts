@@ -146,12 +146,13 @@ export async function attachZendeskTicketAction(
 }
 
 /**
- * One-shot backfill of zendesk_tickets metadata. Fans out a few
- * search queries (project name, deslugged partner, partner display
- * name) and merges any returned subjects/statuses into frontmatter
- * for tickets that currently have no persisted metadata. Tickets the
- * search doesn't surface stay as bare-id entries — the user can run
- * the action again later or attach fresh metadata via the modal.
+ * One-shot backfill of zendesk_tickets metadata. Fans out search
+ * queries based on supplied hints (auto-detected: partner display
+ * name, deslugged partner, project name) plus any persisted
+ * `zendesk_search_terms` from frontmatter (user-curated emails or
+ * names that reliably surface this project's tickets). Merges
+ * matching results into frontmatter so subsequent renders read
+ * subject/status directly without an upstream call.
  */
 export async function refreshZendeskMetadataAction(
   slug: string,
@@ -177,12 +178,19 @@ export async function refreshZendeskMetadataAction(
     }
   >();
 
+  // Union auto-hints with user-curated search terms. Dedup so we
+  // don't pay for duplicate queries when partner display name and a
+  // configured term overlap.
+  const allHints = Array.from(
+    new Set([
+      ...hints.map((h) => h.trim()).filter(Boolean),
+      ...(project.zendesk_search_terms ?? []).map((h) => h.trim()).filter(Boolean),
+    ]),
+  );
+
   const mcp = await getMcpClient();
-  // Run the hints in parallel; union the results. We dedupe by
-  // ticket_id and only keep entries that match one of our attached
-  // tickets so the call stays cheap.
   await Promise.all(
-    hints.filter(Boolean).map(async (hint) => {
+    allHints.map(async (hint) => {
       const res = await mcp.contextA8C
         .searchZendeskTickets(hint, { limit: 50 })
         .catch(() => ({ ok: false as const, error: "search failed" }));
@@ -208,6 +216,24 @@ export async function refreshZendeskMetadataAction(
   );
   revalidatePath(`/projects/${slug}`);
   return { updated: result.updated, total: refs.length };
+}
+
+/**
+ * Save the user-curated search terms used by the Refresh flow.
+ * Empty array clears the field from frontmatter.
+ */
+export async function setZendeskSearchTermsAction(
+  slug: string,
+  terms: string[],
+): Promise<{ changed: boolean; terms: string[] }> {
+  if (!slug) throw new Error("slug is required");
+  const vault = await getVault();
+  const result = await vault.setProjectZendeskSearchTerms(slug, terms);
+  revalidatePath(`/projects/${slug}`);
+  return {
+    changed: result.changed,
+    terms: result.zendesk_search_terms,
+  };
 }
 
 /**

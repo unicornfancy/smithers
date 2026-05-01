@@ -20,6 +20,7 @@ import { MakePrimaryButton } from "@/components/make-primary-button";
 import { RefreshZendeskMetadataButton } from "@/components/refresh-zendesk-metadata-button";
 import { ResolveFollowUpButton } from "@/components/resolve-follow-up-button";
 import { ZendeskAttachModal } from "@/components/zendesk-attach-modal";
+import { ZendeskSearchSettingsModal } from "@/components/zendesk-search-settings-modal";
 
 interface Props {
   projectSlug: string;
@@ -31,6 +32,8 @@ interface Props {
    * deslug'd partner, project name].
    */
   refreshHints: string[];
+  /** Persisted user-curated search terms (frontmatter zendesk_search_terms). */
+  savedSearchTerms: string[];
   /**
    * All follow-ups for this project (active + resolved). The panel
    * groups them by referenced #ticket_id and renders matched ones
@@ -66,6 +69,7 @@ export function ZendeskThreadsPanel({
   projectSlug,
   tickets,
   refreshHints,
+  savedSearchTerms,
   followUps,
   recentActivityByTicketId,
   defaultSearchQuery,
@@ -105,6 +109,10 @@ export function ZendeskThreadsPanel({
             </span>
           ) : null}
           <span className="ml-auto flex items-center gap-1.5">
+            <ZendeskSearchSettingsModal
+              projectSlug={projectSlug}
+              initialTerms={savedSearchTerms}
+            />
             {anyMissingSubject ? (
               <RefreshZendeskMetadataButton
                 projectSlug={projectSlug}

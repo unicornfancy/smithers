@@ -16,6 +16,7 @@ import {
   refreshProjectZendeskMetadata,
   resolveFollowUp,
   setPrimaryZendeskTicket,
+  setProjectZendeskSearchTerms,
   toggleProjectTask,
   resolveVaultOptions,
 } from "../src/index.ts";
@@ -379,6 +380,38 @@ const refresh2 = await refreshProjectZendeskMetadata(opts, "zendesk-project", [
 ]);
 if (refresh2.updated !== 0) throw new Error("expected no-op refresh");
 console.log("[refresh] OK — backfills missing metadata, no-ops on unchanged");
+
+// --- setProjectZendeskSearchTerms: persist + dedup + clear ---
+const st1 = await setProjectZendeskSearchTerms(opts, "zendesk-project", [
+  "  martin@thepocketnyc.com  ",
+  "Martin Porter",
+  "Martin Porter", // dup
+  "",
+]);
+if (!st1.changed) throw new Error("expected changed=true on first save");
+if (st1.zendesk_search_terms.length !== 2) {
+  throw new Error("expected 2 deduped terms, got " + st1.zendesk_search_terms.length);
+}
+const persistedFile = readFileSync(zPath, "utf8");
+if (!persistedFile.includes("zendesk_search_terms:")) {
+  throw new Error("expected zendesk_search_terms in YAML:\n" + persistedFile);
+}
+
+// Save same list → no change
+const st2 = await setProjectZendeskSearchTerms(opts, "zendesk-project", [
+  "martin@thepocketnyc.com",
+  "Martin Porter",
+]);
+if (st2.changed) throw new Error("expected no-op when terms match");
+
+// Empty array clears the field
+const st3 = await setProjectZendeskSearchTerms(opts, "zendesk-project", []);
+if (!st3.changed) throw new Error("expected changed=true when clearing");
+const cleared = readFileSync(zPath, "utf8");
+if (cleared.includes("zendesk_search_terms")) {
+  throw new Error("expected field removed on empty:\n" + cleared);
+}
+console.log("[search-terms] OK — persists, dedupes, no-ops on unchanged, clears on empty");
 
 // --- resolveFollowUp: flip Status cell to "✅ Resolved …" ---
 // Build a Follow-ups.md with two open rows; pick one to resolve.

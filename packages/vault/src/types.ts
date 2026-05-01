@@ -57,6 +57,14 @@ export interface ProjectFrontmatter {
    * source of truth.
    */
   zendesk_tickets?: Array<string | ZendeskTicketRef>;
+  /**
+   * Free-form text terms used by the Threads panel's "Refresh metadata"
+   * flow to fan out searches at Zendesk and find tickets attached to
+   * this project. Typically partner contact emails ("martin@example.com")
+   * or names ("Martin Porter") that surface the right tickets in
+   * Zendesk's search index when the bare partner slug doesn't.
+   */
+  zendesk_search_terms?: string[];
   p2_url?: string;
 
   primary_slack_channel?: string;
@@ -99,6 +107,8 @@ export interface Project {
    * ZendeskTicketRef. The first entry is the primary thread.
    */
   zendesk_tickets?: ZendeskTicketRef[];
+  /** See ProjectFrontmatter.zendesk_search_terms — same shape, always an array here. */
+  zendesk_search_terms?: string[];
   p2_url?: string;
   primary_slack_channel?: string;
   team_slack_channel?: string;

@@ -269,6 +269,7 @@ export default async function ProjectWorkbenchPage({
             detail.partner ? detail.partner.replace(/-/g, " ") : "",
             detail.name,
           ].filter(Boolean)}
+          savedSearchTerms={detail.zendesk_search_terms ?? []}
           followUps={projectFollowUps}
           recentActivityByTicketId={recentActivityByTicketId}
           defaultSearchQuery={
