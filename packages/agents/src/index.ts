@@ -71,3 +71,15 @@ export {
   type CallDecision,
   type CallKeyQuote,
 } from "./agents/analyze-call-transcript";
+
+export {
+  draftP2Update,
+  type DraftP2UpdateInput,
+  type DraftP2UpdateOutput,
+} from "./agents/draft-p2-update";
+
+export {
+  composeCallRecap,
+  type ComposeCallRecapInput,
+  type ComposeCallRecapOutput,
+} from "./agents/compose-call-recap";

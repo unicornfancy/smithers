@@ -5,6 +5,7 @@ export type AgentName =
   | "ping-monitor"
   | "draft-from-task"
   | "draft-zendesk-reply"
+  | "draft-p2-update"
   | "incorporate-reference"
   | "weekly-update"
   | "top-3"
@@ -12,6 +13,7 @@ export type AgentName =
   | "summarize-thread"
   | "suggest-next-step"
   | "compose-followup-nudge"
+  | "compose-call-recap"
   | "analyze-call-transcript";
 
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";

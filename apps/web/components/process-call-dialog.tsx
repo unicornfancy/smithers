@@ -23,12 +23,20 @@ import type {
 } from "@smithers/agents";
 import type { CallRecordingRef } from "@smithers/mcp-client";
 
+import type {
+  ComposeCallRecapOutput,
+  DraftP2UpdateOutput,
+} from "@smithers/agents";
+
 import {
   acceptCallActionItemsAction,
   acceptCallFollowUpsAction,
   analyzeCallAction,
+  composeCallRecapAction,
+  draftP2UpdateFromCallAction,
 } from "@/app/projects/[slug]/actions";
 import { cn } from "@/lib/utils";
+import { AiDraftDialog } from "@/components/ai-draft-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -71,6 +79,17 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
   const [acceptedSummary, setAcceptedSummary] = React.useState(false);
   const [acceptingActions, startAcceptActions] = React.useTransition();
   const [acceptingFollowUps, startAcceptFollowUps] = React.useTransition();
+
+  // Side-drafts: P2 post + recap message. Each opens its own
+  // AiDraftDialog with the agent output.
+  const [p2Pending, startP2] = React.useTransition();
+  const [p2Data, setP2Data] = React.useState<DraftP2UpdateOutput | null>(null);
+  const [p2Open, setP2Open] = React.useState(false);
+  const [recapPending, startRecap] = React.useTransition();
+  const [recapData, setRecapData] = React.useState<ComposeCallRecapOutput | null>(
+    null,
+  );
+  const [recapOpen, setRecapOpen] = React.useState(false);
 
   function reset() {
     setData(null);
@@ -207,6 +226,58 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
     });
   }
 
+  function generateP2() {
+    startP2(async () => {
+      try {
+        const r = await draftP2UpdateFromCallAction(
+          projectSlug,
+          recording.recording_id,
+          recording.source_url,
+        );
+        if (r.ok) {
+          setP2Data(r.data);
+          setP2Open(true);
+        } else if (r.reason === "not-configured") {
+          toast.error(
+            "Set ANTHROPIC_API_KEY in .env.local to enable AI drafts",
+          );
+        } else {
+          toast.error(r.message ?? "Couldn't draft P2 update");
+        }
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Couldn't draft P2 update",
+        );
+      }
+    });
+  }
+
+  function generateRecap() {
+    startRecap(async () => {
+      try {
+        const r = await composeCallRecapAction(
+          projectSlug,
+          recording.recording_id,
+          recording.source_url,
+        );
+        if (r.ok) {
+          setRecapData(r.data);
+          setRecapOpen(true);
+        } else if (r.reason === "not-configured") {
+          toast.error(
+            "Set ANTHROPIC_API_KEY in .env.local to enable AI drafts",
+          );
+        } else {
+          toast.error(r.message ?? "Couldn't draft recap");
+        }
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Couldn't draft recap",
+        );
+      }
+    });
+  }
+
   async function copySummary() {
     if (!data) return;
     try {
@@ -261,6 +332,42 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
             <ErrorNotice message={error} />
           ) : data ? (
             <div className="max-h-[60vh] space-y-5 overflow-y-auto">
+              {/* Side-drafts: open transcript-derived modals on demand. */}
+              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-dashed bg-muted/30 px-3 py-2">
+                <span className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                  From this call
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={generateRecap}
+                  disabled={recapPending}
+                  className="h-6 gap-1 px-1.5 text-[11px]"
+                >
+                  {recapPending ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="size-3" />
+                  )}
+                  Compose recap message
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={generateP2}
+                  disabled={p2Pending}
+                  className="h-6 gap-1 px-1.5 text-[11px]"
+                >
+                  {p2Pending ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="size-3" />
+                  )}
+                  Draft P2 update
+                </Button>
+              </div>
               <Section
                 icon={<Sparkles className="size-3.5" />}
                 title="Summary"
@@ -434,6 +541,31 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <AiDraftDialog
+        open={p2Open}
+        onOpenChange={setP2Open}
+        title={p2Data ? `P2 draft: ${p2Data.title}` : "P2 draft"}
+        meta={p2Data ? "Markdown · paste into the P2 composer" : ""}
+        rationale={p2Data?.rationale ?? ""}
+        body={p2Data?.body ?? ""}
+      />
+
+      <AiDraftDialog
+        open={recapOpen}
+        onOpenChange={setRecapOpen}
+        title="Recap message"
+        meta={
+          recapData
+            ? `${recapData.channel === "email" ? "Email" : "Slack"} · post-call recap`
+            : ""
+        }
+        rationale={recapData?.rationale ?? ""}
+        subject={
+          recapData?.channel === "email" ? recapData.subject : undefined
+        }
+        body={recapData?.draft ?? ""}
+      />
     </>
   );
 }

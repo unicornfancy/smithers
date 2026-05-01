@@ -4,13 +4,17 @@ import { revalidatePath } from "next/cache";
 
 import {
   analyzeCallTranscript,
+  composeCallRecap,
   composeFollowUpNudge,
+  draftP2Update,
   draftZendeskReply,
   suggestNextStep,
   type AnalyzeCallTranscriptOutput,
   type CallActionItem,
   type CallFollowUp,
+  type ComposeCallRecapOutput,
   type ComposeNudgeOutput,
+  type DraftP2UpdateOutput,
   type DraftZendeskReplyOutput,
   type SuggestNextStepOutput,
 } from "@smithers/agents";
@@ -475,6 +479,126 @@ export async function analyzeCallAction(
 
   try {
     const result = await analyzeCallTranscript(runtime, {
+      transcript,
+      project,
+      call: { recording_id: recordingId, url },
+      style,
+    });
+    return { ok: true, data: result.output };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Agent call failed",
+    };
+  }
+}
+
+/**
+ * Generate a P2 status post draft from a call transcript. Pulls the
+ * transcript via Fathom, runs the draft-p2-update agent, returns
+ * { title, body, rationale } the user can copy into the P2 composer.
+ */
+export async function draftP2UpdateFromCallAction(
+  slug: string,
+  recordingId: string,
+  url?: string,
+): Promise<
+  | { ok: true; data: DraftP2UpdateOutput }
+  | {
+      ok: false;
+      reason: "not-configured" | "transcript-missing" | "error";
+      message?: string;
+    }
+> {
+  if (!slug) throw new Error("slug is required");
+  if (!recordingId) throw new Error("recordingId is required");
+
+  const runtime = await getAgentRuntime();
+  if (!runtime) return { ok: false, reason: "not-configured" };
+
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) return { ok: false, reason: "error", message: "Project not found" };
+
+  const mcp = await getMcpClient();
+  const transcript = await mcp.fathom
+    .fetchTranscript({ recording_id: recordingId, url })
+    .catch(() => null);
+  if (!transcript) {
+    return {
+      ok: false,
+      reason: "transcript-missing",
+      message: "Couldn't fetch the transcript from Fathom.",
+    };
+  }
+  const styleSource = await vault.readStyleGuide().catch(() => null);
+  const style = styleSource
+    ? { label: "User's writing style", body: styleSource.body }
+    : undefined;
+
+  try {
+    const result = await draftP2Update(runtime, {
+      transcript,
+      project,
+      call: { recording_id: recordingId, url },
+      style,
+    });
+    return { ok: true, data: result.output };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Agent call failed",
+    };
+  }
+}
+
+/**
+ * Compose a recap message to send to the partner right after the
+ * call. Different from compose-followup-nudge (which nudges someone
+ * who didn't reply) — this is the proactive after-call confirmation.
+ */
+export async function composeCallRecapAction(
+  slug: string,
+  recordingId: string,
+  url?: string,
+): Promise<
+  | { ok: true; data: ComposeCallRecapOutput }
+  | {
+      ok: false;
+      reason: "not-configured" | "transcript-missing" | "error";
+      message?: string;
+    }
+> {
+  if (!slug) throw new Error("slug is required");
+  if (!recordingId) throw new Error("recordingId is required");
+
+  const runtime = await getAgentRuntime();
+  if (!runtime) return { ok: false, reason: "not-configured" };
+
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) return { ok: false, reason: "error", message: "Project not found" };
+
+  const mcp = await getMcpClient();
+  const transcript = await mcp.fathom
+    .fetchTranscript({ recording_id: recordingId, url })
+    .catch(() => null);
+  if (!transcript) {
+    return {
+      ok: false,
+      reason: "transcript-missing",
+      message: "Couldn't fetch the transcript from Fathom.",
+    };
+  }
+  const styleSource = await vault.readStyleGuide().catch(() => null);
+  const style = styleSource
+    ? { label: "User's writing style", body: styleSource.body }
+    : undefined;
+
+  try {
+    const result = await composeCallRecap(runtime, {
       transcript,
       project,
       call: { recording_id: recordingId, url },
