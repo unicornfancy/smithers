@@ -31,6 +31,7 @@ import { Markdown } from "@/components/markdown";
 import { AddProjectTaskInput } from "@/components/add-project-task-input";
 import { DeleteProjectTaskButton } from "@/components/delete-project-task-button";
 import { EditableTaskText } from "@/components/editable-task-text";
+import { ProcessCallDialog } from "@/components/process-call-dialog";
 import { ProjectTaskCheckbox } from "@/components/project-task-checkbox";
 
 // -- Section primitive ----------------------------------------------------
@@ -383,9 +384,11 @@ export function PersonalNotesPanel({ notes }: { notes: SiblingFile | null }) {
 // -- Recent call notes (placeholder until transcription package lands) ----
 
 export function CallNotesPanel({
+  projectSlug,
   projectName,
   recordings,
 }: {
+  projectSlug: string;
   projectName: string;
   recordings: CallRecordingRef[];
 }) {
@@ -426,16 +429,19 @@ export function CallNotesPanel({
                 })}
               </p>
             </div>
-            {r.source_url ? (
-              <a
-                href={r.source_url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-muted-foreground hover:text-foreground shrink-0 text-xs underline-offset-2 hover:underline"
-              >
-                Open
-              </a>
-            ) : null}
+            <div className="flex shrink-0 items-center gap-1.5">
+              <ProcessCallDialog projectSlug={projectSlug} recording={r} />
+              {r.source_url ? (
+                <a
+                  href={r.source_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
+                >
+                  Open
+                </a>
+              ) : null}
+            </div>
           </li>
         ))}
       </ul>

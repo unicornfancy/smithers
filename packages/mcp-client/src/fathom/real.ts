@@ -57,6 +57,30 @@ export class RealFathomTransport implements FathomClient {
     );
   }
 
+  async fetchTranscript(input: {
+    recording_id: string;
+    url?: string;
+  }): Promise<string | null> {
+    if (!input.recording_id) return null;
+    try {
+      const client = await this.mcp.getClient();
+      const result = await client.callTool({
+        name: "get_meeting_transcript",
+        arguments: input.url
+          ? { recording_id: input.recording_id, url: input.url }
+          : { recording_id: input.recording_id },
+      });
+      const content = (result.content ?? []) as Array<{
+        type: string;
+        text?: string;
+      }>;
+      const text = content.find((c) => c.type === "text")?.text;
+      return typeof text === "string" && text.trim().length > 0 ? text : null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Direct text call into list_meetings. Fathom returns plain-text
    * markdown for this tool, so we bypass callJsonTool (which would

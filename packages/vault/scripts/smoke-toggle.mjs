@@ -8,6 +8,7 @@ import { join } from "node:path";
 
 import {
   addProjectZendeskTicket,
+  appendFollowUp,
   appendProjectTask,
   createVault,
   deleteProjectTask,
@@ -513,6 +514,27 @@ try {
 }
 if (!resolveRejected) throw new Error("expected unknown follow-up to throw");
 console.log("[follow-up] OK — flip-to-resolved, idempotent, unknown rejects");
+
+// --- appendFollowUp: append a row to Open Follow-ups table ---
+const af1 = await appendFollowUp(opts, {
+  project: "Smoke Project",
+  task: "Send Loom of staging accordion blocks",
+  follow_up_by: "2026-05-08",
+  source: "[call](https://fathom.video/calls/12345)",
+});
+if (!af1.follow_up_id) throw new Error("expected follow_up_id");
+const afterAppend = readFileSync(followUpsPath, "utf8");
+if (!afterAppend.includes("Send Loom of staging accordion blocks")) {
+  throw new Error("expected appended task in file:\n" + afterAppend);
+}
+if (!afterAppend.includes("⏳ Waiting")) {
+  throw new Error("expected ⏳ Waiting status on new row");
+}
+// Original rows untouched
+if (!afterAppend.includes("Second task")) {
+  throw new Error("existing rows should be intact");
+}
+console.log("[append-followup] OK — row added with status, source preserved");
 
 console.log(`[smoke] cleaning up ${root}`);
 rmSync(root, { recursive: true, force: true });

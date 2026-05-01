@@ -32,6 +32,7 @@ import {
   readDraft,
 } from "./drafts";
 import {
+  appendFollowUp,
   filterFollowUpsForProject,
   listFollowUps,
   resolveFollowUp,
@@ -94,9 +95,14 @@ export type {
   UpdateProjectFrontmatterPatch,
   UpdateProjectFrontmatterResult,
 } from "./projects";
-export type { ResolveFollowUpResult } from "./follow-ups";
+export type {
+  AppendFollowUpInput,
+  AppendFollowUpResult,
+  ResolveFollowUpResult,
+} from "./follow-ups";
 export {
   addProjectZendeskTicket,
+  appendFollowUp,
   appendProjectTask,
   applyDailySectionEdit,
   createProject,
@@ -199,6 +205,9 @@ export interface Vault {
     followUpId: string,
     note?: string,
   ) => ReturnType<typeof resolveFollowUp>;
+  appendFollowUp: (
+    input: Parameters<typeof appendFollowUp>[1],
+  ) => ReturnType<typeof appendFollowUp>;
   watch: (handler: VaultEventHandler) => ReturnType<typeof watchVault>;
 }
 
@@ -244,6 +253,7 @@ export function createVault(options: VaultOptions): Vault {
       updateProjectFrontmatter(resolved, slug, patch),
     resolveFollowUp: (followUpId, note) =>
       resolveFollowUp(resolved, followUpId, note),
+    appendFollowUp: (input) => appendFollowUp(resolved, input),
     watch: (handler) => watchVault(resolved, handler),
   };
 }

@@ -172,6 +172,124 @@ function cellByName(
   return idx >= 0 ? (cells[idx] ?? "") : "";
 }
 
+export interface AppendFollowUpInput {
+  /** Free-text project name as it appears in the Project column. */
+  project: string;
+  /** What you owe / are waiting on. */
+  task: string;
+  /** YYYY-MM-DD when the follow-up was effectively sent (today by default). */
+  sent?: string;
+  /** YYYY-MM-DD by when you want a reply. */
+  follow_up_by?: string;
+  /** Optional source link or note (e.g. "[[Call Notes/2026-05-01]]"). */
+  source?: string;
+}
+
+export interface AppendFollowUpResult {
+  follow_up_id: string;
+  /** Where in the table the new row landed (1-based row number among data rows). */
+  row_number: number;
+}
+
+/**
+ * Append a row to the "Open Follow-ups" table in Follow-ups.md. Creates
+ * the file from a sensible default if it doesn't exist yet. Atomic write.
+ *
+ * The row is added at the bottom of the Open Follow-ups table — same
+ * shape the parser expects (Project | Task | Sent | Follow-up By |
+ * Status | Source), so listFollowUps will see it on the next read.
+ */
+export async function appendFollowUp(
+  opts: ResolvedVaultOptions,
+  input: AppendFollowUpInput,
+): Promise<AppendFollowUpResult> {
+  if (!input.project.trim()) {
+    throw new Error("project is required");
+  }
+  if (!input.task.trim()) {
+    throw new Error("task is required");
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const sent = (input.sent ?? today).trim();
+  const followUpBy = (input.follow_up_by ?? "").trim();
+  const source = (input.source ?? "").trim();
+
+  const paths = vaultPaths(opts);
+  const raw = (await tryReadFile(paths.followUps)) ?? defaultFollowUpsBody();
+
+  const lines = raw.split(/\r?\n/);
+  // Find the Open Follow-ups header row + insert after the last data row.
+  let openHeaderIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.trimStart().startsWith("|")) continue;
+    if (isSeparatorRow(line.trim())) continue;
+    const cells = splitRow(line).map((c) => c.toLowerCase());
+    if (cells.includes("project") && cells.includes("task") && cells.includes("status")) {
+      openHeaderIdx = i;
+      break;
+    }
+  }
+  if (openHeaderIdx < 0) {
+    throw new Error(
+      `Couldn't find an Open Follow-ups header row in Follow-ups.md`,
+    );
+  }
+  // Walk forward from the header to the end of this contiguous table.
+  let lastTableLineIdx = openHeaderIdx;
+  for (let i = openHeaderIdx + 1; i < lines.length; i++) {
+    if (lines[i]!.trimStart().startsWith("|")) {
+      lastTableLineIdx = i;
+    } else {
+      break;
+    }
+  }
+  const headerCells = splitRow(lines[openHeaderIdx]!).map((c) => c.toLowerCase());
+  const newRow = renderRow(headerCells, {
+    project: input.project.trim(),
+    task: input.task.trim(),
+    sent,
+    "follow-up by": followUpBy,
+    status: "⏳ Waiting",
+    source,
+  });
+  lines.splice(lastTableLineIdx + 1, 0, newRow);
+  await writeFileAtomic(paths.followUps, lines.join("\n"));
+
+  return {
+    follow_up_id: deterministicId(input.project.trim(), input.task.trim(), sent),
+    row_number: lastTableLineIdx + 1 - openHeaderIdx,
+  };
+}
+
+function renderRow(
+  headerCells: string[],
+  values: Record<string, string>,
+): string {
+  const cells = headerCells.map((h) => values[h] ?? "");
+  return `| ${cells.join(" | ")} |`;
+}
+
+function defaultFollowUpsBody(): string {
+  return `# Follow-ups Tracker
+*Managed automatically by Smithers. Add rows manually if needed. Mark Status as ✅ Resolved when a response is received.*
+
+---
+
+## Open Follow-ups
+
+| Project | Task | Sent | Follow-up By | Status | Source |
+|---|---|---|---|---|---|
+
+---
+
+## Resolved Follow-ups
+
+| Project | Task | Sent | Resolved | Notes |
+|---|---|---|---|---|
+`;
+}
+
 // --- internals ---
 
 interface ParsedRow {

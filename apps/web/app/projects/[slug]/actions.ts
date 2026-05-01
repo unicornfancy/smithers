@@ -3,9 +3,13 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  analyzeCallTranscript,
   composeFollowUpNudge,
   draftZendeskReply,
   suggestNextStep,
+  type AnalyzeCallTranscriptOutput,
+  type CallActionItem,
+  type CallFollowUp,
   type ComposeNudgeOutput,
   type DraftZendeskReplyOutput,
   type SuggestNextStepOutput,
@@ -421,6 +425,140 @@ export async function draftZendeskReplyAction(
       message: err instanceof Error ? err.message : "Agent call failed",
     };
   }
+}
+
+/**
+ * Pull the full transcript for a Fathom recording and hand it to the
+ * analyze-call-transcript agent. Returns the structured analysis (or
+ * a setup CTA when the API key isn't configured / a clean error when
+ * the transcript can't be fetched).
+ */
+export async function analyzeCallAction(
+  slug: string,
+  recordingId: string,
+  url?: string,
+): Promise<
+  | { ok: true; data: AnalyzeCallTranscriptOutput }
+  | {
+      ok: false;
+      reason: "not-configured" | "transcript-missing" | "error";
+      message?: string;
+    }
+> {
+  if (!slug) throw new Error("slug is required");
+  if (!recordingId) throw new Error("recordingId is required");
+
+  const runtime = await getAgentRuntime();
+  if (!runtime) return { ok: false, reason: "not-configured" };
+
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) return { ok: false, reason: "error", message: "Project not found" };
+
+  const mcp = await getMcpClient();
+  const transcript = await mcp.fathom
+    .fetchTranscript({ recording_id: recordingId, url })
+    .catch(() => null);
+  if (!transcript) {
+    return {
+      ok: false,
+      reason: "transcript-missing",
+      message:
+        "Couldn't fetch the transcript from Fathom. The recording may not be processed yet, or you may need to re-auth Fathom MCP.",
+    };
+  }
+
+  const styleSource = await vault.readStyleGuide().catch(() => null);
+  const style = styleSource
+    ? { label: "User's writing style", body: styleSource.body }
+    : undefined;
+
+  try {
+    const result = await analyzeCallTranscript(runtime, {
+      transcript,
+      project,
+      call: { recording_id: recordingId, url },
+      style,
+    });
+    return { ok: true, data: result.output };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Agent call failed",
+    };
+  }
+}
+
+/**
+ * Append a batch of action items from a call analysis to the project's
+ * Open Items as `- [ ] <text>` lines. Tags items with the action's
+ * owner (when known) so the user can scan whose commitments they're
+ * tracking.
+ */
+export async function acceptCallActionItemsAction(
+  slug: string,
+  items: CallActionItem[],
+): Promise<{ added: number }> {
+  if (!slug) throw new Error("slug is required");
+  if (items.length === 0) return { added: 0 };
+  const vault = await getVault();
+  let added = 0;
+  for (const item of items) {
+    const text = item.text.trim();
+    if (!text) continue;
+    const ownerSuffix =
+      item.owner && item.owner !== "unknown" ? ` _(${item.owner})_` : "";
+    try {
+      await vault.appendProjectTask(slug, `${text}${ownerSuffix}`);
+      added += 1;
+    } catch {
+      // Continue with the rest if any single append fails.
+    }
+  }
+  revalidatePath(`/projects/${slug}`);
+  return { added };
+}
+
+/**
+ * Append a batch of call-derived follow-ups to Follow-ups.md. Project
+ * column is taken from the workbench's project name so the matcher
+ * picks them up. Source column links back to the recording when a
+ * URL was passed.
+ */
+export async function acceptCallFollowUpsAction(
+  slug: string,
+  items: CallFollowUp[],
+  callUrl?: string,
+): Promise<{ added: number }> {
+  if (!slug) throw new Error("slug is required");
+  if (items.length === 0) return { added: 0 };
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) throw new Error(`Project "${slug}" not found`);
+
+  const sent = new Date().toISOString().slice(0, 10);
+  const source = callUrl ? `[call](${callUrl})` : "";
+
+  let added = 0;
+  for (const item of items) {
+    const task = item.task.trim();
+    if (!task) continue;
+    try {
+      await vault.appendFollowUp({
+        project: project.name,
+        task,
+        sent,
+        follow_up_by: item.follow_up_by,
+        source,
+      });
+      added += 1;
+    } catch {
+      // Skip any single failure — keep adding the rest.
+    }
+  }
+  revalidatePath(`/projects/${slug}`);
+  return { added };
 }
 
 /**

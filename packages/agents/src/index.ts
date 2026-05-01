@@ -61,3 +61,13 @@ export {
   type ZendeskReplyContext,
   type ZendeskReplyTone,
 } from "./agents/draft-zendesk-reply";
+
+export {
+  analyzeCallTranscript,
+  type AnalyzeCallTranscriptInput,
+  type AnalyzeCallTranscriptOutput,
+  type CallActionItem,
+  type CallFollowUp,
+  type CallDecision,
+  type CallKeyQuote,
+} from "./agents/analyze-call-transcript";

@@ -282,6 +282,7 @@ export default async function ProjectWorkbenchPage({
         />
 
         <CallNotesPanel
+          projectSlug={detail.slug}
           projectName={detail.name}
           recordings={projectRecordings}
         />
