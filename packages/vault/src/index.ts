@@ -37,6 +37,8 @@ import {
   ensureDraftId,
   listDrafts,
   readDraft,
+  updateDraftBody,
+  type UpdateDraftBodyResult,
 } from "./drafts";
 import {
   appendFollowUp,
@@ -112,6 +114,7 @@ export type {
   AppendFollowUpResult,
   ResolveFollowUpResult,
 } from "./follow-ups";
+export type { UpdateDraftBodyResult } from "./drafts";
 export type {
   SavedCallAnalysis,
   SavedCallNote,
@@ -156,6 +159,7 @@ export {
   ensureProjectId,
   saveCallNotes,
   findCallNotesByRecordingId,
+  updateDraftBody,
   watchVault,
 };
 
@@ -239,6 +243,10 @@ export interface Vault {
   findCallNotesByRecordingId: (
     recordingId: string,
   ) => ReturnType<typeof findCallNotesByRecordingId>;
+  updateDraftBody: (
+    draftId: string,
+    newBody: string,
+  ) => ReturnType<typeof updateDraftBody>;
   watch: (handler: VaultEventHandler) => ReturnType<typeof watchVault>;
 }
 
@@ -290,6 +298,8 @@ export function createVault(options: VaultOptions): Vault {
     saveCallNotes: (input) => saveCallNotes(resolved, input),
     findCallNotesByRecordingId: (recordingId) =>
       findCallNotesByRecordingId(resolved, recordingId),
+    updateDraftBody: (draftId, newBody) =>
+      updateDraftBody(resolved, draftId, newBody),
     watch: (handler) => watchVault(resolved, handler),
   };
 }

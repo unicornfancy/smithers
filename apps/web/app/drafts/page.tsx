@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Archive, FileEdit, PenLine } from "lucide-react";
 
 import type { Draft } from "@smithers/vault";
@@ -7,6 +8,7 @@ import { EmptyState, VaultMissingNotice } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { encodeDraftIdForUrl } from "@/lib/draft-id-url";
 import { getVault } from "@/lib/server/vault";
 
 export const metadata = {
@@ -89,7 +91,10 @@ export default async function DraftsPage() {
 
 function DraftRow({ draft }: { draft: Draft }) {
   return (
-    <div className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
+    <Link
+      href={`/drafts/${encodeDraftIdForUrl(draft.draft_id)}`}
+      className="hover:bg-muted/40 -mx-2 flex items-start justify-between gap-3 rounded-md px-2 py-3 transition-colors"
+    >
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="flex min-w-0 items-center gap-2">
           <FileEdit className="text-muted-foreground size-3.5 shrink-0" />
@@ -111,7 +116,7 @@ function DraftRow({ draft }: { draft: Draft }) {
           {formatDate(draft.modified_at)}
         </span>
       </div>
-    </div>
+    </Link>
   );
 }
 

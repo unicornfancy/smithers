@@ -67,6 +67,41 @@ export async function readDraft(
   return all.find((d) => d.draft_id === draftId) ?? null;
 }
 
+export interface UpdateDraftBodyResult {
+  draft_id: string;
+  /** True when the on-disk content actually changed. */
+  changed: boolean;
+}
+
+/**
+ * Replace the body of an existing draft file. Frontmatter is preserved
+ * verbatim; only the markdown content after the frontmatter changes.
+ * Atomic write — partial crash mid-save can't corrupt the draft.
+ */
+export async function updateDraftBody(
+  opts: ResolvedVaultOptions,
+  draftId: string,
+  newBody: string,
+): Promise<UpdateDraftBodyResult> {
+  const draft = await readDraft(opts, draftId);
+  if (!draft) {
+    throw new Error(`Draft ${draftId} not found`);
+  }
+  const raw = await tryReadFile(draft.absolute_path);
+  if (raw === null) {
+    throw new Error(`Draft file disappeared at ${draft.absolute_path}`);
+  }
+  const { data, content } = parseMarkdown(raw);
+  if (content === newBody) {
+    return { draft_id: draftId, changed: false };
+  }
+  await writeFileAtomic(
+    draft.absolute_path,
+    serializeMarkdown(data, newBody),
+  );
+  return { draft_id: draftId, changed: true };
+}
+
 /**
  * Ensure a draft file has a `draft_id` in its frontmatter. Generates one if
  * missing; idempotent.

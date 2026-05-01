@@ -26,6 +26,7 @@ import type {
 } from "@smithers/vault";
 
 import { cn } from "@/lib/utils";
+import { encodeDraftIdForUrl } from "@/lib/draft-id-url";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Markdown } from "@/components/markdown";
 import { AddProjectTaskInput } from "@/components/add-project-task-input";
@@ -253,31 +254,38 @@ function DraftRow({ draft, dim = false }: { draft: Draft; dim?: boolean }) {
   return (
     <li
       className={cn(
-        "flex items-start gap-2 py-2 first:pt-0 last:pb-0",
+        "py-0 first:pt-0 last:pb-0",
         dim && "text-muted-foreground",
       )}
     >
-      {draft.state === "archived" ? (
-        <Archive className="mt-0.5 size-3.5 shrink-0" />
-      ) : (
-        <FileEdit className="mt-0.5 size-3.5 shrink-0" />
-      )}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <p
-          className={cn(
-            "truncate text-sm font-medium leading-snug",
-            dim && "line-through",
-          )}
-        >
-          {draft.title}
-        </p>
-        <p className="text-muted-foreground truncate text-[11px]">
-          {draft.relative_path}
-        </p>
-      </div>
-      <span className="text-muted-foreground/80 shrink-0 text-[11px] tabular-nums">
-        {formatDate(draft.modified_at)}
-      </span>
+      <a
+        href={`/drafts/${encodeDraftIdForUrl(draft.draft_id)}`}
+        className={cn(
+          "hover:bg-muted/40 -mx-2 flex items-start gap-2 rounded-md px-2 py-2 transition-colors",
+        )}
+      >
+        {draft.state === "archived" ? (
+          <Archive className="mt-0.5 size-3.5 shrink-0" />
+        ) : (
+          <FileEdit className="mt-0.5 size-3.5 shrink-0" />
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p
+            className={cn(
+              "truncate text-sm font-medium leading-snug",
+              dim && "line-through",
+            )}
+          >
+            {draft.title}
+          </p>
+          <p className="text-muted-foreground truncate text-[11px]">
+            {draft.relative_path}
+          </p>
+        </div>
+        <span className="text-muted-foreground/80 shrink-0 text-[11px] tabular-nums">
+          {formatDate(draft.modified_at)}
+        </span>
+      </a>
     </li>
   );
 }
