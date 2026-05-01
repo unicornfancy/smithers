@@ -13,6 +13,8 @@ interface Props {
   followUpId: string;
   /** Truncated task text used in the success toast. */
   label: string;
+  /** Stay visible (vs. hover-only) — used when a stall hint applies. */
+  alwaysVisible?: boolean;
 }
 
 /**
@@ -24,6 +26,7 @@ export function ResolveFollowUpButton({
   projectSlug,
   followUpId,
   label,
+  alwaysVisible = false,
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -56,9 +59,11 @@ export function ResolveFollowUpButton({
       className={cn(
         "mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded",
         "text-muted-foreground hover:text-emerald-600 hover:bg-emerald-500/10",
-        "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         "transition-opacity",
+        alwaysVisible
+          ? "opacity-70 hover:opacity-100"
+          : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
         pending && "opacity-100",
       )}
     >

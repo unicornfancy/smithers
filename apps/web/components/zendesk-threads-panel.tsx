@@ -250,6 +250,11 @@ function ThreadCard({
 }) {
   const activeFu = followUps.filter((f) => f.status !== "resolved");
   const resolvedFu = followUps.filter((f) => f.status === "resolved");
+  // Most recent external (partner) comment, if any — drives the
+  // "partner replied" stall hint on follow-ups whose `sent` predates it.
+  const lastExternalActivity = recentActivity.find(
+    (e) => e.actor?.is_external === true,
+  );
   return (
     <li
       className={cn(
@@ -276,6 +281,7 @@ function ThreadCard({
                 projectSlug={projectSlug}
                 fu={f}
                 highlight
+                stallHint={detectStallHint(f, ticket, lastExternalActivity)}
               />
             ))}
             {resolvedFu.slice(0, 3).map((f) => (
@@ -317,17 +323,27 @@ function ThreadCard({
   );
 }
 
+interface StallHint {
+  /** Why the row is suspected stale. */
+  reason: string;
+  /** Visual urgency — "thread closed" is harder evidence than "partner replied". */
+  level: "strong" | "soft";
+}
+
 function FollowUpRow({
   projectSlug,
   fu,
   highlight = false,
   dim = false,
+  stallHint,
 }: {
   projectSlug: string;
   fu: FollowUp;
   highlight?: boolean;
   dim?: boolean;
+  stallHint?: StallHint | null;
 }) {
+  const showHint = !!stallHint && fu.status !== "resolved";
   return (
     <li
       className={cn(
@@ -341,9 +357,11 @@ function FollowUpRow({
         <Clock
           className={cn(
             "mt-0.5 size-3.5 shrink-0",
-            highlight
-              ? "text-amber-600 dark:text-amber-400"
-              : "text-muted-foreground",
+            showHint
+              ? "text-emerald-600 dark:text-emerald-400"
+              : highlight
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-muted-foreground",
           )}
         />
       )}
@@ -362,16 +380,73 @@ function FollowUpRow({
           {fu.follow_up_by ? ` · due ${fu.follow_up_by}` : ""}
           {fu.status_note ? ` · ${fu.status_note}` : ""}
         </p>
+        {showHint ? (
+          <span
+            className={cn(
+              "mt-0.5 inline-flex w-fit items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
+              stallHint!.level === "strong"
+                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                : "bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-300",
+            )}
+            title="Suggested cleanup based on thread state"
+          >
+            <CheckCircle2 className="size-2.5" />
+            {stallHint!.reason} — likely safe to resolve
+          </span>
+        ) : null}
       </div>
       {fu.status !== "resolved" ? (
         <ResolveFollowUpButton
           projectSlug={projectSlug}
           followUpId={fu.follow_up_id}
           label={fu.task}
+          alwaysVisible={showHint}
         />
       ) : null}
     </li>
   );
+}
+
+/**
+ * Compute a stall hint for a follow-up based on its parent ticket's
+ * state and the most recent external (partner) comment we know about.
+ *
+ * Returns the strongest signal available:
+ *   - "thread closed" — ticket is solved/closed (overrides partner-replied)
+ *   - "partner replied" — last external comment is newer than the
+ *     follow-up's `sent` date (we owed the partner a reply, they
+ *     beat us to it, follow-up probably reflects work that's done)
+ */
+function detectStallHint(
+  fu: FollowUp,
+  ticket: ZendeskTicketSummary,
+  lastExternalActivity: ActivityEvent | undefined,
+): StallHint | null {
+  const status = ticket.status?.toLowerCase() ?? "";
+  if (status === "solved" || status === "closed") {
+    return { reason: "Thread closed", level: "strong" };
+  }
+  if (lastExternalActivity && fu.sent) {
+    // Compare YYYY-MM-DD substrings — fu.sent is a date string, the
+    // activity timestamp is full ISO. As long as the activity is on a
+    // later date than `sent`, treat as a reply that came in after.
+    const activityDate = lastExternalActivity.timestamp.slice(0, 10);
+    if (activityDate > fu.sent) {
+      const days = daysBetween(fu.sent, activityDate);
+      return {
+        reason: `Partner replied ${days === 0 ? "after" : `${days}d after`} you sent`,
+        level: "soft",
+      };
+    }
+  }
+  return null;
+}
+
+function daysBetween(start: string, end: string): number {
+  const a = Date.parse(start);
+  const b = Date.parse(end);
+  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
+  return Math.max(0, Math.floor((b - a) / 86_400_000));
 }
 
 function ActivityRow({ event }: { event: ActivityEvent }) {
