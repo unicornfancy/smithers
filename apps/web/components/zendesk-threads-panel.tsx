@@ -1,6 +1,17 @@
-import { ChevronRight, ExternalLink, LifeBuoy, Star } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  ExternalLink,
+  LifeBuoy,
+  Star,
+} from "lucide-react";
 
-import type { ZendeskTicketSummary } from "@smithers/mcp-client";
+import type {
+  ActivityEvent,
+  ZendeskTicketSummary,
+} from "@smithers/mcp-client";
+import type { FollowUp } from "@smithers/vault";
 
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,16 +22,24 @@ interface Props {
   /** Resolved ticket summaries, in the same order the user listed them. */
   tickets: ZendeskTicketSummary[];
   /**
-   * Hint passed into the Attach modal as the default search query —
-   * usually the partner display name so a partner workbench gets a
-   * one-click "show me what's open" experience.
+   * All follow-ups for this project (active + resolved). The panel
+   * groups them by referenced #ticket_id and renders matched ones
+   * under each ticket; unmatched ones land in the "Unattributed"
+   * section at the bottom.
    */
+  followUps: { active: FollowUp[]; resolved: FollowUp[] };
+  /**
+   * Map of ticket id → most-recent comments. Used to populate the
+   * per-ticket "Recent activity" disclosure. Empty array (or missing
+   * key) is fine — disclosure just stays empty.
+   */
+  recentActivityByTicketId?: Record<string, ActivityEvent[]>;
+  /** Default query for the Attach modal — usually the partner name. */
   defaultSearchQuery?: string;
   /**
-   * When true, render even with zero tickets so the user can attach
-   * one. Partner workbenches always render; non-partner projects only
-   * render when at least one ticket is wired up (no point cluttering
-   * personal projects with an Attach button they'll never use).
+   * When true, render even with zero tickets. Partner workbenches
+   * always render; non-partner projects only render when at least one
+   * ticket is wired up.
    */
   alwaysShow?: boolean;
 }
@@ -36,18 +55,24 @@ interface Props {
 export function ZendeskThreadsPanel({
   projectSlug,
   tickets,
+  followUps,
+  recentActivityByTicketId,
   defaultSearchQuery,
   alwaysShow,
 }: Props) {
-  if (tickets.length === 0 && !alwaysShow) return null;
+  const allFollowUps = [...followUps.active, ...followUps.resolved];
+  if (tickets.length === 0 && allFollowUps.length === 0 && !alwaysShow)
+    return null;
 
   const existingIds = tickets.map((t) => t.id);
   const { active, closed } = partitionByStatus(tickets);
-  // The "primary" badge sticks to the first ticket as listed in
-  // frontmatter, regardless of status — re-ordering frontmatter is
-  // how the user signals which thread is primary, not which one is
-  // currently open.
   const primaryId = tickets[0]?.id;
+  // Group follow-ups by referenced #ticket_id. A follow-up that mentions
+  // multiple ids gets attributed to the first one (rare in practice).
+  // What's left over goes in the Unattributed bucket at the bottom.
+  const { byTicket: followUpsByTicket, unattributed } = groupFollowUpsByTicket(
+    allFollowUps,
+  );
 
   return (
     <Card>
@@ -71,16 +96,22 @@ export function ZendeskThreadsPanel({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {tickets.length === 0 ? (
+        {tickets.length === 0 && unattributed.length === 0 ? (
           <p className="text-muted-foreground text-sm italic">
             No Zendesk threads attached yet. Use the Attach button above
             to search and pick one.
           </p>
         ) : null}
         {active.length > 0 ? (
-          <ul className="flex flex-col divide-y">
+          <ul className="flex flex-col gap-3">
             {active.map((t) => (
-              <ZendeskRow key={t.id} ticket={t} primary={t.id === primaryId} />
+              <ThreadCard
+                key={t.id}
+                ticket={t}
+                primary={t.id === primaryId}
+                followUps={followUpsByTicket.get(t.id) ?? []}
+                recentActivity={recentActivityByTicketId?.[t.id] ?? []}
+              />
             ))}
           </ul>
         ) : tickets.length > 0 ? (
@@ -89,9 +120,6 @@ export function ZendeskThreadsPanel({
           </p>
         ) : null}
         {closed.length > 0 ? (
-          // Native <details> so the disclosure works without a client
-          // boundary — the rest of this panel is server-rendered, and
-          // expanding closed history doesn't need React state.
           <details className="group rounded-md border border-dashed">
             <summary
               className={cn(
@@ -106,21 +134,210 @@ export function ZendeskThreadsPanel({
                 ongoing record
               </span>
             </summary>
-            <ul className="flex flex-col divide-y px-3 pb-2">
+            <ul className="flex flex-col gap-3 px-3 pb-3 pt-1">
               {closed.map((t) => (
-                <ZendeskRow
+                <ThreadCard
                   key={t.id}
                   ticket={t}
                   primary={t.id === primaryId}
+                  followUps={followUpsByTicket.get(t.id) ?? []}
+                  recentActivity={[]}
                   dim
                 />
               ))}
             </ul>
           </details>
         ) : null}
+        {unattributed.length > 0 ? (
+          <div className="rounded-md border border-dashed bg-muted/30 px-3 py-2">
+            <p className="text-muted-foreground mb-1.5 text-[11px] font-medium uppercase tracking-wide">
+              Unattributed follow-ups · {unattributed.length}
+            </p>
+            <p className="text-muted-foreground/80 mb-2 text-[11px] italic">
+              These don&rsquo;t mention a Zendesk ticket id in the task
+              text. Add <code className="bg-muted rounded px-1 py-0.5">
+                #&lt;id&gt;
+              </code>{" "}
+              to the task to file it under a thread.
+            </p>
+            <ul className="flex flex-col divide-y">
+              {unattributed.map((f) => (
+                <FollowUpRow key={f.follow_up_id} fu={f} />
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
+}
+
+function ThreadCard({
+  ticket,
+  primary,
+  followUps,
+  recentActivity,
+  dim = false,
+}: {
+  ticket: ZendeskTicketSummary;
+  primary: boolean;
+  followUps: FollowUp[];
+  recentActivity: ActivityEvent[];
+  dim?: boolean;
+}) {
+  const activeFu = followUps.filter((f) => f.status !== "resolved");
+  const resolvedFu = followUps.filter((f) => f.status === "resolved");
+  return (
+    <li
+      className={cn(
+        "flex flex-col gap-2 rounded-md border p-3",
+        dim ? "border-muted bg-muted/20" : "border-border",
+      )}
+    >
+      <ZendeskRow ticket={ticket} primary={primary} dim={dim} />
+      {followUps.length > 0 ? (
+        <div className="border-t pt-2">
+          <p className="text-muted-foreground mb-1 text-[11px] font-medium uppercase tracking-wide">
+            Follow-ups · {activeFu.length} active
+            {resolvedFu.length > 0 ? ` · ${resolvedFu.length} resolved` : ""}
+          </p>
+          <ul className="flex flex-col divide-y">
+            {activeFu.map((f) => (
+              <FollowUpRow key={f.follow_up_id} fu={f} highlight />
+            ))}
+            {resolvedFu.slice(0, 3).map((f) => (
+              <FollowUpRow key={f.follow_up_id} fu={f} dim />
+            ))}
+            {resolvedFu.length > 3 ? (
+              <li className="text-muted-foreground/70 py-1 text-[11px]">
+                + {resolvedFu.length - 3} more resolved
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
+      {recentActivity.length > 0 ? (
+        <details className="group/activity border-t">
+          <summary
+            className={cn(
+              "flex cursor-pointer list-none items-center gap-2 pt-2",
+              "text-muted-foreground text-[11px] font-medium uppercase tracking-wide",
+              "hover:text-foreground",
+            )}
+          >
+            <ChevronRight className="size-3 transition-transform group-open/activity:rotate-90" />
+            Recent activity · {recentActivity.length}
+          </summary>
+          <ul className="mt-1.5 flex flex-col divide-y">
+            {recentActivity.slice(0, 5).map((e) => (
+              <ActivityRow key={e.id} event={e} />
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </li>
+  );
+}
+
+function FollowUpRow({
+  fu,
+  highlight = false,
+  dim = false,
+}: {
+  fu: FollowUp;
+  highlight?: boolean;
+  dim?: boolean;
+}) {
+  return (
+    <li
+      className={cn(
+        "flex items-start gap-2 py-1.5 first:pt-0 last:pb-0",
+        dim && "text-muted-foreground",
+      )}
+    >
+      {fu.status === "resolved" ? (
+        <CheckCircle2 className="text-muted-foreground mt-0.5 size-3.5 shrink-0" />
+      ) : (
+        <Clock
+          className={cn(
+            "mt-0.5 size-3.5 shrink-0",
+            highlight
+              ? "text-amber-600 dark:text-amber-400"
+              : "text-muted-foreground",
+          )}
+        />
+      )}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p
+          className={cn(
+            "text-sm leading-snug",
+            highlight && "text-foreground font-medium",
+            dim && "line-through",
+          )}
+        >
+          {fu.task}
+        </p>
+        <p className="text-muted-foreground text-[11px]">
+          sent {fu.sent}
+          {fu.follow_up_by ? ` · due ${fu.follow_up_by}` : ""}
+          {fu.status_note ? ` · ${fu.status_note}` : ""}
+        </p>
+      </div>
+    </li>
+  );
+}
+
+function ActivityRow({ event }: { event: ActivityEvent }) {
+  return (
+    <li className="flex items-start gap-2 py-1.5 first:pt-0 last:pb-0">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex items-baseline gap-1.5 text-sm">
+          {event.actor ? (
+            <span
+              className={cn(
+                "shrink-0 text-sm font-medium",
+                event.actor.is_external
+                  ? "text-amber-700 dark:text-amber-400"
+                  : "text-foreground",
+              )}
+            >
+              {event.actor.name}
+            </span>
+          ) : null}
+          <span className="text-muted-foreground/80 text-[11px] tabular-nums">
+            {formatRelative(event.timestamp)}
+          </span>
+        </div>
+        {event.excerpt ? (
+          <p className="text-muted-foreground text-xs leading-snug">
+            {event.excerpt}
+          </p>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+const TICKET_ID_RE = /#(\d{5,})/;
+
+function groupFollowUpsByTicket(followUps: FollowUp[]): {
+  byTicket: Map<string, FollowUp[]>;
+  unattributed: FollowUp[];
+} {
+  const byTicket = new Map<string, FollowUp[]>();
+  const unattributed: FollowUp[] = [];
+  for (const f of followUps) {
+    const m = f.task.match(TICKET_ID_RE);
+    if (m) {
+      const id = m[1]!;
+      const existing = byTicket.get(id) ?? [];
+      existing.push(f);
+      byTicket.set(id, existing);
+    } else {
+      unattributed.push(f);
+    }
+  }
+  return { byTicket, unattributed };
 }
 
 const ACTIVE_STATUSES = new Set(["open", "pending", "new", "hold"]);

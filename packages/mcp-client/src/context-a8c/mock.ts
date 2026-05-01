@@ -142,6 +142,51 @@ export class MockContextA8CTransport implements ContextA8CClient {
     };
   }
 
+  async fetchZendeskTicketActivity(
+    ticketRef: string,
+    opts: { limit?: number; projectSlug?: string } = {},
+  ): Promise<ActivityEvent[]> {
+    const id = extractTicketId(ticketRef) ?? ticketRef;
+    if (!id || !/^\d+$/.test(id)) return [];
+    const limit = Math.max(1, Math.min(50, opts.limit ?? 10));
+    const rng = createRng(dailySeed(`zendesk-activity:${id}`));
+    const count = Math.min(limit, 1 + Math.floor(rng() * 4));
+    const now = Date.now();
+    const out: ActivityEvent[] = [];
+    for (let i = 0; i < count; i++) {
+      const isExternal = rng() < 0.6;
+      const daysAgo = i + Math.floor(rng() * 3);
+      const ts = new Date(now - daysAgo * 86_400_000).toISOString();
+      out.push({
+        id: `mock:zendesk:${id}:c${i}`,
+        source: "zendesk",
+        kind: "zendesk-comment",
+        timestamp: ts,
+        actor: isExternal
+          ? {
+              name: "Partner contact",
+              handle: "partner",
+              is_external: true,
+            }
+          : {
+              name: "Riley Chen",
+              handle: "riley",
+              is_external: false,
+            },
+        title: `Reply on ticket #${id}`,
+        excerpt: isExternal
+          ? "Thanks — we tested again and the issue persists on mobile."
+          : "Looped in the team; will follow up tomorrow with a workaround.",
+        url: `https://automattic.zendesk.com/agent/tickets/${id}`,
+        project_match: opts.projectSlug
+          ? { project_slug: opts.projectSlug, matched_by: "zendesk_ticket" }
+          : undefined,
+        is_mock: true,
+      });
+    }
+    return out;
+  }
+
   async searchZendeskTickets(
     query: string,
     opts: { limit?: number } = {},

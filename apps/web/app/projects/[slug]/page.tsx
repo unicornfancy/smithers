@@ -14,7 +14,6 @@ import { WorkbenchHeader } from "@/components/workbench-header";
 import {
   CallNotesPanel,
   DraftsForProjectPanel,
-  FollowUpsForProjectPanel,
   ForYouTodayPanel,
   MilestonesPanel,
   OpenItemsPanel,
@@ -131,6 +130,36 @@ export default async function ProjectWorkbenchPage({
           )
         ).filter((t): t is NonNullable<typeof t> => t !== null);
 
+  // Eager-fetch recent comments only for *active* tickets — closed
+  // ones go into a folded disclosure that the user usually won't open,
+  // so paying for the round-trip up front is wasteful. The panel
+  // gracefully shows an empty disclosure when comments aren't passed.
+  const activeTicketIds = new Set(
+    zendeskTickets
+      .filter((t) => {
+        const s = t.status?.toLowerCase() ?? "";
+        return s !== "solved" && s !== "closed";
+      })
+      .map((t) => t.id),
+  );
+  type ActivityList = Awaited<
+    ReturnType<typeof mcp.contextA8C.fetchZendeskTicketActivity>
+  >;
+  const recentActivityByTicketId: Record<string, ActivityList> = {};
+  await Promise.all(
+    Array.from(activeTicketIds).map(async (id) => {
+      try {
+        recentActivityByTicketId[id] = await mcp.contextA8C
+          .fetchZendeskTicketActivity(id, {
+            projectSlug: detail.slug,
+            limit: 5,
+          });
+      } catch {
+        recentActivityByTicketId[id] = [];
+      }
+    }),
+  );
+
   // Filter Fathom recordings to those whose title looks like it
   // belongs to this project — match against project name, partner
   // slug, or partner display name. Imperfect but cheap; the user
@@ -230,24 +259,20 @@ export default async function ProjectWorkbenchPage({
           />
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-2">
-          <FollowUpsForProjectPanel
-            followUps={projectFollowUps}
-            projectName={detail.name}
-          />
-          <CallNotesPanel
-            projectName={detail.name}
-            recordings={projectRecordings}
-          />
-        </div>
-
         <ZendeskThreadsPanel
           projectSlug={detail.slug}
           tickets={zendeskTickets}
+          followUps={projectFollowUps}
+          recentActivityByTicketId={recentActivityByTicketId}
           defaultSearchQuery={
             partnerProfile?.display_name ?? detail.partner ?? detail.name
           }
           alwaysShow={isPartner}
+        />
+
+        <CallNotesPanel
+          projectName={detail.name}
+          recordings={projectRecordings}
         />
 
         {isPartner ? (

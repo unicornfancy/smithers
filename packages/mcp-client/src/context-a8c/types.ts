@@ -86,6 +86,18 @@ export interface ContextA8CClient {
     query: string,
     opts?: { limit?: number },
   ): Promise<ZendeskSearchResult>;
+
+  /**
+   * Recent comments on a single ticket. Used by the per-thread
+   * "Recent activity" disclosure on the project workbench. Returns
+   * an empty array on any failure so the UI can degrade silently —
+   * a missing activity disclosure is far less disruptive than a
+   * crashed panel.
+   */
+  fetchZendeskTicketActivity(
+    ticketRef: string,
+    opts?: { limit?: number; projectSlug?: string },
+  ): Promise<ActivityEvent[]>;
 }
 
 export type ZendeskSearchResult =

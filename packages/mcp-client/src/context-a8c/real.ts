@@ -497,6 +497,46 @@ export class RealContextA8CTransport implements ContextA8CClient {
   }
 
   /**
+   * Public per-ticket comments fetch — used by the merged Threads panel
+   * to render a "Recent activity" disclosure under each ticket. We
+   * reuse the same upstream tool the activity feed uses, but unwrap
+   * the SourceResult here so the caller gets a plain array (or empty
+   * on failure — the disclosure is decorative, not load-bearing).
+   */
+  async fetchZendeskTicketActivity(
+    ticketRef: string,
+    opts: { limit?: number; projectSlug?: string } = {},
+  ): Promise<ActivityEvent[]> {
+    const ticketId = extractTicketId(ticketRef);
+    if (!ticketId) return [];
+    try {
+      const result = await this.mcp.callJsonTool<ZendeskCommentsResult>(
+        "context-a8c-execute-tool",
+        {
+          provider: "zendesk",
+          tool: "comments",
+          params: {
+            ticket_id: Number(ticketId),
+            per_page: Math.max(1, Math.min(50, opts.limit ?? 10)),
+          },
+        },
+      );
+      const events = mapZendeskCommentsToActivity(
+        asArray<ZendeskComment>(result?.comments ?? result?.result),
+        ticketId,
+        opts.projectSlug ?? "",
+        this.opts.internalEmailDomains,
+      );
+      // Newest first — comments come back oldest-first from Zendesk.
+      return events.sort((a, b) =>
+        b.timestamp.localeCompare(a.timestamp),
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * One-shot ticket-metadata fetch (subject + status + requester) for
    * the workbench's ZendeskThreadsPanel. No isolation wrapper because
    * this is called outside the activity fan-out — caller decides how
