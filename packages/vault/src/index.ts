@@ -17,7 +17,14 @@ export const VAULT_PACKAGE_VERSION = "0.0.3";
 
 import { resolveVaultOptions, type VaultOptions } from "./config";
 import { listAgendas } from "./agendas";
-import { listCallNotes } from "./call-notes";
+import {
+  findCallNotesByRecordingId,
+  listCallNotes,
+  saveCallNotes,
+  type SavedCallAnalysis,
+  type SavedCallNote,
+  type SaveCallNotesInput,
+} from "./call-notes";
 import {
   applyDailySectionEdit,
   dailyNotePath,
@@ -40,6 +47,7 @@ import {
 import { readProjectDetail } from "./project-detail";
 import {
   addProjectZendeskTicket,
+  appendDecisionsToProject,
   createProject,
   ensureProjectId,
   listProjects,
@@ -49,6 +57,8 @@ import {
   setProjectZendeskSearchTerms,
   updateProjectFrontmatter,
   type AddProjectZendeskTicketResult,
+  type AppendDecisionsInput,
+  type AppendDecisionsResult,
   type CreateProjectInput,
   type CreateProjectResult,
   type RefreshZendeskMetadataResult,
@@ -87,6 +97,8 @@ export type {
 } from "./tasks";
 export type {
   AddProjectZendeskTicketResult,
+  AppendDecisionsInput,
+  AppendDecisionsResult,
   CreateProjectInput,
   CreateProjectResult,
   RefreshZendeskMetadataResult,
@@ -100,8 +112,15 @@ export type {
   AppendFollowUpResult,
   ResolveFollowUpResult,
 } from "./follow-ups";
+export type {
+  SavedCallAnalysis,
+  SavedCallNote,
+  SaveCallNotesInput,
+  CallNoteRef,
+} from "./call-notes";
 export {
   addProjectZendeskTicket,
+  appendDecisionsToProject,
   appendFollowUp,
   appendProjectTask,
   applyDailySectionEdit,
@@ -135,6 +154,8 @@ export {
   upsertDailySection,
   ensureDraftId,
   ensureProjectId,
+  saveCallNotes,
+  findCallNotesByRecordingId,
   watchVault,
 };
 
@@ -208,6 +229,16 @@ export interface Vault {
   appendFollowUp: (
     input: Parameters<typeof appendFollowUp>[1],
   ) => ReturnType<typeof appendFollowUp>;
+  appendDecisionsToProject: (
+    slug: string,
+    input: Parameters<typeof appendDecisionsToProject>[2],
+  ) => ReturnType<typeof appendDecisionsToProject>;
+  saveCallNotes: (
+    input: Parameters<typeof saveCallNotes>[1],
+  ) => ReturnType<typeof saveCallNotes>;
+  findCallNotesByRecordingId: (
+    recordingId: string,
+  ) => ReturnType<typeof findCallNotesByRecordingId>;
   watch: (handler: VaultEventHandler) => ReturnType<typeof watchVault>;
 }
 
@@ -254,6 +285,11 @@ export function createVault(options: VaultOptions): Vault {
     resolveFollowUp: (followUpId, note) =>
       resolveFollowUp(resolved, followUpId, note),
     appendFollowUp: (input) => appendFollowUp(resolved, input),
+    appendDecisionsToProject: (slug, input) =>
+      appendDecisionsToProject(resolved, slug, input),
+    saveCallNotes: (input) => saveCallNotes(resolved, input),
+    findCallNotesByRecordingId: (recordingId) =>
+      findCallNotesByRecordingId(resolved, recordingId),
     watch: (handler) => watchVault(resolved, handler),
   };
 }

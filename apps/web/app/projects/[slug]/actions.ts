@@ -11,6 +11,7 @@ import {
   suggestNextStep,
   type AnalyzeCallTranscriptOutput,
   type CallActionItem,
+  type CallDecision,
   type CallFollowUp,
   type ComposeCallRecapOutput,
   type ComposeNudgeOutput,
@@ -431,18 +432,61 @@ export async function draftZendeskReplyAction(
   }
 }
 
+// Map a saved call-notes analysis (vault shape; `owner: string`) back
+// to the agent output shape (`owner?: "user"|"partner"|"team"|"unknown"`).
+// Unknown strings collapse to "unknown" so the dialog stays well-typed.
+async function coerceSavedAnalysisToAgentOutput(
+  saved: import("@smithers/vault").SavedCallAnalysis,
+): Promise<AnalyzeCallTranscriptOutput> {
+  const allowedOwners = new Set(["user", "partner", "team", "unknown"]);
+  return {
+    summary: saved.summary,
+    action_items: saved.action_items.map((a) => ({
+      text: a.text,
+      owner: allowedOwners.has(a.owner)
+        ? (a.owner as "user" | "partner" | "team" | "unknown")
+        : "unknown",
+    })),
+    follow_ups: saved.follow_ups.map((f) => ({
+      task: f.task,
+      rationale: f.rationale,
+      follow_up_by: f.follow_up_by,
+    })),
+    decisions: saved.decisions.map((d) => ({
+      text: d.text,
+      context: d.context,
+    })),
+    key_quotes: saved.key_quotes.map((q) => ({
+      speaker: q.speaker,
+      text: q.text,
+    })),
+  };
+}
+
 /**
  * Pull the full transcript for a Fathom recording and hand it to the
- * analyze-call-transcript agent. Returns the structured analysis (or
- * a setup CTA when the API key isn't configured / a clean error when
- * the transcript can't be fetched).
+ * analyze-call-transcript agent. Caches the result to a markdown file
+ * in `Call Notes/` keyed by recording_id, so re-running Process on
+ * the same recording returns the saved file instead of paying for
+ * another LLM call (and another transcript fetch).
+ *
+ * Pass `{ force: true }` to bypass the cache and re-analyze. The
+ * returned `cached` flag tells the UI whether the result came from
+ * disk; `notes_path` is the relative vault path for "View notes" CTAs.
  */
 export async function analyzeCallAction(
   slug: string,
   recordingId: string,
   url?: string,
+  opts?: { force?: boolean; recording_title?: string; recorded_at?: string },
 ): Promise<
-  | { ok: true; data: AnalyzeCallTranscriptOutput }
+  | {
+      ok: true;
+      data: AnalyzeCallTranscriptOutput;
+      cached: boolean;
+      analyzed_at: string;
+      notes_path?: string;
+    }
   | {
       ok: false;
       reason: "not-configured" | "transcript-missing" | "error";
@@ -452,12 +496,29 @@ export async function analyzeCallAction(
   if (!slug) throw new Error("slug is required");
   if (!recordingId) throw new Error("recordingId is required");
 
-  const runtime = await getAgentRuntime();
-  if (!runtime) return { ok: false, reason: "not-configured" };
-
   const vault = await getVault();
   const project = await vault.readProject(slug);
   if (!project) return { ok: false, reason: "error", message: "Project not found" };
+
+  // Cache hit path. Skip when `force: true` so the user can refresh
+  // a stale analysis without renaming the file.
+  if (!opts?.force) {
+    const existing = await vault
+      .findCallNotesByRecordingId(recordingId)
+      .catch(() => null);
+    if (existing) {
+      return {
+        ok: true,
+        data: await coerceSavedAnalysisToAgentOutput(existing.analysis),
+        cached: true,
+        analyzed_at: existing.analyzed_at,
+        notes_path: existing.relative_path,
+      };
+    }
+  }
+
+  const runtime = await getAgentRuntime();
+  if (!runtime) return { ok: false, reason: "not-configured" };
 
   const mcp = await getMcpClient();
   const transcript = await mcp.fathom
@@ -484,7 +545,46 @@ export async function analyzeCallAction(
       call: { recording_id: recordingId, url },
       style,
     });
-    return { ok: true, data: result.output };
+    // Persist to Call Notes/ so subsequent Process clicks hit the cache.
+    // Coerce optional fields to defaults the vault shape expects.
+    const saved = await vault
+      .saveCallNotes({
+        project_slug: slug,
+        recording: {
+          recording_id: recordingId,
+          title: opts?.recording_title ?? null,
+          recorded_at: opts?.recorded_at ?? null,
+          url: url ?? null,
+        },
+        analysis: {
+          summary: result.output.summary,
+          action_items: result.output.action_items.map((a) => ({
+            text: a.text,
+            owner: a.owner ?? "unknown",
+          })),
+          follow_ups: result.output.follow_ups.map((f) => ({
+            task: f.task,
+            rationale: f.rationale,
+            follow_up_by: f.follow_up_by,
+          })),
+          decisions: result.output.decisions.map((d) => ({
+            text: d.text,
+            context: d.context,
+          })),
+          key_quotes: result.output.key_quotes.map((q) => ({
+            speaker: q.speaker,
+            text: q.text,
+          })),
+        },
+      })
+      .catch(() => null);
+    return {
+      ok: true,
+      data: result.output,
+      cached: false,
+      analyzed_at: saved?.analyzed_at ?? new Date().toISOString(),
+      notes_path: saved?.relative_path,
+    };
   } catch (err) {
     return {
       ok: false,
@@ -642,6 +742,31 @@ export async function acceptCallActionItemsAction(
   }
   revalidatePath(`/projects/${slug}`);
   return { added };
+}
+
+/**
+ * Append a batch of call-derived decisions to the project body's
+ * `## Decisions` section as a per-call sub-block. Creates the section
+ * if it doesn't exist yet.
+ */
+export async function acceptCallDecisionsAction(
+  slug: string,
+  decisions: CallDecision[],
+  callTitle: string,
+  callDate: string,
+  callUrl?: string,
+): Promise<{ added: number }> {
+  if (!slug) throw new Error("slug is required");
+  if (decisions.length === 0) return { added: 0 };
+  const vault = await getVault();
+  const result = await vault.appendDecisionsToProject(slug, {
+    call_title: callTitle,
+    call_date: callDate,
+    call_url: callUrl,
+    decisions,
+  });
+  revalidatePath(`/projects/${slug}`);
+  return { added: result.changed ? decisions.length : 0 };
 }
 
 /**

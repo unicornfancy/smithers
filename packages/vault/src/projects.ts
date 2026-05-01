@@ -536,6 +536,118 @@ export async function setPrimaryZendeskTicket(
   return { zendesk_tickets: next, changed: true };
 }
 
+export interface AppendDecisionsInput {
+  /** Display title of the call (used in the section header). */
+  call_title: string;
+  /** YYYY-MM-DD or full ISO; truncated to date for the section header. */
+  call_date: string;
+  /** Plain-text decision lines, with optional context. */
+  decisions: Array<{ text: string; context?: string }>;
+  /** Optional URL the section header links to (Fathom share link). */
+  call_url?: string;
+}
+
+export interface AppendDecisionsResult {
+  /** Whether the file was rewritten. False when decisions list was empty. */
+  changed: boolean;
+}
+
+/**
+ * Append a "## Decisions" section to the project's body, with a per-call
+ * sub-block listing the decisions. Creates the heading if missing;
+ * otherwise tucks the new sub-block at the end of the existing section
+ * so older decisions stay visible above newer ones.
+ *
+ * Each decision becomes a `- ` bullet. Optional `context` lines render
+ * as nested italic text under the bullet so they're skimmable but
+ * separate from the decision itself.
+ */
+export async function appendDecisionsToProject(
+  opts: ResolvedVaultOptions,
+  slug: string,
+  input: AppendDecisionsInput,
+): Promise<AppendDecisionsResult> {
+  const decisions = input.decisions
+    .map((d) => ({ text: d.text.trim(), context: d.context?.trim() }))
+    .filter((d) => d.text.length > 0);
+  if (decisions.length === 0) {
+    return { changed: false };
+  }
+  const project = await readProject(opts, slug);
+  if (!project) {
+    throw new Error(`Project "${slug}" not found`);
+  }
+  if (project.source.kind === "hive-mind") {
+    throw new Error(
+      `Project "${slug}" lives in Hive Mind; decision edits go through the shared-notes flow`,
+    );
+  }
+  const path = project.source.absolute_path;
+  const raw = await tryReadFile(path);
+  if (raw === null) {
+    throw new Error(`Project file disappeared at ${path}`);
+  }
+  const { data, content } = parseMarkdown(raw);
+
+  const date = (input.call_date ?? "").slice(0, 10);
+  const title = input.call_title.trim() || "untitled call";
+  const headerText = input.call_url
+    ? `### From call ${date} — [${title}](${input.call_url})`
+    : `### From call ${date} — ${title}`;
+
+  const block: string[] = [headerText];
+  for (const d of decisions) {
+    block.push(`- ${d.text}`);
+    if (d.context) {
+      block.push(`  *${d.context}*`);
+    }
+  }
+  block.push("");
+  const blockText = block.join("\n");
+
+  const lines = content.split(/\r?\n/);
+  const sectionStart = lines.findIndex(
+    (line) => /^##\s+Decisions\s*$/.test(line.trim()),
+  );
+
+  let nextContent: string;
+  if (sectionStart < 0) {
+    // No section yet — append as a new top-level section.
+    const trimmed = content.replace(/\s+$/, "");
+    nextContent =
+      (trimmed ? `${trimmed}\n\n` : "") + `## Decisions\n\n${blockText}\n`;
+  } else {
+    // Find the end of the Decisions section (next `## ` or end of body).
+    let sectionEnd = lines.length;
+    for (let i = sectionStart + 1; i < lines.length; i++) {
+      if (/^##\s+\S/.test(lines[i]!)) {
+        sectionEnd = i;
+        break;
+      }
+    }
+    // Walk back through trailing blank lines so the new block tucks
+    // immediately after the last content of the existing section.
+    let insertAt = sectionEnd;
+    while (insertAt > sectionStart + 1 && lines[insertAt - 1]!.trim() === "") {
+      insertAt -= 1;
+    }
+    const before = lines.slice(0, insertAt);
+    const after = lines.slice(insertAt);
+    // Ensure exactly one blank line between existing content and new block.
+    const needsLeadingBlank =
+      before.length > 0 && before[before.length - 1]!.trim() !== "";
+    nextContent = [
+      ...before,
+      ...(needsLeadingBlank ? [""] : []),
+      blockText,
+      ...after,
+    ].join("\n");
+  }
+
+  await writeFileAtomic(path, serializeMarkdown(data, nextContent));
+  return { changed: true };
+}
+
 export interface UpdateProjectFrontmatterPatch {
   name?: string;
   slug?: string;

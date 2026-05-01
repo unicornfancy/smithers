@@ -8,14 +8,17 @@ import { join } from "node:path";
 
 import {
   addProjectZendeskTicket,
+  appendDecisionsToProject,
   appendFollowUp,
   appendProjectTask,
   createVault,
   deleteProjectTask,
   editProjectTaskText,
+  findCallNotesByRecordingId,
   parseProjectTasks,
   refreshProjectZendeskMetadata,
   resolveFollowUp,
+  saveCallNotes,
   setPrimaryZendeskTicket,
   setProjectZendeskSearchTerms,
   toggleProjectTask,
@@ -535,6 +538,108 @@ if (!afterAppend.includes("Second task")) {
   throw new Error("existing rows should be intact");
 }
 console.log("[append-followup] OK — row added with status, source preserved");
+
+// --- appendDecisionsToProject: section creation + per-call sub-blocks ---
+const dec1 = await appendDecisionsToProject(opts, "smoke-project", {
+  call_title: "Strategy sync",
+  call_date: "2026-04-29",
+  call_url: "https://fathom.video/calls/12345",
+  decisions: [
+    { text: "Picked accordion layout over carousel", context: "Mobile UX cleaner" },
+    { text: "LMS confirmed: LearnDash + BuddyBoss" },
+  ],
+});
+if (!dec1.changed) throw new Error("expected decisions append to change file");
+const projectAfter = readFileSync(filePath, "utf8");
+if (!projectAfter.includes("## Decisions")) {
+  throw new Error("expected ## Decisions heading:\n" + projectAfter);
+}
+if (!projectAfter.includes("### From call 2026-04-29 — [Strategy sync]")) {
+  throw new Error("expected sub-block with linked title");
+}
+if (!projectAfter.includes("Picked accordion layout over carousel")) {
+  throw new Error("expected first decision");
+}
+
+// Subsequent calls add to existing section, not duplicate the heading
+const dec2 = await appendDecisionsToProject(opts, "smoke-project", {
+  call_title: "Follow-up sync",
+  call_date: "2026-05-06",
+  decisions: [{ text: "Move launch to following Tuesday" }],
+});
+if (!dec2.changed) throw new Error("expected second append to change file");
+const projectAfter2 = readFileSync(filePath, "utf8");
+const decHeadingCount = (projectAfter2.match(/^## Decisions$/gm) ?? []).length;
+if (decHeadingCount !== 1) {
+  throw new Error(`expected exactly one ## Decisions heading, got ${decHeadingCount}`);
+}
+if (!projectAfter2.includes("Move launch to following Tuesday")) {
+  throw new Error("expected second decision");
+}
+console.log("[decisions] OK — creates section, appends sub-blocks, single heading on repeat");
+
+// --- saveCallNotes + findCallNotesByRecordingId round-trip ---
+const saved1 = await saveCallNotes(opts, {
+  project_slug: "smoke-project",
+  recording: {
+    recording_id: "rec-abc-123",
+    title: "Strategy sync",
+    recorded_at: "2026-04-29T15:00:00Z",
+    url: "https://fathom.video/calls/12345",
+  },
+  analysis: {
+    summary: "Discussed timeline + LMS stack.",
+    action_items: [{ text: "Send Loom of accordion blocks", owner: "user" }],
+    follow_ups: [
+      {
+        task: "Tom to confirm Gravity Forms migration call",
+        rationale: "Partner waiting for our scheduling slots.",
+        follow_up_by: "2026-05-08",
+      },
+    ],
+    decisions: [{ text: "Picked accordion layout" }],
+    key_quotes: [{ speaker: "Martin", text: "Targeting end of next week." }],
+  },
+});
+if (!saved1.absolute_path) throw new Error("expected absolute_path");
+const savedRaw = readFileSync(saved1.absolute_path, "utf8");
+if (!savedRaw.includes("recording_id: rec-abc-123")) {
+  throw new Error("expected recording_id in frontmatter");
+}
+if (!savedRaw.includes("## Action items")) {
+  throw new Error("expected rendered Action items section");
+}
+
+// Lookup by recording_id
+const found = await findCallNotesByRecordingId(opts, "rec-abc-123");
+if (!found || found.recording_id !== "rec-abc-123") {
+  throw new Error("expected lookup to return the saved file");
+}
+if (found.analysis.action_items.length !== 1) {
+  throw new Error("expected analysis to round-trip");
+}
+if (found.analysis.action_items[0].text !== "Send Loom of accordion blocks") {
+  throw new Error("expected action item text preserved");
+}
+
+// Re-saving same recording_id reuses the same file (no duplicate)
+const saved2 = await saveCallNotes(opts, {
+  project_slug: "smoke-project",
+  recording: {
+    recording_id: "rec-abc-123",
+    title: "Strategy sync (re-analyzed)",
+    recorded_at: "2026-04-29T15:00:00Z",
+  },
+  analysis: { ...saved1.analysis, summary: "Updated summary." },
+});
+if (saved2.absolute_path !== saved1.absolute_path) {
+  throw new Error("expected re-save to reuse the same file path");
+}
+const updatedRaw = readFileSync(saved2.absolute_path, "utf8");
+if (!updatedRaw.includes("Updated summary.")) {
+  throw new Error("expected updated summary in re-saved file");
+}
+console.log("[call-notes] OK — saved, round-trips via recording_id, re-save reuses file");
 
 console.log(`[smoke] cleaning up ${root}`);
 rmSync(root, { recursive: true, force: true });

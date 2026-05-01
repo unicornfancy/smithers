@@ -30,6 +30,7 @@ import type {
 
 import {
   acceptCallActionItemsAction,
+  acceptCallDecisionsAction,
   acceptCallFollowUpsAction,
   analyzeCallAction,
   composeCallRecapAction,
@@ -79,6 +80,13 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
   const [acceptedSummary, setAcceptedSummary] = React.useState(false);
   const [acceptingActions, startAcceptActions] = React.useTransition();
   const [acceptingFollowUps, startAcceptFollowUps] = React.useTransition();
+  const [acceptingDecisions, startAcceptDecisions] = React.useTransition();
+  const [decisionsAdded, setDecisionsAdded] = React.useState(false);
+  const [cachedMeta, setCachedMeta] = React.useState<{
+    cached: boolean;
+    analyzed_at: string;
+    notes_path?: string;
+  } | null>(null);
 
   // Side-drafts: P2 post + recap message. Each opens its own
   // AiDraftDialog with the agent output.
@@ -97,9 +105,11 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
     setSelectedActions(new Set());
     setSelectedFollowUps(new Set());
     setAcceptedSummary(false);
+    setDecisionsAdded(false);
+    setCachedMeta(null);
   }
 
-  function run() {
+  function run(force = false) {
     reset();
     setOpen(true);
     startTransition(async () => {
@@ -108,9 +118,19 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
           projectSlug,
           recording.recording_id,
           recording.source_url,
+          {
+            force,
+            recording_title: recording.title ?? undefined,
+            recorded_at: recording.recorded_at ?? undefined,
+          },
         );
         if (r.ok) {
           setData(r.data);
+          setCachedMeta({
+            cached: r.cached,
+            analyzed_at: r.analyzed_at,
+            notes_path: r.notes_path,
+          });
           setSelectedActions(
             new Set(r.data.action_items.map((_, i) => i)),
           );
@@ -226,6 +246,34 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
     });
   }
 
+  function acceptDecisions() {
+    if (!data || data.decisions.length === 0) return;
+    startAcceptDecisions(async () => {
+      try {
+        const r = await acceptCallDecisionsAction(
+          projectSlug,
+          data.decisions,
+          recording.title ?? "Untitled call",
+          recording.recorded_at,
+          recording.source_url,
+        );
+        if (r.added > 0) {
+          toast.success(
+            `Added ${r.added} decision${r.added === 1 ? "" : "s"} to the project body`,
+          );
+          setDecisionsAdded(true);
+        } else {
+          toast.info("Nothing to add");
+        }
+        router.refresh();
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Couldn't add decisions",
+        );
+      }
+    });
+  }
+
   function generateP2() {
     startP2(async () => {
       try {
@@ -298,7 +346,7 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
         type="button"
         variant="ghost"
         size="sm"
-        onClick={run}
+        onClick={() => run(false)}
         disabled={running}
         title="Analyze this call's transcript"
         className="h-6 shrink-0 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
@@ -321,6 +369,43 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
               follow-ups, decisions, and key quotes. Pick what to commit
               into the vault — items you uncheck stay here.
             </DialogDescription>
+            {cachedMeta ? (
+              <div className="mt-1 flex items-center gap-2 text-[11px]">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5",
+                    cachedMeta.cached
+                      ? "bg-muted text-muted-foreground"
+                      : "bg-emerald-100/60 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200",
+                  )}
+                  title={
+                    cachedMeta.notes_path
+                      ? `Saved at ${cachedMeta.notes_path}`
+                      : undefined
+                  }
+                >
+                  {cachedMeta.cached
+                    ? `Loaded from saved notes · ${formatRelative(cachedMeta.analyzed_at)}`
+                    : `Saved · ${formatRelative(cachedMeta.analyzed_at)}`}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => run(true)}
+                  disabled={running}
+                  className="h-6 gap-1 px-1.5 text-[11px]"
+                  title="Discard the saved analysis and run the agent again"
+                >
+                  {running ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="size-3" />
+                  )}
+                  Re-analyze
+                </Button>
+              </div>
+            ) : null}
           </DialogHeader>
 
           {running && !data ? (
@@ -496,6 +581,27 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
                 <Section
                   icon={<Star className="size-3.5" />}
                   title={`Decisions · ${data.decisions.length}`}
+                  action={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={acceptDecisions}
+                      disabled={acceptingDecisions || decisionsAdded}
+                      className="h-6 gap-1 px-1.5 text-[11px]"
+                    >
+                      {acceptingDecisions ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : decisionsAdded ? (
+                        <Check className="size-3" />
+                      ) : (
+                        <CheckCircle2 className="size-3" />
+                      )}
+                      {decisionsAdded
+                        ? "Added"
+                        : `Add ${data.decisions.length} to project body`}
+                    </Button>
+                  }
                 >
                   <ul className="flex flex-col divide-y">
                     {data.decisions.map((d, i) => (
@@ -593,6 +699,23 @@ function Section({
       {children}
     </div>
   );
+}
+
+function formatRelative(iso: string): string {
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return iso;
+  const seconds = Math.floor((Date.now() - ts) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function ErrorNotice({ message }: { message: string }) {
