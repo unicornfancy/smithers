@@ -2,12 +2,22 @@
 
 import { revalidatePath } from "next/cache";
 
+import {
+  suggestNextStep,
+  type SuggestNextStepOutput,
+} from "@smithers/agents";
 import type {
   LinearProjectMetadata,
   ZendeskSearchResult,
 } from "@smithers/mcp-client";
 import type { UpdateProjectFrontmatterPatch } from "@smithers/vault";
+import {
+  filterFollowUpsForProject,
+  parseProjectTasks,
+  splitTasks,
+} from "@smithers/vault";
 
+import { getAgentRuntime } from "@/lib/server/agents";
 import { getMcpClient } from "@/lib/server/mcp";
 import { getVault } from "@/lib/server/vault";
 
@@ -259,6 +269,75 @@ export async function fetchLinearProjectMetadataAction(
       project_slug: project.linear_project_slug,
     })
     .catch(() => null);
+}
+
+/**
+ * Run the suggest-next-step agent for this project. Gathers context
+ * (zendesk threads with persisted subjects, active follow-ups for the
+ * project, open items from the body) and asks Claude for 1-3 picks
+ * the user can act on right now.
+ *
+ * Returns null when the API key isn't configured so the panel can
+ * surface a setup CTA instead of a hard error.
+ */
+export async function suggestNextStepAction(
+  slug: string,
+): Promise<
+  | { ok: true; data: SuggestNextStepOutput }
+  | { ok: false; reason: "not-configured" | "error"; message?: string }
+> {
+  if (!slug) throw new Error("slug is required");
+  const runtime = await getAgentRuntime();
+  if (!runtime) {
+    return { ok: false, reason: "not-configured" };
+  }
+  const vault = await getVault();
+  const detail = await vault.readProjectDetail(slug);
+  if (!detail) {
+    return { ok: false, reason: "error", message: "Project not found" };
+  }
+
+  // Pull project-scoped follow-ups + open items from the same source the
+  // workbench panel uses, so the agent sees the same data the user does.
+  const followUps = await vault.listFollowUps().catch(() => ({
+    active: [] as Awaited<ReturnType<typeof vault.listFollowUps>>["active"],
+    resolved: [] as Awaited<ReturnType<typeof vault.listFollowUps>>["resolved"],
+  }));
+  const projectActive = filterFollowUpsForProject(followUps.active, detail);
+  const tasks = parseProjectTasks(detail.body);
+  const { open } = splitTasks(tasks);
+
+  // Active threads (open / pending / new / hold), excluding closed.
+  const allThreads = detail.zendesk_tickets ?? [];
+  const activeThreads = allThreads
+    .filter((t) => {
+      const s = (t.status ?? "").toLowerCase();
+      return s !== "solved" && s !== "closed";
+    })
+    .map((t) => ({
+      id: t.id,
+      subject: t.subject ?? null,
+      status: t.status ?? null,
+      updated_at: t.updated_at ?? null,
+    }));
+
+  try {
+    const result = await suggestNextStep(runtime, {
+      project: detail,
+      zendeskThreads: activeThreads,
+      activeFollowUps: projectActive,
+      openTasks: open,
+      today: new Date().toISOString().slice(0, 10),
+    });
+    return { ok: true, data: result.output };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message:
+        err instanceof Error ? err.message : "Agent call failed",
+    };
+  }
 }
 
 /**

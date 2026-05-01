@@ -14,13 +14,13 @@ import { WorkbenchHeader } from "@/components/workbench-header";
 import {
   CallNotesPanel,
   DraftsForProjectPanel,
-  ForYouTodayPanel,
   MilestonesPanel,
   OpenItemsPanel,
   PartnerInfoPanel,
   PersonalNotesPanel,
   ProjectBriefPanel,
 } from "@/components/workbench-panels";
+import { ForYouTodayPanel } from "@/components/for-you-today-panel";
 import { getAgentRuntimeStatus } from "@/lib/server/agents";
 import { getMcpClient } from "@/lib/server/mcp";
 import { detectStallsForProject } from "@/lib/server/stalls";
@@ -238,7 +238,10 @@ export default async function ProjectWorkbenchPage({
           apiKeyConfigured={agentStatus.configured}
         />
 
-        <ForYouTodayPanel project={detail} />
+        <ForYouTodayPanel
+          project={detail}
+          apiKeyConfigured={agentStatus.configured}
+        />
 
         {isPartner ? <MilestonesPanel deadlines={detail.deadlines} /> : null}
 

@@ -10,7 +10,6 @@ import {
   ListChecks,
   Phone,
   ShieldCheck,
-  Sparkles,
   StickyNote,
 } from "lucide-react";
 
@@ -77,25 +76,6 @@ function ComingSoon({ children }: { children: React.ReactNode }) {
     <div className="bg-muted/40 text-muted-foreground rounded-md border border-dashed p-3 text-xs">
       {children}
     </div>
-  );
-}
-
-// -- For You Today --------------------------------------------------------
-
-export function ForYouTodayPanel({ project }: { project: Project }) {
-  return (
-    <Section
-      icon={<Sparkles className="size-4" />}
-      title="For you today"
-      meta="Lands with packages/agents"
-    >
-      <ComingSoon>
-        Auto-suggested next steps for {project.name} will appear here once the
-        agents runtime is online: a small set of inline ghost-button affordances
-        like &ldquo;Draft a reply&rdquo;, &ldquo;Suggest next step&rdquo;, and
-        &ldquo;Compose follow-up nudge&rdquo;.
-      </ComingSoon>
-    </Section>
   );
 }
 

@@ -44,3 +44,12 @@ export {
   type RealisticShapeInput,
   type RealisticShapeOutput,
 } from "./agents/realistic-shape";
+
+export {
+  suggestNextStep,
+  type SuggestNextStepInput,
+  type SuggestNextStepOutput,
+  type SuggestNextStepPick,
+  type SuggestNextStepCtaTarget,
+  type SuggestNextStepZendeskThread,
+} from "./agents/suggest-next-step";
