@@ -373,10 +373,12 @@ function ZendeskRow({
   primary: boolean;
   dim?: boolean;
 }) {
+  // Plain <div>: ZendeskRow now renders inside ThreadCard's <li>, so it
+  // can't itself be an <li> (would produce invalid <li><li/></li> nesting).
   return (
-    <li
+    <div
       className={cn(
-        "flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0",
+        "flex items-start justify-between gap-3",
         dim && "text-muted-foreground",
       )}
     >
@@ -426,7 +428,7 @@ function ZendeskRow({
         Open
         <ExternalLink className="size-3" />
       </a>
-    </li>
+    </div>
   );
 }
 
