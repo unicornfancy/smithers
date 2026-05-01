@@ -1,3 +1,5 @@
+"use client";
+
 import * as React from "react";
 import {
   Activity,
@@ -11,6 +13,7 @@ import {
   MessageSquare,
   Sparkles,
   Square,
+  X,
 } from "lucide-react";
 
 import type {
@@ -29,6 +32,15 @@ interface LiveActivityFeedProps {
   configured: { label: string; configured: boolean; reason?: string }[];
 }
 
+const SOURCE_BY_LABEL: Record<string, ActivitySource> = {
+  Slack: "slack",
+  GitHub: "github",
+  Linear: "linear",
+  Zendesk: "zendesk",
+  P2: "p2",
+  wpcom: "wpcom",
+};
+
 export function LiveActivityFeed({
   result,
   configured,
@@ -37,6 +49,32 @@ export function LiveActivityFeed({
   const isMock = events.some((e) => e.is_mock);
   const freshnessLabel = describeFreshness(result);
 
+  // Per-source event counts for chip labels — gives the user a hint
+  // before clicking which filters will actually return rows.
+  const countsBySource = React.useMemo(() => {
+    const m = new Map<ActivitySource, number>();
+    for (const e of events) m.set(e.source, (m.get(e.source) ?? 0) + 1);
+    return m;
+  }, [events]);
+
+  const [selected, setSelected] = React.useState<Set<ActivitySource>>(
+    () => new Set(),
+  );
+
+  function toggle(src: ActivitySource) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(src)) next.delete(src);
+      else next.add(src);
+      return next;
+    });
+  }
+
+  const filtered =
+    selected.size === 0
+      ? events
+      : events.filter((e) => selected.has(e.source));
+
   return (
     <Card>
       <CardHeader>
@@ -44,7 +82,10 @@ export function LiveActivityFeed({
           <Activity className="text-muted-foreground size-4" />
           Live activity
           <span className="text-muted-foreground text-xs font-normal">
-            · {events.length}
+            ·{" "}
+            {selected.size === 0
+              ? events.length
+              : `${filtered.length} / ${events.length}`}
           </span>
           <span className="text-muted-foreground/70 ml-auto text-xs font-normal">
             {freshnessLabel}
@@ -59,36 +100,75 @@ export function LiveActivityFeed({
           />
         ) : null}
         {isMock ? <MockNotice /> : null}
-        <ul className="flex flex-wrap gap-1.5">
-          {configured.map((s) => (
-            <li
-              key={s.label}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px]",
-                s.configured
-                  ? "bg-emerald-100/60 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
-                  : "bg-muted text-muted-foreground",
-              )}
-              title={s.reason}
-            >
-              {s.label}
-              {!s.configured && s.reason ? (
-                <>
-                  <span className="opacity-60">·</span>
-                  <span className="opacity-70">{s.reason}</span>
-                </>
-              ) : null}
+        <ul className="flex flex-wrap items-center gap-1.5">
+          {configured.map((s) => {
+            const sourceKey = SOURCE_BY_LABEL[s.label];
+            const count = sourceKey ? (countsBySource.get(sourceKey) ?? 0) : 0;
+            const isSelected = sourceKey ? selected.has(sourceKey) : false;
+            const clickable = !!sourceKey;
+            return (
+              <li key={s.label}>
+                <button
+                  type="button"
+                  onClick={() => sourceKey && toggle(sourceKey)}
+                  disabled={!clickable}
+                  aria-pressed={isSelected}
+                  title={s.reason}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    isSelected
+                      ? "bg-foreground text-background"
+                      : s.configured
+                        ? "bg-emerald-100/60 text-emerald-900 hover:bg-emerald-200/70 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/50"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80",
+                    !clickable && "cursor-default opacity-70",
+                  )}
+                >
+                  {s.label}
+                  {count > 0 ? (
+                    <span
+                      className={cn(
+                        "tabular-nums opacity-70",
+                        isSelected && "opacity-90",
+                      )}
+                    >
+                      {count}
+                    </span>
+                  ) : null}
+                  {!s.configured && s.reason ? (
+                    <>
+                      <span className="opacity-60">·</span>
+                      <span className="opacity-70">{s.reason}</span>
+                    </>
+                  ) : null}
+                </button>
+              </li>
+            );
+          })}
+          {selected.size > 0 ? (
+            <li>
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]"
+                title="Clear filters"
+              >
+                <X className="size-3" />
+                Clear
+              </button>
             </li>
-          ))}
+          ) : null}
         </ul>
-        {events.length === 0 ? (
+        {filtered.length === 0 ? (
           <p className="text-muted-foreground text-sm italic">
-            No recent activity matched to this project. Configure more sources
-            in frontmatter to broaden the feed.
+            {selected.size === 0
+              ? "No recent activity matched to this project. Configure more sources in frontmatter to broaden the feed."
+              : "No activity for the selected sources. Toggle a chip off or click Clear."}
           </p>
         ) : (
           <ul className="flex flex-col divide-y">
-            {events.map((event) => (
+            {filtered.map((event) => (
               <ActivityRow key={event.id} event={event} />
             ))}
           </ul>
