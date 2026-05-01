@@ -1,4 +1,4 @@
-import { ExternalLink, LifeBuoy, Star } from "lucide-react";
+import { ChevronRight, ExternalLink, LifeBuoy, Star } from "lucide-react";
 
 import type { ZendeskTicketSummary } from "@smithers/mcp-client";
 
@@ -42,6 +42,12 @@ export function ZendeskThreadsPanel({
   if (tickets.length === 0 && !alwaysShow) return null;
 
   const existingIds = tickets.map((t) => t.id);
+  const { active, closed } = partitionByStatus(tickets);
+  // The "primary" badge sticks to the first ticket as listed in
+  // frontmatter, regardless of status — re-ordering frontmatter is
+  // how the user signals which thread is primary, not which one is
+  // currently open.
+  const primaryId = tickets[0]?.id;
 
   return (
     <Card>
@@ -51,7 +57,8 @@ export function ZendeskThreadsPanel({
           Zendesk threads
           {tickets.length > 0 ? (
             <span className="text-muted-foreground text-xs font-normal">
-              · {tickets.length}
+              · {active.length} active
+              {closed.length > 0 ? ` · ${closed.length} closed` : ""}
             </span>
           ) : null}
           <span className="ml-auto">
@@ -63,33 +70,99 @@ export function ZendeskThreadsPanel({
           </span>
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3">
         {tickets.length === 0 ? (
           <p className="text-muted-foreground text-sm italic">
             No Zendesk threads attached yet. Use the Attach button above
             to search and pick one.
           </p>
-        ) : (
+        ) : null}
+        {active.length > 0 ? (
           <ul className="flex flex-col divide-y">
-            {tickets.map((t, i) => (
-              <ZendeskRow key={t.id} ticket={t} primary={i === 0} />
+            {active.map((t) => (
+              <ZendeskRow key={t.id} ticket={t} primary={t.id === primaryId} />
             ))}
           </ul>
-        )}
+        ) : tickets.length > 0 ? (
+          <p className="text-muted-foreground text-sm italic">
+            No active threads — see closed below for history.
+          </p>
+        ) : null}
+        {closed.length > 0 ? (
+          // Native <details> so the disclosure works without a client
+          // boundary — the rest of this panel is server-rendered, and
+          // expanding closed history doesn't need React state.
+          <details className="group rounded-md border border-dashed">
+            <summary
+              className={cn(
+                "flex cursor-pointer list-none items-center gap-2 px-3 py-2",
+                "text-muted-foreground text-xs font-medium",
+                "hover:text-foreground",
+              )}
+            >
+              <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" />
+              Closed threads · {closed.length}
+              <span className="opacity-70 ml-1.5 font-normal">
+                ongoing record
+              </span>
+            </summary>
+            <ul className="flex flex-col divide-y px-3 pb-2">
+              {closed.map((t) => (
+                <ZendeskRow
+                  key={t.id}
+                  ticket={t}
+                  primary={t.id === primaryId}
+                  dim
+                />
+              ))}
+            </ul>
+          </details>
+        ) : null}
       </CardContent>
     </Card>
   );
 }
 
+const ACTIVE_STATUSES = new Set(["open", "pending", "new", "hold"]);
+const CLOSED_STATUSES = new Set(["solved", "closed"]);
+
+function partitionByStatus(tickets: ZendeskTicketSummary[]): {
+  active: ZendeskTicketSummary[];
+  closed: ZendeskTicketSummary[];
+} {
+  const active: ZendeskTicketSummary[] = [];
+  const closed: ZendeskTicketSummary[] = [];
+  for (const t of tickets) {
+    const s = t.status?.toLowerCase() ?? "";
+    if (CLOSED_STATUSES.has(s)) {
+      closed.push(t);
+    } else if (ACTIVE_STATUSES.has(s)) {
+      active.push(t);
+    } else {
+      // Unknown / null status — treat as active so the user sees it
+      // by default rather than buried under a disclosure.
+      active.push(t);
+    }
+  }
+  return { active, closed };
+}
+
 function ZendeskRow({
   ticket,
   primary,
+  dim = false,
 }: {
   ticket: ZendeskTicketSummary;
   primary: boolean;
+  dim?: boolean;
 }) {
   return (
-    <li className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0">
+    <li
+      className={cn(
+        "flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0",
+        dim && "text-muted-foreground",
+      )}
+    >
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex items-center gap-2">
           {primary ? (
@@ -101,7 +174,12 @@ function ZendeskRow({
               primary
             </span>
           ) : null}
-          <span className="text-foreground text-sm font-medium">
+          <span
+            className={cn(
+              "text-sm font-medium",
+              dim ? "text-muted-foreground" : "text-foreground",
+            )}
+          >
             {ticket.subject ?? `Ticket #${ticket.id}`}
           </span>
         </div>

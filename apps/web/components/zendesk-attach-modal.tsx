@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, LifeBuoy, Loader2, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,9 +42,11 @@ export function ZendeskAttachModal({
   existingTicketIds,
   defaultQuery,
 }: Props) {
+  const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState(defaultQuery ?? "");
   const [searching, startSearchTransition] = React.useTransition();
+  const [, startAttachTransition] = React.useTransition();
   const [results, setResults] = React.useState<ZendeskTicketSummary[]>([]);
   const [searchError, setSearchError] = React.useState<string | null>(null);
   const [hasSearched, setHasSearched] = React.useState(false);
@@ -89,9 +92,15 @@ export function ZendeskAttachModal({
   }
 
   function handleAttach(ticket: ZendeskTicketSummary) {
+    // Wrapped in a transition so revalidatePath inside the server action
+    // actually triggers a client re-render — calling via plain `.then()`
+    // writes to the file but leaves the workbench's data stale until the
+    // next navigation. router.refresh() forces the RSC payload to refetch
+    // so the Zendesk panel below the modal updates immediately on close.
     setJustAttached((prev) => new Set(prev).add(ticket.id));
-    void attachZendeskTicketAction(projectSlug, ticket.id)
-      .then((r) => {
+    startAttachTransition(async () => {
+      try {
+        const r = await attachZendeskTicketAction(projectSlug, ticket.id);
         if (r.added) {
           toast.success(
             `Attached ticket ${ticket.id}${ticket.subject ? ` — ${truncate(ticket.subject, 40)}` : ""}`,
@@ -99,9 +108,8 @@ export function ZendeskAttachModal({
         } else {
           toast.info(`Ticket ${ticket.id} was already attached`);
         }
-      })
-      .catch((err: unknown) => {
-        // Roll back the optimistic attached-marker so the user can retry.
+        router.refresh();
+      } catch (err) {
         setJustAttached((prev) => {
           const next = new Set(prev);
           next.delete(ticket.id);
@@ -110,7 +118,8 @@ export function ZendeskAttachModal({
         toast.error(
           err instanceof Error ? err.message : "Couldn't attach ticket",
         );
-      });
+      }
+    });
   }
 
   return (

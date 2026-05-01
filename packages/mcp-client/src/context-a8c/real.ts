@@ -172,7 +172,10 @@ interface ZendeskCommentsResult {
   result?: ZendeskComment[];
 }
 interface ZendeskTicket {
+  /** Single-ticket fetch shape uses `id`. */
   id?: number | string;
+  /** Search-result shape uses `ticket_id`. */
+  ticket_id?: number | string;
   subject?: string;
   status?: string;
   priority?: string;
@@ -183,11 +186,11 @@ interface ZendeskTicketResult {
   result?: ZendeskTicket;
 }
 interface ZendeskSearchResultRaw {
-  /** Standard Zendesk search response. */
-  results?: ZendeskTicket[];
-  /** Some upstream wrappers nest under `tickets`. */
+  /** Context-a8c's actual shape: `{ query, count, next_page, tickets }`. */
   tickets?: ZendeskTicket[];
-  /** Or under `result`. */
+  /** Standard Zendesk search wraps under `results`. */
+  results?: ZendeskTicket[];
+  /** Some wrappers use `result`. */
   result?: ZendeskTicket[];
 }
 
@@ -504,18 +507,36 @@ export class RealContextA8CTransport implements ContextA8CClient {
   ): Promise<ZendeskTicketSummary | null> {
     const ticketId = extractTicketId(ticketRef);
     if (!ticketId) return null;
+    // The upstream MCP doesn't expose a `ticket` (singular) fetch tool —
+    // it returned "Tool not found: ticket" — but `search` works and
+    // accepts Zendesk's `id:<n>` filter, which gives us the same metadata.
+    // We trade one indirection for a reliable path.
     try {
-      const result = await this.mcp.callJsonTool<ZendeskTicketResult>(
+      const result = await this.mcp.callJsonTool<ZendeskSearchResultRaw>(
         "context-a8c-execute-tool",
         {
           provider: "zendesk",
-          tool: "ticket",
-          params: { ticket_id: Number(ticketId) },
+          tool: "search",
+          params: { query: `type:ticket id:${ticketId}`, per_page: 1 },
         },
       );
-      const ticket = result?.ticket ?? result?.result ?? result;
-      if (!ticket || typeof ticket !== "object") return null;
-      const t = ticket as ZendeskTicket;
+      const rawTickets = asArray<ZendeskTicket>(
+        result?.tickets ?? result?.results ?? result?.result,
+      );
+      const t = rawTickets[0];
+      if (!t) {
+        // Search returned 0 — usually means access denied or deleted.
+        // Surface a degraded row so the user sees we have the id but
+        // couldn't load metadata.
+        return {
+          id: ticketId,
+          subject: null,
+          status: null,
+          priority: null,
+          updated_at: null,
+          url: zendeskTicketUrl(ticketId),
+        };
+      }
       return {
         id: ticketId,
         subject: typeof t.subject === "string" ? t.subject : null,
@@ -558,6 +579,13 @@ export class RealContextA8CTransport implements ContextA8CClient {
     // Default to type:ticket so the search doesn't return user/org
     // records the user can't attach. Only prepend if the caller
     // hasn't already specified a type filter.
+    // Pure-numeric query is a ticket-id lookup, not a free-text search —
+    // Zendesk's search index doesn't include ticket ids, so route those
+    // straight to the single-ticket fetch tool. Returns at most one row.
+    if (/^\d+$/.test(trimmed)) {
+      const summary = await this.fetchZendeskTicketSummary(trimmed);
+      return { ok: true, tickets: summary ? [summary] : [] };
+    }
     const fullQuery = /\btype:/i.test(trimmed)
       ? trimmed
       : `type:ticket ${trimmed}`;
@@ -574,15 +602,18 @@ export class RealContextA8CTransport implements ContextA8CClient {
         },
       );
       const rawTickets = asArray<ZendeskTicket>(
-        result?.results ?? result?.tickets ?? result?.result,
+        result?.tickets ?? result?.results ?? result?.result,
       );
       const tickets: ZendeskTicketSummary[] = rawTickets
         .map((t) => {
+          // Search-result entries use `ticket_id`; single-fetch uses `id`.
+          // Accept either so this mapper works for both shapes.
+          const rawId = t.ticket_id ?? t.id;
           const id =
-            typeof t.id === "number"
-              ? String(t.id)
-              : typeof t.id === "string"
-                ? t.id
+            typeof rawId === "number"
+              ? String(rawId)
+              : typeof rawId === "string"
+                ? rawId
                 : null;
           if (!id || !/^\d+$/.test(id)) return null;
           return {
