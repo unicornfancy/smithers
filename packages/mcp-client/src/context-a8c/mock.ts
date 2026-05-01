@@ -142,6 +142,29 @@ export class MockContextA8CTransport implements ContextA8CClient {
     };
   }
 
+  async getLinearProjectMetadata(refs: {
+    project_id?: string;
+    project_slug?: string;
+  }): Promise<import("./types").LinearProjectMetadata | null> {
+    const key = refs.project_id ?? refs.project_slug;
+    if (!key) return null;
+    const rng = createRng(dailySeed(`linear-project:${key}`));
+    const states = ["planned", "started", "started", "completed"];
+    return {
+      id: refs.project_id ?? `mock-${key}`,
+      name: refs.project_slug
+        ? capitalize(refs.project_slug.replace(/-/g, " "))
+        : "Mocked Linear Project",
+      slug: refs.project_slug,
+      description:
+        "Demo Linear description — switch to a real ContextA8C MCP to see actual project body.",
+      state: states[Math.floor(rng() * states.length)] ?? "started",
+      target_date: new Date(Date.now() + 21 * 86_400_000).toISOString().slice(0, 10),
+      lead: "Riley Chen",
+      url: `https://linear.app/automattic/project/${refs.project_slug ?? "mock"}`,
+    };
+  }
+
   async fetchZendeskTicketSummaries(
     refs: string[],
     _opts: { searchHint?: string } = {},

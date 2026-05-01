@@ -18,6 +18,7 @@ import {
   setPrimaryZendeskTicket,
   setProjectZendeskSearchTerms,
   toggleProjectTask,
+  updateProjectFrontmatter,
   resolveVaultOptions,
 } from "../src/index.ts";
 
@@ -412,6 +413,52 @@ if (cleared.includes("zendesk_search_terms")) {
   throw new Error("expected field removed on empty:\n" + cleared);
 }
 console.log("[search-terms] OK — persists, dedupes, no-ops on unchanged, clears on empty");
+
+// --- updateProjectFrontmatter: set, clear, leave-alone ---
+const u1 = await updateProjectFrontmatter(opts, "zendesk-project", {
+  status: "hot",
+  github_repo: "a8cteam51/example",
+  staging_url: "https://staging.example.com",
+});
+if (!u1.changed) throw new Error("expected changed=true on patch");
+const fileAfterU1 = readFileSync(zPath, "utf8");
+if (!fileAfterU1.includes("status: hot")) {
+  throw new Error("expected status set:\n" + fileAfterU1);
+}
+if (!fileAfterU1.includes("github_repo: a8cteam51/example")) {
+  throw new Error("expected github_repo set");
+}
+
+// Empty-string clears
+const u2 = await updateProjectFrontmatter(opts, "zendesk-project", {
+  staging_url: "",
+});
+if (!u2.changed) throw new Error("expected change when clearing");
+const fileAfterU2 = readFileSync(zPath, "utf8");
+if (fileAfterU2.includes("staging.example.com")) {
+  throw new Error("expected staging_url removed");
+}
+
+// undefined leaves alone, no-op when nothing changes
+const u3 = await updateProjectFrontmatter(opts, "zendesk-project", {});
+if (u3.changed) throw new Error("expected no-op on empty patch");
+
+// Boolean fields: true sets, false clears
+const u4 = await updateProjectFrontmatter(opts, "zendesk-project", {
+  nda: true,
+});
+if (!u4.changed) throw new Error("expected nda set");
+if (!readFileSync(zPath, "utf8").includes("nda: true")) {
+  throw new Error("expected nda: true in YAML");
+}
+const u5 = await updateProjectFrontmatter(opts, "zendesk-project", {
+  nda: false,
+});
+if (!u5.changed) throw new Error("expected nda cleared");
+if (readFileSync(zPath, "utf8").includes("nda:")) {
+  throw new Error("expected nda removed when set false");
+}
+console.log("[update] OK — set, clear-on-empty, no-op, bool true sets / bool false clears");
 
 // --- resolveFollowUp: flip Status cell to "✅ Resolved …" ---
 // Build a Follow-ups.md with two open rows; pick one to resolve.

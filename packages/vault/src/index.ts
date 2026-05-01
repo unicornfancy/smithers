@@ -46,12 +46,15 @@ import {
   refreshProjectZendeskMetadata,
   setPrimaryZendeskTicket,
   setProjectZendeskSearchTerms,
+  updateProjectFrontmatter,
   type AddProjectZendeskTicketResult,
   type CreateProjectInput,
   type CreateProjectResult,
   type RefreshZendeskMetadataResult,
   type SetPrimaryZendeskTicketResult,
   type SetProjectZendeskSearchTermsResult,
+  type UpdateProjectFrontmatterPatch,
+  type UpdateProjectFrontmatterResult,
 } from "./projects";
 import { readVaultStatus } from "./status";
 import { readStyleGuide, readWorkingWith } from "./style-guide";
@@ -88,6 +91,8 @@ export type {
   RefreshZendeskMetadataResult,
   SetPrimaryZendeskTicketResult,
   SetProjectZendeskSearchTermsResult,
+  UpdateProjectFrontmatterPatch,
+  UpdateProjectFrontmatterResult,
 } from "./projects";
 export type { ResolveFollowUpResult } from "./follow-ups";
 export {
@@ -119,6 +124,7 @@ export {
   setPrimaryZendeskTicket,
   setProjectZendeskSearchTerms,
   splitTasks,
+  updateProjectFrontmatter,
   toggleProjectTask,
   upsertDailySection,
   ensureDraftId,
@@ -185,6 +191,10 @@ export interface Vault {
     slug: string,
     terms: string[],
   ) => ReturnType<typeof setProjectZendeskSearchTerms>;
+  updateProjectFrontmatter: (
+    slug: string,
+    patch: Parameters<typeof updateProjectFrontmatter>[2],
+  ) => ReturnType<typeof updateProjectFrontmatter>;
   resolveFollowUp: (
     followUpId: string,
     note?: string,
@@ -230,6 +240,8 @@ export function createVault(options: VaultOptions): Vault {
       refreshProjectZendeskMetadata(resolved, slug, summaries),
     setProjectZendeskSearchTerms: (slug, terms) =>
       setProjectZendeskSearchTerms(resolved, slug, terms),
+    updateProjectFrontmatter: (slug, patch) =>
+      updateProjectFrontmatter(resolved, slug, patch),
     resolveFollowUp: (followUpId, note) =>
       resolveFollowUp(resolved, followUpId, note),
     watch: (handler) => watchVault(resolved, handler),

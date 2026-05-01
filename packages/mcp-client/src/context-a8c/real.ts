@@ -496,6 +496,71 @@ export class RealContextA8CTransport implements ContextA8CClient {
     );
   }
 
+  async getLinearProjectMetadata(refs: {
+    project_id?: string;
+    project_slug?: string;
+  }): Promise<import("./types").LinearProjectMetadata | null> {
+    const key = refs.project_id ?? refs.project_slug;
+    if (!key) return null;
+    // Linear's MCP exposes a "project" singular tool the same way the
+    // listProjectActivity flow uses "issues". If this turns out to be
+    // missing in the upstream we'll fall back via search like we did
+    // for Zendesk.
+    try {
+      const result = await this.mcp.callJsonTool<{
+        project?: Record<string, unknown>;
+        result?: Record<string, unknown>;
+      }>("context-a8c-execute-tool", {
+        provider: "linear",
+        tool: "project",
+        params: refs.project_id
+          ? { id: refs.project_id }
+          : { slug: refs.project_slug },
+      });
+      if (!result) return null;
+      const p = (result.project ?? result.result ?? result) as Record<string, unknown>;
+      const id = typeof p["id"] === "string" ? (p["id"] as string) : null;
+      const name = typeof p["name"] === "string" ? (p["name"] as string) : null;
+      if (!id || !name) return null;
+      const stateRaw = p["state"] ?? p["status"];
+      const state =
+        typeof stateRaw === "string"
+          ? stateRaw
+          : typeof stateRaw === "object" && stateRaw !== null
+            ? typeof (stateRaw as Record<string, unknown>)["name"] === "string"
+              ? ((stateRaw as Record<string, unknown>)["name"] as string)
+              : undefined
+            : undefined;
+      const leadRaw = p["lead"];
+      const lead =
+        typeof leadRaw === "object" && leadRaw !== null
+          ? typeof (leadRaw as Record<string, unknown>)["name"] === "string"
+            ? ((leadRaw as Record<string, unknown>)["name"] as string)
+            : undefined
+          : typeof leadRaw === "string"
+            ? leadRaw
+            : undefined;
+      return {
+        id,
+        name,
+        slug: typeof p["slug"] === "string" ? (p["slug"] as string) : undefined,
+        description:
+          typeof p["description"] === "string" ? (p["description"] as string) : undefined,
+        state,
+        target_date:
+          typeof p["target_date"] === "string"
+            ? (p["target_date"] as string)
+            : typeof p["targetDate"] === "string"
+              ? (p["targetDate"] as string)
+              : undefined,
+        lead,
+        url: typeof p["url"] === "string" ? (p["url"] as string) : undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Public per-ticket comments fetch — used by the merged Threads panel
    * to render a "Recent activity" disclosure under each ticket. We

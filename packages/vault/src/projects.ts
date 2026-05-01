@@ -536,6 +536,119 @@ export async function setPrimaryZendeskTicket(
   return { zendesk_tickets: next, changed: true };
 }
 
+export interface UpdateProjectFrontmatterPatch {
+  name?: string;
+  slug?: string;
+  kind?: ProjectKind;
+  status?: ProjectStatus;
+  partner?: string;
+  github_repo?: string;
+  staging_url?: string;
+  production_url?: string;
+  linear_project_id?: string;
+  linear_project_slug?: string;
+  p2_url?: string;
+  primary_slack_channel?: string;
+  team_slack_channel?: string;
+  agenda_file?: string;
+  next_nudge?: string;
+  review_interval_days?: number;
+  nda?: boolean;
+  tags?: string[];
+}
+
+export interface UpdateProjectFrontmatterResult {
+  /** Final frontmatter after the patch landed. */
+  frontmatter: Record<string, unknown>;
+  /** Whether the on-disk content actually changed. */
+  changed: boolean;
+}
+
+/**
+ * Apply a partial frontmatter update to a project file. Patch semantics:
+ *   - omitted (undefined) keys are left as-is on disk
+ *   - empty-string strings clear the field (key removed from frontmatter)
+ *   - empty arrays clear the field
+ *   - typed values set the field
+ *
+ * Identity fields (project_id, slug) are intentionally not patchable here
+ * — slug changes drive filename + URL changes that need a more careful
+ * rename flow, and project_id is generated once and never edited.
+ */
+export async function updateProjectFrontmatter(
+  opts: ResolvedVaultOptions,
+  slug: string,
+  patch: UpdateProjectFrontmatterPatch,
+): Promise<UpdateProjectFrontmatterResult> {
+  const project = await readProject(opts, slug);
+  if (!project) {
+    throw new Error(`Project "${slug}" not found`);
+  }
+  if (project.source.kind === "hive-mind") {
+    throw new Error(
+      `Project "${slug}" lives in Hive Mind; metadata edits go through the shared-notes flow`,
+    );
+  }
+  const path = project.source.absolute_path;
+  const raw = await tryReadFile(path);
+  if (raw === null) {
+    throw new Error(`Project file disappeared at ${path}`);
+  }
+  const { data, content } = parseMarkdown(raw);
+  const next: Record<string, unknown> = { ...data };
+  let touched = false;
+
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed === "") {
+        if (key in next) {
+          delete next[key];
+          touched = true;
+        }
+      } else if (next[key] !== trimmed) {
+        next[key] = trimmed;
+        touched = true;
+      }
+    } else if (typeof value === "boolean") {
+      if (value === false) {
+        if (key in next) {
+          delete next[key];
+          touched = true;
+        }
+      } else if (next[key] !== value) {
+        next[key] = value;
+        touched = true;
+      }
+    } else if (typeof value === "number") {
+      if (next[key] !== value) {
+        next[key] = value;
+        touched = true;
+      }
+    } else if (Array.isArray(value)) {
+      if (value.length === 0) {
+        if (key in next) {
+          delete next[key];
+          touched = true;
+        }
+      } else if (
+        !Array.isArray(next[key]) ||
+        JSON.stringify(next[key]) !== JSON.stringify(value)
+      ) {
+        next[key] = value;
+        touched = true;
+      }
+    }
+  }
+
+  if (!touched) {
+    return { frontmatter: data, changed: false };
+  }
+  await writeFileAtomic(path, serializeMarkdown(next, content));
+  return { frontmatter: next, changed: true };
+}
+
 export interface SetProjectZendeskSearchTermsResult {
   zendesk_search_terms: string[];
   /** True when the on-disk value changed; false when the input matched what was there. */

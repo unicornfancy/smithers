@@ -2,7 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 
-import type { ZendeskSearchResult } from "@smithers/mcp-client";
+import type {
+  LinearProjectMetadata,
+  ZendeskSearchResult,
+} from "@smithers/mcp-client";
+import type { UpdateProjectFrontmatterPatch } from "@smithers/vault";
 
 import { getMcpClient } from "@/lib/server/mcp";
 import { getVault } from "@/lib/server/vault";
@@ -216,6 +220,45 @@ export async function refreshZendeskMetadataAction(
   );
   revalidatePath(`/projects/${slug}`);
   return { updated: result.updated, total: refs.length };
+}
+
+/**
+ * Apply a partial frontmatter patch to the project file. The vault
+ * helper handles the atomic write and the empty-string-clears
+ * semantics. revalidates the workbench so changes show up immediately.
+ */
+export async function updateProjectMetadataAction(
+  slug: string,
+  patch: UpdateProjectFrontmatterPatch,
+): Promise<{ changed: boolean }> {
+  if (!slug) throw new Error("slug is required");
+  const vault = await getVault();
+  const result = await vault.updateProjectFrontmatter(slug, patch);
+  revalidatePath(`/projects/${slug}`);
+  return { changed: result.changed };
+}
+
+/**
+ * Look up Linear project metadata for the metadata edit modal's
+ * "Sync from Linear" sidebar. Returns null when neither id nor slug
+ * is configured or when the upstream call fails — the modal degrades
+ * gracefully (shows a "couldn't fetch" hint instead of the values).
+ */
+export async function fetchLinearProjectMetadataAction(
+  slug: string,
+): Promise<LinearProjectMetadata | null> {
+  if (!slug) throw new Error("slug is required");
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) return null;
+  if (!project.linear_project_id && !project.linear_project_slug) return null;
+  const mcp = await getMcpClient();
+  return mcp.contextA8C
+    .getLinearProjectMetadata({
+      project_id: project.linear_project_id,
+      project_slug: project.linear_project_slug,
+    })
+    .catch(() => null);
 }
 
 /**

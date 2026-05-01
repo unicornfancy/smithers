@@ -15,6 +15,7 @@ import {
 import { zendeskTicketUrl } from "@smithers/mcp-client";
 import type { Project, ProjectKind, ProjectStatus } from "@smithers/vault";
 
+import { ProjectMetadataModal } from "@/components/project-metadata-modal";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -80,6 +81,7 @@ export function WorkbenchHeader({ project }: { project: Project }) {
           >
             {project.status}
           </Badge>
+          <ProjectMetadataModal project={project} />
           <ThemeToggle />
         </div>
       </div>

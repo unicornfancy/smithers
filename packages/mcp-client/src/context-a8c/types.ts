@@ -114,6 +114,37 @@ export interface ContextA8CClient {
     ticketRef: string,
     opts?: { limit?: number; projectSlug?: string },
   ): Promise<ActivityEvent[]>;
+
+  /**
+   * Fetch a Linear project's metadata (name, description, state,
+   * target_date, lead) by id or slug. Used by the project metadata
+   * edit modal as a "Use Linear value" hint sidebar — the user can
+   * pull individual fields into their frontmatter. Returns null when
+   * the upstream lookup fails so the modal can degrade to a "couldn't
+   * fetch from Linear" pill instead of crashing.
+   */
+  getLinearProjectMetadata(refs: {
+    project_id?: string;
+    project_slug?: string;
+  }): Promise<LinearProjectMetadata | null>;
+}
+
+export interface LinearProjectMetadata {
+  /** Linear project id (uuid). */
+  id: string;
+  /** Display name. */
+  name: string;
+  /** URL slug — Linear-side equivalent of our linear_project_slug. */
+  slug?: string;
+  description?: string;
+  /** Linear's project state: "backlog", "planned", "started", "paused", "completed", "canceled". */
+  state?: string;
+  /** ISO date when the project should be done. */
+  target_date?: string;
+  /** Display name of the project lead, when set. */
+  lead?: string;
+  /** Linear UI URL for the project, for "Open in Linear" links. */
+  url?: string;
 }
 
 export type ZendeskSearchResult =

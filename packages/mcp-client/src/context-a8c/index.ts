@@ -29,6 +29,7 @@ export function createContextA8CClient(
 
 export type {
   ContextA8CClient,
+  LinearProjectMetadata,
   ZendeskSearchResult,
   ZendeskTicketSummary,
 } from "./types";
