@@ -13,6 +13,8 @@ import {
   deleteProjectTask,
   editProjectTaskText,
   parseProjectTasks,
+  resolveFollowUp,
+  setPrimaryZendeskTicket,
   toggleProjectTask,
   resolveVaultOptions,
 } from "../src/index.ts";
@@ -324,5 +326,91 @@ if (!finalContent.includes("Some prose.")) {
 }
 
 console.log("[zendesk] OK — append + URL/id de-dup + idempotent same-string + body intact");
+
+// --- setPrimary: reorder array so picked id lands at position 0 ---
+const p1 = await setPrimaryZendeskTicket(opts, "zendesk-project", "12000123");
+if (!p1.changed || p1.zendesk_tickets[0] !== "https://automattic.zendesk.com/agent/tickets/12000123") {
+  throw new Error("expected URL form to move to position 0: " + JSON.stringify(p1));
+}
+// Existing primary should slide down to position 1
+if (p1.zendesk_tickets[1] !== "11134851") {
+  throw new Error("expected old primary at index 1: " + JSON.stringify(p1));
+}
+console.log(`[primary] promoted by URL -> ${JSON.stringify(p1.zendesk_tickets)}`);
+
+// Promote by raw id when current entry is a URL
+const p2 = await setPrimaryZendeskTicket(opts, "zendesk-project", "11134851");
+if (!p2.changed || p2.zendesk_tickets[0] !== "11134851") {
+  throw new Error("expected raw id to move to position 0: " + JSON.stringify(p2));
+}
+
+// No-op when already primary
+const p3 = await setPrimaryZendeskTicket(opts, "zendesk-project", "11134851");
+if (p3.changed) throw new Error("expected no-op when already primary");
+
+// Unknown ticket → throws
+let primaryRejected = false;
+try {
+  await setPrimaryZendeskTicket(opts, "zendesk-project", "99999999");
+} catch {
+  primaryRejected = true;
+}
+if (!primaryRejected) throw new Error("expected unknown ticket to throw");
+console.log("[primary] OK — promote by URL + by raw id, no-op on already-primary, unknown rejects");
+
+// --- resolveFollowUp: flip Status cell to "✅ Resolved …" ---
+// Build a Follow-ups.md with two open rows; pick one to resolve.
+const followUpsPath = join(root, "Follow-ups.md");
+writeFileSync(
+  followUpsPath,
+  `# Follow-ups Tracker
+
+## Open Follow-ups
+
+| Project | Task | Sent | Follow-up By | Status | Source |
+|---|---|---|---|---|---|
+| Smoke Project | First task to follow up on | 2026-04-29 | 2026-05-04 | ⏳ Waiting | |
+| Smoke Project | Second task | 2026-04-30 | 2026-05-05 | ⏳ Waiting | |
+
+## Resolved Follow-ups
+
+| Project | Task | Sent | Resolved | Notes |
+|---|---|---|---|---|
+`,
+);
+
+// Compute the deterministic id the parser would use.
+// id = deterministicId(project, task, sent)
+const { deterministicId } = await import("../src/ids.ts");
+const targetId = deterministicId(
+  "Smoke Project",
+  "First task to follow up on",
+  "2026-04-29",
+);
+
+const fr1 = await resolveFollowUp(opts, targetId);
+if (!fr1.changed) throw new Error("expected resolveFollowUp to flip status");
+const updated = readFileSync(followUpsPath, "utf8");
+if (!updated.includes("✅ Resolved")) {
+  throw new Error("expected '✅ Resolved' in file:\n" + updated);
+}
+if (!updated.includes("Second task")) {
+  throw new Error("sibling row should be untouched");
+}
+
+// Idempotency: resolving an already-resolved row is a no-op
+const fr2 = await resolveFollowUp(opts, targetId);
+if (fr2.changed) throw new Error("expected no-op on already-resolved row");
+
+// Unknown id throws
+let resolveRejected = false;
+try {
+  await resolveFollowUp(opts, "no-such-id");
+} catch {
+  resolveRejected = true;
+}
+if (!resolveRejected) throw new Error("expected unknown follow-up to throw");
+console.log("[follow-up] OK — flip-to-resolved, idempotent, unknown rejects");
+
 console.log(`[smoke] cleaning up ${root}`);
 rmSync(root, { recursive: true, force: true });

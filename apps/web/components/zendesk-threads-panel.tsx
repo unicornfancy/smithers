@@ -1,4 +1,5 @@
 import {
+  AlertCircle,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -15,6 +16,8 @@ import type { FollowUp } from "@smithers/vault";
 
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MakePrimaryButton } from "@/components/make-primary-button";
+import { ResolveFollowUpButton } from "@/components/resolve-follow-up-button";
 import { ZendeskAttachModal } from "@/components/zendesk-attach-modal";
 
 interface Props {
@@ -67,6 +70,12 @@ export function ZendeskThreadsPanel({
   const existingIds = tickets.map((t) => t.id);
   const { active, closed } = partitionByStatus(tickets);
   const primaryId = tickets[0]?.id;
+  const primaryIsClosed =
+    primaryId !== undefined &&
+    closed.some((t) => t.id === primaryId);
+  // Suggest the first active ticket as the new primary when current primary
+  // is closed. Drives the cleanup banner at the top of the panel.
+  const suggestedPrimary = primaryIsClosed ? active[0] : undefined;
   // Group follow-ups by referenced #ticket_id. A follow-up that mentions
   // multiple ids gets attributed to the first one (rare in practice).
   // What's left over goes in the Unattributed bucket at the bottom.
@@ -102,11 +111,35 @@ export function ZendeskThreadsPanel({
             to search and pick one.
           </p>
         ) : null}
+        {suggestedPrimary ? (
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-50 p-2 text-[12px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <span>
+                Primary thread is closed. Promote{" "}
+                <span className="font-medium">
+                  {suggestedPrimary.subject ?? `#${suggestedPrimary.id}`}
+                </span>
+                ?
+              </span>
+              <span className="ml-auto">
+                <MakePrimaryButton
+                  projectSlug={projectSlug}
+                  ticketId={suggestedPrimary.id}
+                  ticketLabel={
+                    suggestedPrimary.subject ?? `#${suggestedPrimary.id}`
+                  }
+                />
+              </span>
+            </div>
+          </div>
+        ) : null}
         {active.length > 0 ? (
           <ul className="flex flex-col gap-3">
             {active.map((t) => (
               <ThreadCard
                 key={t.id}
+                projectSlug={projectSlug}
                 ticket={t}
                 primary={t.id === primaryId}
                 followUps={followUpsByTicket.get(t.id) ?? []}
@@ -138,6 +171,7 @@ export function ZendeskThreadsPanel({
               {closed.map((t) => (
                 <ThreadCard
                   key={t.id}
+                  projectSlug={projectSlug}
                   ticket={t}
                   primary={t.id === primaryId}
                   followUps={followUpsByTicket.get(t.id) ?? []}
@@ -162,7 +196,11 @@ export function ZendeskThreadsPanel({
             </p>
             <ul className="flex flex-col divide-y">
               {unattributed.map((f) => (
-                <FollowUpRow key={f.follow_up_id} fu={f} />
+                <FollowUpRow
+                  key={f.follow_up_id}
+                  projectSlug={projectSlug}
+                  fu={f}
+                />
               ))}
             </ul>
           </div>
@@ -173,12 +211,14 @@ export function ZendeskThreadsPanel({
 }
 
 function ThreadCard({
+  projectSlug,
   ticket,
   primary,
   followUps,
   recentActivity,
   dim = false,
 }: {
+  projectSlug: string;
   ticket: ZendeskTicketSummary;
   primary: boolean;
   followUps: FollowUp[];
@@ -194,7 +234,12 @@ function ThreadCard({
         dim ? "border-muted bg-muted/20" : "border-border",
       )}
     >
-      <ZendeskRow ticket={ticket} primary={primary} dim={dim} />
+      <ZendeskRow
+        ticket={ticket}
+        primary={primary}
+        dim={dim}
+        projectSlug={projectSlug}
+      />
       {followUps.length > 0 ? (
         <div className="border-t pt-2">
           <p className="text-muted-foreground mb-1 text-[11px] font-medium uppercase tracking-wide">
@@ -203,10 +248,20 @@ function ThreadCard({
           </p>
           <ul className="flex flex-col divide-y">
             {activeFu.map((f) => (
-              <FollowUpRow key={f.follow_up_id} fu={f} highlight />
+              <FollowUpRow
+                key={f.follow_up_id}
+                projectSlug={projectSlug}
+                fu={f}
+                highlight
+              />
             ))}
             {resolvedFu.slice(0, 3).map((f) => (
-              <FollowUpRow key={f.follow_up_id} fu={f} dim />
+              <FollowUpRow
+                key={f.follow_up_id}
+                projectSlug={projectSlug}
+                fu={f}
+                dim
+              />
             ))}
             {resolvedFu.length > 3 ? (
               <li className="text-muted-foreground/70 py-1 text-[11px]">
@@ -240,10 +295,12 @@ function ThreadCard({
 }
 
 function FollowUpRow({
+  projectSlug,
   fu,
   highlight = false,
   dim = false,
 }: {
+  projectSlug: string;
   fu: FollowUp;
   highlight?: boolean;
   dim?: boolean;
@@ -251,7 +308,7 @@ function FollowUpRow({
   return (
     <li
       className={cn(
-        "flex items-start gap-2 py-1.5 first:pt-0 last:pb-0",
+        "group flex items-start gap-2 py-1.5 first:pt-0 last:pb-0",
         dim && "text-muted-foreground",
       )}
     >
@@ -283,6 +340,13 @@ function FollowUpRow({
           {fu.status_note ? ` · ${fu.status_note}` : ""}
         </p>
       </div>
+      {fu.status !== "resolved" ? (
+        <ResolveFollowUpButton
+          projectSlug={projectSlug}
+          followUpId={fu.follow_up_id}
+          label={fu.task}
+        />
+      ) : null}
     </li>
   );
 }
@@ -368,10 +432,13 @@ function ZendeskRow({
   ticket,
   primary,
   dim = false,
+  projectSlug,
 }: {
   ticket: ZendeskTicketSummary;
   primary: boolean;
   dim?: boolean;
+  /** Required when the row should expose a "Make primary" affordance. */
+  projectSlug?: string;
 }) {
   // Plain <div>: ZendeskRow now renders inside ThreadCard's <li>, so it
   // can't itself be an <li> (would produce invalid <li><li/></li> nesting).
@@ -419,15 +486,24 @@ function ZendeskRow({
           ) : null}
         </div>
       </div>
-      <a
-        href={ticket.url}
-        target="_blank"
-        rel="noreferrer"
-        className="text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1 text-xs underline-offset-2 hover:underline"
-      >
-        Open
-        <ExternalLink className="size-3" />
-      </a>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {projectSlug && !primary ? (
+          <MakePrimaryButton
+            projectSlug={projectSlug}
+            ticketId={ticket.id}
+            ticketLabel={ticket.subject ?? `#${ticket.id}`}
+          />
+        ) : null}
+        <a
+          href={ticket.url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs underline-offset-2 hover:underline"
+        >
+          Open
+          <ExternalLink className="size-3" />
+        </a>
+      </div>
     </div>
   );
 }

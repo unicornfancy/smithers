@@ -1,5 +1,5 @@
 import type { ResolvedVaultOptions } from "./config";
-import { tryReadFile } from "./fs";
+import { tryReadFile, writeFileAtomic } from "./fs";
 import { deterministicId } from "./ids";
 import { vaultPaths } from "./paths";
 import type { FollowUp, FollowUpStatus, Project } from "./types";
@@ -62,6 +62,114 @@ export function filterFollowUpsForProject<T extends FollowUp>(
 
 function deslug(slug: string): string {
   return slug.replace(/-/g, " ");
+}
+
+export interface ResolveFollowUpResult {
+  follow_up_id: string;
+  /** True when the file was rewritten; false when already resolved. */
+  changed: boolean;
+}
+
+/**
+ * Mark a follow-up row as resolved by flipping its Status cell in
+ * `Follow-ups.md`. Matches the row by the same content-derived
+ * `follow_up_id` the parser uses (project + task + sent), so a
+ * stale id from the UI still resolves as long as those three
+ * fields haven't changed.
+ *
+ * Intentionally does *not* move the row from "Open" to "Resolved"
+ * tables — those tables have different columns and trying to
+ * remap on the fly is brittle. The classifier reads from the
+ * Status cell text, so the UI shows the row as resolved
+ * regardless of which section it physically lives in.
+ */
+export async function resolveFollowUp(
+  opts: ResolvedVaultOptions,
+  followUpId: string,
+  note?: string,
+): Promise<ResolveFollowUpResult> {
+  const paths = vaultPaths(opts);
+  const raw = await tryReadFile(paths.followUps);
+  if (raw === null) {
+    throw new Error(`Follow-ups.md not found at ${paths.followUps}`);
+  }
+
+  const lines = raw.split(/\r?\n/);
+  // Walk lines; for each table row, parse cells against the closest
+  // preceding header row to compute the deterministic id and look for
+  // a match. We rebuild the file line-by-line; only the matched row
+  // gets a rewritten Status cell.
+  let header: string[] | null = null;
+  let foundLineIndex = -1;
+  let foundCells: string[] | null = null;
+  let foundStatusCol = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.trimStart().startsWith("|")) continue;
+    if (isSeparatorRow(line.trim())) continue;
+    const cells = splitRow(line);
+    // The first table row we encounter (or the row right after a
+    // gap) is treated as a header. Headers contain "project" + "task"
+    // somewhere — that's how we distinguish them from data rows.
+    const lower = cells.map((c) => c.toLowerCase());
+    const looksLikeHeader =
+      lower.includes("project") && lower.includes("task");
+    if (looksLikeHeader) {
+      header = lower;
+      continue;
+    }
+    if (!header) continue;
+    const project = cellByName(cells, header, "project");
+    const task = cellByName(cells, header, "task");
+    const sent = cellByName(cells, header, "sent");
+    if (!project || !task) continue;
+    const id = deterministicId(project, task, sent);
+    if (id !== followUpId) continue;
+
+    foundLineIndex = i;
+    foundCells = cells;
+    foundStatusCol = header.indexOf("status");
+    break;
+  }
+
+  if (foundLineIndex < 0 || !foundCells) {
+    throw new Error(
+      `Follow-up ${followUpId} not found in Follow-ups.md`,
+    );
+  }
+  if (foundStatusCol < 0) {
+    // No Status column in this table (e.g. the "Resolved" table uses
+    // different columns). Treat as already-resolved no-op rather than
+    // an error since the row exists.
+    return { follow_up_id: followUpId, changed: false };
+  }
+
+  const currentStatus = foundCells[foundStatusCol] ?? "";
+  if (classifyStatus(currentStatus) === "resolved") {
+    return { follow_up_id: followUpId, changed: false };
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const newStatus = note
+    ? `✅ Resolved — ${note}`
+    : `✅ Resolved ${today}`;
+  foundCells[foundStatusCol] = newStatus;
+  // Rebuild the row preserving the original leading/trailing pipe
+  // style. Most tables have leading + trailing pipes; mirror that.
+  lines[foundLineIndex] = `| ${foundCells.join(" | ")} |`;
+
+  await writeFileAtomic(paths.followUps, lines.join("\n"));
+  return { follow_up_id: followUpId, changed: true };
+}
+
+function cellByName(
+  cells: string[],
+  header: string[],
+  name: string,
+): string {
+  const idx = header.indexOf(name);
+  return idx >= 0 ? (cells[idx] ?? "") : "";
 }
 
 // --- internals ---

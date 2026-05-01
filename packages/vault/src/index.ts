@@ -31,7 +31,11 @@ import {
   listDrafts,
   readDraft,
 } from "./drafts";
-import { filterFollowUpsForProject, listFollowUps } from "./follow-ups";
+import {
+  filterFollowUpsForProject,
+  listFollowUps,
+  resolveFollowUp,
+} from "./follow-ups";
 import { readProjectDetail } from "./project-detail";
 import {
   addProjectZendeskTicket,
@@ -39,9 +43,11 @@ import {
   ensureProjectId,
   listProjects,
   readProject,
+  setPrimaryZendeskTicket,
   type AddProjectZendeskTicketResult,
   type CreateProjectInput,
   type CreateProjectResult,
+  type SetPrimaryZendeskTicketResult,
 } from "./projects";
 import { readVaultStatus } from "./status";
 import { readStyleGuide, readWorkingWith } from "./style-guide";
@@ -75,7 +81,9 @@ export type {
   AddProjectZendeskTicketResult,
   CreateProjectInput,
   CreateProjectResult,
+  SetPrimaryZendeskTicketResult,
 } from "./projects";
+export type { ResolveFollowUpResult } from "./follow-ups";
 export {
   addProjectZendeskTicket,
   appendProjectTask,
@@ -100,6 +108,8 @@ export {
   readTodayNote,
   readVaultStatus,
   readWorkingWith,
+  resolveFollowUp,
+  setPrimaryZendeskTicket,
   splitTasks,
   toggleProjectTask,
   upsertDailySection,
@@ -155,6 +165,14 @@ export interface Vault {
     slug: string,
     ticketRef: string,
   ) => ReturnType<typeof addProjectZendeskTicket>;
+  setPrimaryZendeskTicket: (
+    slug: string,
+    ticketId: string,
+  ) => ReturnType<typeof setPrimaryZendeskTicket>;
+  resolveFollowUp: (
+    followUpId: string,
+    note?: string,
+  ) => ReturnType<typeof resolveFollowUp>;
   watch: (handler: VaultEventHandler) => ReturnType<typeof watchVault>;
 }
 
@@ -190,6 +208,10 @@ export function createVault(options: VaultOptions): Vault {
       deleteProjectTask(resolved, slug, taskId),
     addProjectZendeskTicket: (slug, ticketRef) =>
       addProjectZendeskTicket(resolved, slug, ticketRef),
+    setPrimaryZendeskTicket: (slug, ticketId) =>
+      setPrimaryZendeskTicket(resolved, slug, ticketId),
+    resolveFollowUp: (followUpId, note) =>
+      resolveFollowUp(resolved, followUpId, note),
     watch: (handler) => watchVault(resolved, handler),
   };
 }

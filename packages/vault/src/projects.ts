@@ -410,6 +410,66 @@ export async function addProjectZendeskTicket(
   return { zendesk_tickets: next, added: true };
 }
 
+export interface SetPrimaryZendeskTicketResult {
+  zendesk_tickets: string[];
+  /** True when the array order changed; false when the target was already primary. */
+  changed: boolean;
+}
+
+/**
+ * Promote a Zendesk ticket to "primary" by moving its entry to position
+ * 0 in the project's `zendesk_tickets` array. Identity matching uses
+ * the canonical numeric id, so `12345` and a URL ending in `/tickets/12345`
+ * are treated as the same ticket. No-op if the ticket is already at
+ * position 0.
+ */
+export async function setPrimaryZendeskTicket(
+  opts: ResolvedVaultOptions,
+  slug: string,
+  ticketId: string,
+): Promise<SetPrimaryZendeskTicketResult> {
+  const targetId = extractTicketIdLocal(ticketId) ?? ticketId.trim();
+  if (!targetId) {
+    throw new Error("Ticket id is required");
+  }
+  const project = await readProject(opts, slug);
+  if (!project) {
+    throw new Error(`Project "${slug}" not found`);
+  }
+  if (project.source.kind === "hive-mind") {
+    throw new Error(
+      `Project "${slug}" lives in Hive Mind; ticket edits go through the shared-notes flow`,
+    );
+  }
+  const path = project.source.absolute_path;
+  const raw = await tryReadFile(path);
+  if (raw === null) {
+    throw new Error(`Project file disappeared at ${path}`);
+  }
+  const { data, content } = parseMarkdown(raw);
+  const existing = normalizeZendeskTickets(data["zendesk_tickets"]) ?? [];
+  const idx = existing.findIndex(
+    (ref) => extractTicketIdLocal(ref) === targetId,
+  );
+  if (idx < 0) {
+    throw new Error(
+      `Ticket ${targetId} is not attached to project "${slug}"`,
+    );
+  }
+  if (idx === 0) {
+    return { zendesk_tickets: existing, changed: false };
+  }
+  // Splice + unshift so the picked entry moves to the front and the
+  // existing primary slides down to second; relative order of the rest
+  // stays stable so the user's curated ordering is preserved.
+  const next = [...existing];
+  const [picked] = next.splice(idx, 1);
+  next.unshift(picked!);
+  const merged = { ...data, zendesk_tickets: next };
+  await writeFileAtomic(path, serializeMarkdown(merged, content));
+  return { zendesk_tickets: next, changed: true };
+}
+
 /**
  * Local copy of the ticket-id extractor — vault package keeps zero
  * dependencies on @smithers/mcp-client to avoid a circular import.

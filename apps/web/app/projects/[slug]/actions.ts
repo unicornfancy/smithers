@@ -121,3 +121,41 @@ export async function attachZendeskTicketAction(
   revalidatePath(`/projects/${slug}`);
   return { added: result.added, total: result.zendesk_tickets.length };
 }
+
+/**
+ * Promote a Zendesk ticket to primary by reordering the project's
+ * frontmatter array so the picked ticket lands at position 0.
+ */
+export async function setPrimaryZendeskTicketAction(
+  slug: string,
+  ticketId: string,
+): Promise<{ changed: boolean }> {
+  if (!slug) throw new Error("slug is required");
+  if (!ticketId) throw new Error("ticketId is required");
+
+  const vault = await getVault();
+  const result = await vault.setPrimaryZendeskTicket(slug, ticketId);
+
+  revalidatePath(`/projects/${slug}`);
+  return { changed: result.changed };
+}
+
+/**
+ * Mark a follow-up as resolved in Follow-ups.md. Optional note is
+ * appended to the Status cell as "Resolved — <note>" so the user can
+ * leave a quick reason for future-them.
+ */
+export async function resolveFollowUpAction(
+  slug: string,
+  followUpId: string,
+  note?: string,
+): Promise<{ changed: boolean }> {
+  if (!slug) throw new Error("slug is required");
+  if (!followUpId) throw new Error("followUpId is required");
+
+  const vault = await getVault();
+  const result = await vault.resolveFollowUp(followUpId, note);
+
+  revalidatePath(`/projects/${slug}`);
+  return { changed: result.changed };
+}
