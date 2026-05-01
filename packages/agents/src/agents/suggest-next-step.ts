@@ -90,7 +90,9 @@ const OUTPUT_SCHEMA = {
     },
     picks: {
       type: "array",
-      maxItems: 3,
+      // maxItems isn't supported by Anthropic's structured-output schema;
+      // we instead cap to 3 in the validator + tell the model in the
+      // system prompt.
       items: {
         type: "object",
         properties: {
@@ -220,9 +222,10 @@ function validateOutput(raw: unknown): SuggestNextStepOutput {
   if (!Array.isArray(rawPicks)) {
     throw new Error("picks must be an array");
   }
-  const picks: SuggestNextStepPick[] = rawPicks.map(
-    validatePick,
-  );
+  // Defensive cap to 3 — the prompt asks for it, the model usually
+  // obeys, but Anthropic's structured-output schema doesn't accept
+  // maxItems so we enforce it here.
+  const picks: SuggestNextStepPick[] = rawPicks.slice(0, 3).map(validatePick);
   return { framing, picks };
 }
 
