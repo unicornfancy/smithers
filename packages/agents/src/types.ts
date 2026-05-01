@@ -14,7 +14,8 @@ export type AgentName =
   | "suggest-next-step"
   | "compose-followup-nudge"
   | "compose-call-recap"
-  | "analyze-call-transcript";
+  | "analyze-call-transcript"
+  | "learn-style-from-archives";
 
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 

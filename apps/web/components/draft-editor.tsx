@@ -1,10 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { Check, Eye, EyeOff, Loader2, Save } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Archive, Check, Eye, EyeOff, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 
-import { updateDraftBodyAction } from "@/app/drafts/actions";
+import {
+  archiveDraftAction,
+  updateDraftBodyAction,
+} from "@/app/drafts/actions";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/markdown";
@@ -28,10 +32,12 @@ const SAVE_DEBOUNCE_MS = 1500;
  * frontmatter is preserved verbatim.
  */
 export function DraftEditor({ draftId, initialBody, archived }: Props) {
+  const router = useRouter();
   const [body, setBody] = React.useState(initialBody);
   const [savedBody, setSavedBody] = React.useState(initialBody);
   const [preview, setPreview] = React.useState(false);
   const [saving, startSaving] = React.useTransition();
+  const [archiving, startArchiving] = React.useTransition();
   const [savedFlash, setSavedFlash] = React.useState(false);
   const dirty = body !== savedBody;
 
@@ -62,6 +68,41 @@ export function DraftEditor({ draftId, initialBody, archived }: Props) {
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [body, archived]);
+
+  function handleArchive() {
+    if (archived) return;
+    // Save any unsaved changes first so archive captures the latest body.
+    function archive() {
+      startArchiving(async () => {
+        try {
+          await archiveDraftAction(draftId);
+          toast.success("Draft archived");
+          // Refresh so the page picks up the new state — the editor
+          // will re-mount as read-only.
+          router.refresh();
+        } catch (err) {
+          toast.error(
+            err instanceof Error ? err.message : "Couldn't archive draft",
+          );
+        }
+      });
+    }
+    if (dirty) {
+      startSaving(async () => {
+        try {
+          await updateDraftBodyAction(draftId, body);
+          setSavedBody(body);
+          archive();
+        } catch (err) {
+          toast.error(
+            err instanceof Error ? err.message : "Couldn't save before archive",
+          );
+        }
+      });
+    } else {
+      archive();
+    }
+  }
 
   // Cmd/Ctrl-S → explicit save.
   React.useEffect(() => {
@@ -106,22 +147,40 @@ export function DraftEditor({ draftId, initialBody, archived }: Props) {
             {preview ? "Hide preview" : "Show preview"}
           </Button>
           {!archived ? (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => save()}
-              disabled={!dirty || saving}
-              className="h-7 gap-1.5 text-xs"
-            >
-              {saving ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : savedFlash ? (
-                <Check className="size-3.5" />
-              ) : (
-                <Save className="size-3.5" />
-              )}
-              {savedFlash ? "Saved" : "Save"}
-            </Button>
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleArchive}
+                disabled={archiving || saving}
+                title="Archive this draft (moves to Drafts/Archived Drafts/)"
+                className="h-7 gap-1.5 text-xs"
+              >
+                {archiving ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Archive className="size-3.5" />
+                )}
+                Archive
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => save()}
+                disabled={!dirty || saving}
+                className="h-7 gap-1.5 text-xs"
+              >
+                {saving ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : savedFlash ? (
+                  <Check className="size-3.5" />
+                ) : (
+                  <Save className="size-3.5" />
+                )}
+                {savedFlash ? "Saved" : "Save"}
+              </Button>
+            </>
           ) : null}
         </span>
       </div>

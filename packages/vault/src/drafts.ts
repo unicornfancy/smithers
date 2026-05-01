@@ -161,6 +161,128 @@ function sanitizeDraftFilename(title: string): string {
     .slice(0, 80);
 }
 
+export interface ArchiveDraftResult {
+  draft_id: string;
+  /** Where the archived file ended up. */
+  absolute_path: string;
+  relative_path: string;
+}
+
+/**
+ * Move a draft from `Drafts/` to `Drafts/Archived Drafts/` and stamp
+ * `state: archived` + `archived_at` into frontmatter. Idempotent: if
+ * the draft is already archived, returns the existing path without
+ * touching disk.
+ *
+ * `original_body` (when present) is preserved through the move so
+ * the style-learning loop can compute diffs between the AI's first
+ * pass and the user's final version after the fact.
+ */
+export async function archiveDraft(
+  opts: ResolvedVaultOptions,
+  draftId: string,
+): Promise<ArchiveDraftResult> {
+  const { mkdir, rename } = await import("node:fs/promises");
+  const draft = await readDraft(opts, draftId);
+  if (!draft) {
+    throw new Error(`Draft ${draftId} not found`);
+  }
+  if (draft.state === "archived") {
+    return {
+      draft_id: draftId,
+      absolute_path: draft.absolute_path,
+      relative_path: draft.relative_path,
+    };
+  }
+  const paths = vaultPaths(opts);
+  await mkdir(paths.draftsArchived, { recursive: true });
+
+  const filename = draft.absolute_path.split("/").pop() ?? `${draftId}.md`;
+  const targetPath = await pickFreshDraftFilename(
+    paths.draftsArchived,
+    withoutMdExt(filename),
+  );
+  const targetAbs = join(paths.draftsArchived, targetPath);
+
+  // Update frontmatter first (still at the in-progress path), then
+  // rename. Doing the rename first would temporarily leave the file
+  // with stale state if the frontmatter write later failed.
+  const raw = await tryReadFile(draft.absolute_path);
+  if (raw === null) {
+    throw new Error(`Draft file disappeared at ${draft.absolute_path}`);
+  }
+  const { data, content } = parseMarkdown(raw);
+  const merged = {
+    ...data,
+    state: "archived" as DraftState,
+    archived_at: new Date().toISOString(),
+  };
+  await writeFileAtomic(draft.absolute_path, serializeMarkdown(merged, content));
+  await rename(draft.absolute_path, targetAbs);
+
+  return {
+    draft_id: draftId,
+    absolute_path: targetAbs,
+    relative_path: relative(opts.vaultPath, targetAbs),
+  };
+}
+
+export interface ArchivedDraftWithDiff {
+  draft_id: string;
+  title: string;
+  source_agent?: string;
+  channel?: string;
+  archived_at: string;
+  original_body: string;
+  final_body: string;
+}
+
+/**
+ * List archived drafts whose frontmatter includes an `original_body`
+ * snapshot — these are the ones the style-learning agent can reason
+ * about. Drafts without an original (legacy drafts predating the
+ * AI flow, or hand-authored drafts) are excluded.
+ *
+ * Sorted newest-first by archived_at; capped at `limit` (default 25)
+ * so a long tail of historical drafts doesn't blow up the prompt.
+ */
+export async function listArchivedDraftsWithDiffs(
+  opts: ResolvedVaultOptions,
+  limit = 25,
+): Promise<ArchivedDraftWithDiff[]> {
+  const all = await listDrafts(opts);
+  const candidates: ArchivedDraftWithDiff[] = [];
+  for (const d of all) {
+    if (d.state !== "archived") continue;
+    const raw = await tryReadFile(d.absolute_path);
+    if (!raw) continue;
+    const { data, content } = parseMarkdown(raw);
+    const original = data["original_body"];
+    if (typeof original !== "string" || !original.trim()) continue;
+    const archived_at =
+      typeof data["archived_at"] === "string"
+        ? (data["archived_at"] as string)
+        : d.modified_at;
+    candidates.push({
+      draft_id: d.draft_id,
+      title: d.title,
+      source_agent:
+        typeof data["source_agent"] === "string"
+          ? (data["source_agent"] as string)
+          : undefined,
+      channel:
+        typeof data["channel"] === "string"
+          ? (data["channel"] as string)
+          : undefined,
+      archived_at,
+      original_body: original,
+      final_body: content,
+    });
+  }
+  candidates.sort((a, b) => b.archived_at.localeCompare(a.archived_at));
+  return candidates.slice(0, limit);
+}
+
 export interface UpdateDraftBodyResult {
   draft_id: string;
   /** True when the on-disk content actually changed. */

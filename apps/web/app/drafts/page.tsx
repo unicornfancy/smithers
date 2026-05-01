@@ -5,6 +5,7 @@ import type { Draft } from "@smithers/vault";
 
 import { AppHeader } from "@/components/app-header";
 import { EmptyState, VaultMissingNotice } from "@/components/empty-state";
+import { LearnStyleButton } from "@/components/learn-style-button";
 import { PageShell } from "@/components/page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +35,7 @@ export default async function DraftsPage() {
             ? `${inProgress.length} in flight · ${archived.length} archived`
             : "Vault not configured yet"
         }
+        actions={status.exists ? <LearnStyleButton /> : null}
       />
       <PageShell>
         {!status.exists ? (

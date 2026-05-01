@@ -83,3 +83,11 @@ export {
   type ComposeCallRecapInput,
   type ComposeCallRecapOutput,
 } from "./agents/compose-call-recap";
+
+export {
+  learnStyleFromArchives,
+  type LearnStyleFromArchivesInput,
+  type LearnStyleFromArchivesOutput,
+  type LearnStyleSample,
+  type StylePattern,
+} from "./agents/learn-style-from-archives";
