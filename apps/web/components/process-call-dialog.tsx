@@ -655,6 +655,16 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
         meta={p2Data ? "Markdown · paste into the P2 composer" : ""}
         rationale={p2Data?.rationale ?? ""}
         body={p2Data?.body ?? ""}
+        saveAsDraft={
+          p2Data
+            ? {
+                suggestedTitle: `P2 — ${p2Data.title}`,
+                projectSlug,
+                sourceAgent: "draft-p2-update",
+                channel: "p2",
+              }
+            : undefined
+        }
       />
 
       <AiDraftDialog
@@ -671,6 +681,16 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
           recapData?.channel === "email" ? recapData.subject : undefined
         }
         body={recapData?.draft ?? ""}
+        saveAsDraft={
+          recapData
+            ? {
+                suggestedTitle: `Recap — ${recording.title ?? recording.recording_id}`,
+                projectSlug,
+                sourceAgent: "compose-call-recap",
+                channel: recapData.channel,
+              }
+            : undefined
+        }
       />
     </>
   );

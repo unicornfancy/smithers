@@ -1,9 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy } from "lucide-react";
+import Link from "next/link";
+import { Check, Copy, FileEdit, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 
+import { saveAsDraftAction } from "@/app/drafts/actions";
+import { encodeDraftIdForUrl } from "@/lib/draft-id-url";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +31,22 @@ interface Props {
   subject?: string;
   /** Body of the draft. Editable — user can tweak before copying. */
   body: string;
+  /**
+   * When provided, exposes a "Save as draft" button that writes the
+   * current edited content into `Drafts/` as a new draft with the
+   * AI's first pass snapshotted in frontmatter. Without these props
+   * the button is hidden (Copy-only flow).
+   */
+  saveAsDraft?: {
+    /** Title used for the new draft's filename + H1. */
+    suggestedTitle: string;
+    /** Optional project to attach the draft to. */
+    projectSlug?: string;
+    /** Which agent produced the original draft (telemetry + style-loop). */
+    sourceAgent: string;
+    /** Channel hint stored in frontmatter ("email" / "slack" / etc.). */
+    channel?: string;
+  };
 }
 
 /**
@@ -48,10 +67,16 @@ export function AiDraftDialog({
   rationale,
   subject,
   body,
+  saveAsDraft,
 }: Props) {
   const [editedSubject, setEditedSubject] = React.useState(subject ?? "");
   const [editedBody, setEditedBody] = React.useState(body);
   const [copied, setCopied] = React.useState(false);
+  const [savingDraft, startSaveDraft] = React.useTransition();
+  const [savedDraft, setSavedDraft] = React.useState<{
+    draft_id: string;
+    relative_path: string;
+  } | null>(null);
 
   // Re-seed when a new draft lands (parent passes new body/subject).
   React.useEffect(() => {
@@ -59,8 +84,36 @@ export function AiDraftDialog({
       setEditedSubject(subject ?? "");
       setEditedBody(body);
       setCopied(false);
+      setSavedDraft(null);
     }
   }, [open, subject, body]);
+
+  function handleSaveAsDraft() {
+    if (!saveAsDraft) return;
+    startSaveDraft(async () => {
+      try {
+        const r = await saveAsDraftAction({
+          project_slug: saveAsDraft.projectSlug,
+          title: saveAsDraft.suggestedTitle,
+          body: editedSubject
+            ? `Subject: ${editedSubject}\n\n${editedBody}`
+            : editedBody,
+          original_body: subject
+            ? `Subject: ${subject}\n\n${body}`
+            : body,
+          source_agent: saveAsDraft.sourceAgent,
+          subject: editedSubject || undefined,
+          channel: saveAsDraft.channel,
+        });
+        setSavedDraft(r);
+        toast.success(`Saved as draft · ${r.relative_path}`);
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Couldn't save draft",
+        );
+      }
+    });
+  }
 
   async function copyToClipboard() {
     const text = editedSubject
@@ -137,6 +190,31 @@ export function AiDraftDialog({
         ) : null}
 
         <DialogFooter>
+          {saveAsDraft ? (
+            savedDraft ? (
+              <Button asChild variant="ghost" className="gap-1.5">
+                <Link href={`/drafts/${encodeDraftIdForUrl(savedDraft.draft_id)}`}>
+                  <FileEdit className="size-3.5" />
+                  Open draft
+                </Link>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSaveAsDraft}
+                disabled={savingDraft}
+                className="gap-1.5"
+              >
+                {savingDraft ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Save className="size-3.5" />
+                )}
+                Save as draft
+              </Button>
+            )
+          ) : null}
           <Button
             type="button"
             variant="ghost"

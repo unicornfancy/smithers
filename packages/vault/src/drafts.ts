@@ -67,6 +67,100 @@ export async function readDraft(
   return all.find((d) => d.draft_id === draftId) ?? null;
 }
 
+export interface CreateDraftFromAiInput {
+  /** Optional project to attach the draft to. */
+  project_slug?: string;
+  /** Display title — used for the H1 + filename slug. */
+  title: string;
+  /** The draft body the user starts editing. */
+  body: string;
+  /** Snapshot of the AI's first pass — used later to compute archive-time diffs. */
+  original_body?: string;
+  /** Which agent produced this — kept in frontmatter for the style-guide loop. */
+  source_agent?: string;
+  /** Optional subject line (preserved in frontmatter for email-style drafts). */
+  subject?: string;
+  /** Optional channel hint ("email" / "slack" / "zendesk" / "p2"). */
+  channel?: string;
+}
+
+export interface CreateDraftFromAiResult {
+  draft_id: string;
+  absolute_path: string;
+  relative_path: string;
+}
+
+/**
+ * Create a new draft file in `Drafts/` from AI-generated content. The
+ * AI's first pass is snapshotted into frontmatter (`original_body`)
+ * so archive-time diffs can later teach the style-guide what the
+ * user's voice does to a generic draft.
+ *
+ * Filename uses a slugified title; collisions get a numeric suffix.
+ */
+export async function createDraftFromAi(
+  opts: ResolvedVaultOptions,
+  input: CreateDraftFromAiInput,
+): Promise<CreateDraftFromAiResult> {
+  const trimmedTitle = input.title.trim();
+  if (!trimmedTitle) throw new Error("title is required");
+  if (!input.body.trim()) throw new Error("body is required");
+
+  const { mkdir } = await import("node:fs/promises");
+  const paths = vaultPaths(opts);
+  await mkdir(paths.drafts, { recursive: true });
+
+  const draftId = newId();
+  const fileName = await pickFreshDraftFilename(paths.drafts, trimmedTitle);
+  const absolutePath = join(paths.drafts, fileName);
+
+  const frontmatter: Record<string, unknown> = {
+    draft_id: draftId,
+    state: "in-progress" as DraftState,
+    created_at: new Date().toISOString(),
+  };
+  if (input.project_slug) frontmatter["project_slug"] = input.project_slug;
+  if (input.source_agent) frontmatter["source_agent"] = input.source_agent;
+  if (input.original_body !== undefined) {
+    frontmatter["original_body"] = input.original_body;
+  }
+  if (input.subject) frontmatter["subject"] = input.subject;
+  if (input.channel) frontmatter["channel"] = input.channel;
+
+  // Body kicks off with a friendly H1 so the listing renders a
+  // recognizable title; the actual draft text follows.
+  const body = `# ${trimmedTitle}\n\n${input.body}\n`;
+  await writeFileAtomic(absolutePath, serializeMarkdown(frontmatter, body));
+
+  return {
+    draft_id: draftId,
+    absolute_path: absolutePath,
+    relative_path: relative(opts.vaultPath, absolutePath),
+  };
+}
+
+async function pickFreshDraftFilename(
+  draftsDir: string,
+  title: string,
+): Promise<string> {
+  const safe = sanitizeDraftFilename(title);
+  let candidate = `${safe}.md`;
+  let n = 2;
+  while (await tryReadFile(join(draftsDir, candidate))) {
+    candidate = `${safe} (${n}).md`;
+    n += 1;
+  }
+  return candidate;
+}
+
+function sanitizeDraftFilename(title: string): string {
+  return title
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
 export interface UpdateDraftBodyResult {
   draft_id: string;
   /** True when the on-disk content actually changed. */

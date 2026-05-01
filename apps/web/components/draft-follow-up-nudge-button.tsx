@@ -83,6 +83,16 @@ export function DraftFollowUpNudgeButton({
         rationale={data?.rationale ?? ""}
         subject={data?.channel === "email" ? data.subject : undefined}
         body={data?.draft ?? ""}
+        saveAsDraft={
+          data
+            ? {
+                suggestedTitle: `Nudge — ${truncate(label, 60)}`,
+                projectSlug,
+                sourceAgent: "compose-followup-nudge",
+                channel: data.channel,
+              }
+            : undefined
+        }
       />
     </>
   );

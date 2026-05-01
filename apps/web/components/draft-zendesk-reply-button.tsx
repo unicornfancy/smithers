@@ -78,6 +78,16 @@ export function DraftZendeskReplyButton({
         meta={data ? `${data.tone} tone` : ""}
         rationale={data?.rationale ?? ""}
         body={data?.draft ?? ""}
+        saveAsDraft={
+          data
+            ? {
+                suggestedTitle: `Zendesk #${ticketId}${ticketSubject ? ` — ${truncate(ticketSubject, 60)}` : ""}`,
+                projectSlug,
+                sourceAgent: "draft-zendesk-reply",
+                channel: "zendesk",
+              }
+            : undefined
+        }
       />
     </>
   );

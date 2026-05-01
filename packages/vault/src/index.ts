@@ -34,10 +34,13 @@ import {
   upsertDailySection,
 } from "./daily-notes";
 import {
+  createDraftFromAi,
   ensureDraftId,
   listDrafts,
   readDraft,
   updateDraftBody,
+  type CreateDraftFromAiInput,
+  type CreateDraftFromAiResult,
   type UpdateDraftBodyResult,
 } from "./drafts";
 import {
@@ -114,7 +117,11 @@ export type {
   AppendFollowUpResult,
   ResolveFollowUpResult,
 } from "./follow-ups";
-export type { UpdateDraftBodyResult } from "./drafts";
+export type {
+  CreateDraftFromAiInput,
+  CreateDraftFromAiResult,
+  UpdateDraftBodyResult,
+} from "./drafts";
 export type {
   SavedCallAnalysis,
   SavedCallNote,
@@ -160,6 +167,7 @@ export {
   saveCallNotes,
   findCallNotesByRecordingId,
   updateDraftBody,
+  createDraftFromAi,
   watchVault,
 };
 
@@ -247,6 +255,9 @@ export interface Vault {
     draftId: string,
     newBody: string,
   ) => ReturnType<typeof updateDraftBody>;
+  createDraftFromAi: (
+    input: Parameters<typeof createDraftFromAi>[1],
+  ) => ReturnType<typeof createDraftFromAi>;
   watch: (handler: VaultEventHandler) => ReturnType<typeof watchVault>;
 }
 
@@ -300,6 +311,7 @@ export function createVault(options: VaultOptions): Vault {
       findCallNotesByRecordingId(resolved, recordingId),
     updateDraftBody: (draftId, newBody) =>
       updateDraftBody(resolved, draftId, newBody),
+    createDraftFromAi: (input) => createDraftFromAi(resolved, input),
     watch: (handler) => watchVault(resolved, handler),
   };
 }
