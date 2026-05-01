@@ -62,13 +62,24 @@ export class RealFathomTransport implements FathomClient {
     url?: string;
   }): Promise<string | null> {
     if (!input.recording_id) return null;
+    // Fathom's tool expects recording_id as a number; we string-ify
+    // it everywhere else (it threads through URLs cleanly that way),
+    // so coerce here. If the id isn't pure-digit (some share-link
+    // tokens aren't), fall back to passing the URL only.
+    const isNumeric = /^\d+$/.test(input.recording_id);
+    const args: Record<string, unknown> = {};
+    if (isNumeric) {
+      args["recording_id"] = Number(input.recording_id);
+    }
+    if (input.url) {
+      args["url"] = input.url;
+    }
+    if (Object.keys(args).length === 0) return null;
     try {
       const client = await this.mcp.getClient();
       const result = await client.callTool({
         name: "get_meeting_transcript",
-        arguments: input.url
-          ? { recording_id: input.recording_id, url: input.url }
-          : { recording_id: input.recording_id },
+        arguments: args,
       });
       const content = (result.content ?? []) as Array<{
         type: string;
