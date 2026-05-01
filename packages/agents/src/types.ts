@@ -4,6 +4,7 @@ export type AgentName =
   | "morning-briefing"
   | "ping-monitor"
   | "draft-from-task"
+  | "draft-zendesk-reply"
   | "incorporate-reference"
   | "weekly-update"
   | "top-3"

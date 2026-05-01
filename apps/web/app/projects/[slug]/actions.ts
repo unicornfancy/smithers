@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  composeFollowUpNudge,
+  draftZendeskReply,
   suggestNextStep,
+  type ComposeNudgeOutput,
+  type DraftZendeskReplyOutput,
   type SuggestNextStepOutput,
 } from "@smithers/agents";
 import type {
@@ -269,6 +273,154 @@ export async function fetchLinearProjectMetadataAction(
       project_slug: project.linear_project_slug,
     })
     .catch(() => null);
+}
+
+/**
+ * Run the compose-followup-nudge agent for a single follow-up. The
+ * agent reads the follow-up + its parent project context + the
+ * user's style guide (when one exists) and drafts a short message
+ * the user can copy into the right channel.
+ *
+ * Returns a discriminated result so the dialog can show a setup CTA
+ * or a clean error instead of crashing.
+ */
+export async function composeFollowUpNudgeAction(
+  slug: string,
+  followUpId: string,
+): Promise<
+  | { ok: true; data: ComposeNudgeOutput }
+  | { ok: false; reason: "not-configured" | "error"; message?: string }
+> {
+  if (!slug) throw new Error("slug is required");
+  if (!followUpId) throw new Error("followUpId is required");
+
+  const runtime = await getAgentRuntime();
+  if (!runtime) return { ok: false, reason: "not-configured" };
+
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) return { ok: false, reason: "error", message: "Project not found" };
+  const followUps = await vault.listFollowUps().catch(() => ({
+    active: [] as Awaited<ReturnType<typeof vault.listFollowUps>>["active"],
+    resolved: [] as Awaited<ReturnType<typeof vault.listFollowUps>>["resolved"],
+  }));
+  const followUp = [...followUps.active, ...followUps.resolved].find(
+    (f) => f.follow_up_id === followUpId,
+  );
+  if (!followUp) {
+    return {
+      ok: false,
+      reason: "error",
+      message: `Follow-up ${followUpId} not found in Follow-ups.md`,
+    };
+  }
+
+  const daysWaiting = followUp.sent
+    ? Math.max(
+        0,
+        Math.floor(
+          (Date.now() - Date.parse(followUp.sent)) / 86_400_000,
+        ),
+      )
+    : undefined;
+
+  const styleSource = await vault.readStyleGuide().catch(() => null);
+  const style = styleSource
+    ? { label: "User's writing style", body: styleSource.body }
+    : undefined;
+
+  try {
+    const result = await composeFollowUpNudge(runtime, {
+      followUp,
+      project,
+      daysWaiting,
+      style,
+    });
+    return { ok: true, data: result.output };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Agent call failed",
+    };
+  }
+}
+
+/**
+ * Run the draft-zendesk-reply agent for a single attached ticket.
+ * Pulls the ticket from frontmatter (subject + status persisted at
+ * attach time), tries to enrich with the most recent partner +
+ * internal comments via the activity fetch (best-effort — degrades
+ * silently if comments aren't available), and asks Claude for a
+ * short reply the user can copy into Zendesk.
+ */
+export async function draftZendeskReplyAction(
+  slug: string,
+  ticketId: string,
+  intent?: string,
+): Promise<
+  | { ok: true; data: DraftZendeskReplyOutput }
+  | { ok: false; reason: "not-configured" | "error"; message?: string }
+> {
+  if (!slug) throw new Error("slug is required");
+  if (!ticketId) throw new Error("ticketId is required");
+
+  const runtime = await getAgentRuntime();
+  if (!runtime) return { ok: false, reason: "not-configured" };
+
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) return { ok: false, reason: "error", message: "Project not found" };
+
+  const thread = (project.zendesk_tickets ?? []).find(
+    (t) => t.id === ticketId,
+  );
+  if (!thread) {
+    return {
+      ok: false,
+      reason: "error",
+      message: `Ticket ${ticketId} is not attached to this project`,
+    };
+  }
+
+  // Best-effort comment context. fetchZendeskTicketActivity returns
+  // [] when the upstream tool isn't available, which is fine.
+  const mcp = await getMcpClient();
+  const recent = await mcp.contextA8C
+    .fetchZendeskTicketActivity(ticketId, {
+      projectSlug: slug,
+      limit: 10,
+    })
+    .catch(() => []);
+  const lastPartner = recent.find((e) => e.actor?.is_external === true);
+  const lastInternal = recent.find((e) => e.actor?.is_external === false);
+
+  const styleSource = await vault.readStyleGuide().catch(() => null);
+  const style = styleSource
+    ? { label: "User's writing style", body: styleSource.body }
+    : undefined;
+
+  try {
+    const result = await draftZendeskReply(runtime, {
+      project,
+      thread: {
+        id: thread.id,
+        subject: thread.subject ?? null,
+        status: thread.status ?? null,
+        last_partner_excerpt: lastPartner?.excerpt ?? null,
+        last_internal_excerpt: lastInternal?.excerpt ?? null,
+      },
+      intent,
+      style,
+    });
+    return { ok: true, data: result.output };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Agent call failed",
+    };
+  }
 }
 
 /**

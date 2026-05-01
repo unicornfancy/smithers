@@ -16,6 +16,8 @@ import type { FollowUp } from "@smithers/vault";
 
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DraftFollowUpNudgeButton } from "@/components/draft-follow-up-nudge-button";
+import { DraftZendeskReplyButton } from "@/components/draft-zendesk-reply-button";
 import { MakePrimaryButton } from "@/components/make-primary-button";
 import { RefreshZendeskMetadataButton } from "@/components/refresh-zendesk-metadata-button";
 import { ResolveFollowUpButton } from "@/components/resolve-follow-up-button";
@@ -396,12 +398,19 @@ function FollowUpRow({
         ) : null}
       </div>
       {fu.status !== "resolved" ? (
-        <ResolveFollowUpButton
-          projectSlug={projectSlug}
-          followUpId={fu.follow_up_id}
-          label={fu.task}
-          alwaysVisible={showHint}
-        />
+        <div className="flex shrink-0 items-center gap-1">
+          <DraftFollowUpNudgeButton
+            projectSlug={projectSlug}
+            followUpId={fu.follow_up_id}
+            label={fu.task}
+          />
+          <ResolveFollowUpButton
+            projectSlug={projectSlug}
+            followUpId={fu.follow_up_id}
+            label={fu.task}
+            alwaysVisible={showHint}
+          />
+        </div>
       ) : null}
     </li>
   );
@@ -585,6 +594,13 @@ function ZendeskRow({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
+        {projectSlug && !dim ? (
+          <DraftZendeskReplyButton
+            projectSlug={projectSlug}
+            ticketId={ticket.id}
+            ticketSubject={ticket.subject}
+          />
+        ) : null}
         {projectSlug && !primary ? (
           <MakePrimaryButton
             projectSlug={projectSlug}

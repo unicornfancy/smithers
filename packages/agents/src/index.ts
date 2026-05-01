@@ -53,3 +53,11 @@ export {
   type SuggestNextStepCtaTarget,
   type SuggestNextStepZendeskThread,
 } from "./agents/suggest-next-step";
+
+export {
+  draftZendeskReply,
+  type DraftZendeskReplyInput,
+  type DraftZendeskReplyOutput,
+  type ZendeskReplyContext,
+  type ZendeskReplyTone,
+} from "./agents/draft-zendesk-reply";
