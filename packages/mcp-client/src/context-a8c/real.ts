@@ -545,56 +545,57 @@ export class RealContextA8CTransport implements ContextA8CClient {
   async fetchZendeskTicketSummary(
     ticketRef: string,
   ): Promise<ZendeskTicketSummary | null> {
+    // The upstream MCP doesn't expose any single-ticket fetch tool —
+    // we probed `ticket`, `tickets`, `show_ticket`, `get_ticket`, etc.
+    // and all returned "Tool not found". The only reliable path to
+    // ticket metadata is `search`, which is best-used in batch via
+    // fetchZendeskTicketSummaries below. This single-ref method
+    // therefore returns a degraded row by default.
     const ticketId = extractTicketId(ticketRef);
     if (!ticketId) return null;
-    // The upstream MCP doesn't expose a `ticket` (singular) fetch tool —
-    // it returned "Tool not found: ticket" — but `search` works and
-    // accepts Zendesk's `id:<n>` filter, which gives us the same metadata.
-    // We trade one indirection for a reliable path.
-    try {
-      const result = await this.mcp.callJsonTool<ZendeskSearchResultRaw>(
-        "context-a8c-execute-tool",
-        {
-          provider: "zendesk",
-          tool: "search",
-          params: { query: `type:ticket id:${ticketId}`, per_page: 1 },
-        },
-      );
-      const rawTickets = asArray<ZendeskTicket>(
-        result?.tickets ?? result?.results ?? result?.result,
-      );
-      const t = rawTickets[0];
-      if (!t) {
-        // Search returned 0 — usually means access denied or deleted.
-        // Surface a degraded row so the user sees we have the id but
-        // couldn't load metadata.
-        return {
-          id: ticketId,
-          subject: null,
-          status: null,
-          priority: null,
-          updated_at: null,
-          url: zendeskTicketUrl(ticketId),
-        };
-      }
-      return {
-        id: ticketId,
-        subject: typeof t.subject === "string" ? t.subject : null,
-        status: typeof t.status === "string" ? t.status : null,
-        priority: typeof t.priority === "string" ? t.priority : null,
-        updated_at: typeof t.updated_at === "string" ? t.updated_at : null,
-        url: zendeskTicketUrl(ticketId),
-      };
-    } catch {
-      return {
-        id: ticketId,
-        subject: null,
-        status: null,
-        priority: null,
-        updated_at: null,
-        url: zendeskTicketUrl(ticketId),
-      };
+    return {
+      id: ticketId,
+      subject: null,
+      status: null,
+      priority: null,
+      updated_at: null,
+      url: zendeskTicketUrl(ticketId),
+    };
+  }
+
+  async fetchZendeskTicketSummaries(
+    refs: string[],
+    opts: { searchHint?: string } = {},
+  ): Promise<ZendeskTicketSummary[]> {
+    if (refs.length === 0) return [];
+    const ids = refs
+      .map((r) => extractTicketId(r))
+      .filter((id): id is string => Boolean(id));
+    const degradedFor = (id: string): ZendeskTicketSummary => ({
+      id,
+      subject: null,
+      status: null,
+      priority: null,
+      updated_at: null,
+      url: zendeskTicketUrl(id),
+    });
+    if (!opts.searchHint || ids.length === 0) {
+      return ids.map(degradedFor);
     }
+
+    // One bulk search using the hint (typically the partner's display
+    // name); we then index by ticket_id and look up each ref. Tickets
+    // that don't appear in the search hits get a degraded row so the
+    // panel still renders them — the user can refresh later if needed.
+    const result = await this.searchZendeskTickets(opts.searchHint, {
+      limit: 50,
+    });
+    if (!result.ok) {
+      return ids.map(degradedFor);
+    }
+    const byId = new Map<string, ZendeskTicketSummary>();
+    for (const t of result.tickets) byId.set(t.id, t);
+    return ids.map((id) => byId.get(id) ?? degradedFor(id));
   }
 
   /**

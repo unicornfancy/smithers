@@ -16,6 +16,7 @@ import type {
   ProjectKind,
   ProjectSource,
   ProjectStatus,
+  ZendeskTicketRef,
 } from "./types";
 
 /**
@@ -236,27 +237,56 @@ function deriveStableLocalId(source: ProjectSource): string {
 }
 
 /**
- * Coerce a frontmatter zendesk_tickets value to a clean string array.
- * Accepts either an array (the canonical shape) or a single string for
- * tolerance — older notes that started with one ticket may still have
- * the scalar form. Returns undefined when nothing usable is present so
- * downstream consumers can skip the field cleanly.
+ * Coerce a frontmatter zendesk_tickets value into a normalized
+ * ZendeskTicketRef[]. Accepts a mix of:
+ *   - bare strings ("11134851") → object with just the id
+ *   - URL strings ("https://.../tickets/11134851") → object with extracted id
+ *   - objects { id, subject?, status?, ... } → object kept as-is
+ *   - numbers (legacy) → object with stringified id
+ *
+ * Entries that can't yield a numeric id are dropped silently. Returns
+ * undefined when nothing usable is present so downstream consumers
+ * can skip the field cleanly.
  */
-function normalizeZendeskTickets(raw: unknown): string[] | undefined {
-  if (Array.isArray(raw)) {
-    const cleaned = raw
-      .map((t) => (t == null ? "" : String(t).trim()))
-      .filter(Boolean);
-    return cleaned.length > 0 ? cleaned : undefined;
+function normalizeZendeskTickets(raw: unknown): ZendeskTicketRef[] | undefined {
+  if (raw == null) return undefined;
+  const items = Array.isArray(raw) ? raw : [raw];
+  const out: ZendeskTicketRef[] = [];
+  for (const item of items) {
+    const ref = coerceTicketRef(item);
+    if (ref) out.push(ref);
   }
-  if (typeof raw === "string") {
-    const cleaned = raw.trim();
-    return cleaned ? [cleaned] : undefined;
+  return out.length > 0 ? out : undefined;
+}
+
+function coerceTicketRef(item: unknown): ZendeskTicketRef | null {
+  if (item == null) return null;
+  if (typeof item === "number") {
+    const id = String(item);
+    return /^\d+$/.test(id) ? { id } : null;
   }
-  if (typeof raw === "number") {
-    return [String(raw)];
+  if (typeof item === "string") {
+    const id = extractTicketIdLocal(item);
+    return id ? { id } : null;
   }
-  return undefined;
+  if (typeof item === "object") {
+    const obj = item as Record<string, unknown>;
+    const rawId = obj["id"] ?? obj["ticket_id"];
+    const id =
+      typeof rawId === "string"
+        ? extractTicketIdLocal(rawId)
+        : typeof rawId === "number"
+          ? String(rawId)
+          : null;
+    if (!id || !/^\d+$/.test(id)) return null;
+    const ref: ZendeskTicketRef = { id };
+    if (typeof obj["subject"] === "string") ref.subject = obj["subject"];
+    if (typeof obj["status"] === "string") ref.status = obj["status"];
+    if (typeof obj["priority"] === "string") ref.priority = obj["priority"];
+    if (typeof obj["updated_at"] === "string") ref.updated_at = obj["updated_at"];
+    return ref;
+  }
+  return null;
 }
 
 export interface CreateProjectInput {
@@ -355,27 +385,34 @@ export async function createProject(
 }
 
 export interface AddProjectZendeskTicketResult {
-  zendesk_tickets: string[];
+  zendesk_tickets: ZendeskTicketRef[];
   /** True when the ticket was newly added; false when it was a no-op duplicate. */
   added: boolean;
 }
 
 /**
  * Append a Zendesk ticket reference to the project's `zendesk_tickets`
- * frontmatter array. Idempotent: if a ticket with the same numeric id is
- * already present (regardless of whether the existing entry is a raw id
- * or a full URL), this is a no-op and `added` is false.
+ * frontmatter array. Accepts either a bare ref (id or URL) or a rich
+ * object — when the rich form is supplied, subject/status/updated_at
+ * are persisted to frontmatter so the panel can render them without
+ * an upstream lookup.
  *
- * The new ref is appended to the *end* of the array — the first entry
- * is treated as the primary thread, so existing primary stays primary.
+ * Idempotent: if a ticket with the same numeric id is already present
+ * (regardless of whether the existing entry is a raw id or a full URL),
+ * the call is a no-op and `added` is false.
+ *
+ * Appends to the end so the existing primary stays primary.
  */
 export async function addProjectZendeskTicket(
   opts: ResolvedVaultOptions,
   slug: string,
-  ticketRef: string,
+  ticketRefOrSummary: string | ZendeskTicketRef,
 ): Promise<AddProjectZendeskTicketResult> {
-  const trimmed = ticketRef.trim();
-  if (!trimmed) {
+  const incoming =
+    typeof ticketRefOrSummary === "string"
+      ? coerceTicketRef(ticketRefOrSummary.trim())
+      : coerceTicketRef(ticketRefOrSummary);
+  if (!incoming) {
     throw new Error("Ticket reference is required");
   }
   const project = await readProject(opts, slug);
@@ -395,33 +432,48 @@ export async function addProjectZendeskTicket(
   const { data, content } = parseMarkdown(raw);
 
   const existing = normalizeZendeskTickets(data["zendesk_tickets"]) ?? [];
-  const newId = extractTicketIdLocal(trimmed);
-  const isDuplicate = existing.some((ref) => {
-    const refId = extractTicketIdLocal(ref);
-    if (newId && refId) return newId === refId;
-    return ref === trimmed;
-  });
-  if (isDuplicate) {
+  if (existing.some((ref) => ref.id === incoming.id)) {
     return { zendesk_tickets: existing, added: false };
   }
-  const next = [...existing, trimmed];
-  const merged = { ...data, zendesk_tickets: next };
+  const next: ZendeskTicketRef[] = [...existing, incoming];
+  const merged = { ...data, zendesk_tickets: serializeTicketRefs(next) };
   await writeFileAtomic(path, serializeMarkdown(merged, content));
   return { zendesk_tickets: next, added: true };
 }
 
+/**
+ * Convert ZendeskTicketRef[] back to the on-disk YAML form. Entries
+ * without persisted metadata stay as bare strings (so the file stays
+ * readable for projects that haven't been touched since the schema
+ * change); entries with metadata become objects.
+ */
+function serializeTicketRefs(refs: ZendeskTicketRef[]): unknown[] {
+  return refs.map((ref) => {
+    const hasMeta =
+      ref.subject !== undefined ||
+      ref.status !== undefined ||
+      ref.priority !== undefined ||
+      ref.updated_at !== undefined;
+    if (!hasMeta) return ref.id;
+    const out: Record<string, unknown> = { id: ref.id };
+    if (ref.subject !== undefined) out["subject"] = ref.subject;
+    if (ref.status !== undefined) out["status"] = ref.status;
+    if (ref.priority !== undefined) out["priority"] = ref.priority;
+    if (ref.updated_at !== undefined) out["updated_at"] = ref.updated_at;
+    return out;
+  });
+}
+
 export interface SetPrimaryZendeskTicketResult {
-  zendesk_tickets: string[];
+  zendesk_tickets: ZendeskTicketRef[];
   /** True when the array order changed; false when the target was already primary. */
   changed: boolean;
 }
 
 /**
  * Promote a Zendesk ticket to "primary" by moving its entry to position
- * 0 in the project's `zendesk_tickets` array. Identity matching uses
- * the canonical numeric id, so `12345` and a URL ending in `/tickets/12345`
- * are treated as the same ticket. No-op if the ticket is already at
- * position 0.
+ * 0 in the project's `zendesk_tickets` array. Matches by canonical
+ * numeric id. No-op if the ticket is already at position 0.
  */
 export async function setPrimaryZendeskTicket(
   opts: ResolvedVaultOptions,
@@ -448,9 +500,7 @@ export async function setPrimaryZendeskTicket(
   }
   const { data, content } = parseMarkdown(raw);
   const existing = normalizeZendeskTickets(data["zendesk_tickets"]) ?? [];
-  const idx = existing.findIndex(
-    (ref) => extractTicketIdLocal(ref) === targetId,
-  );
+  const idx = existing.findIndex((ref) => ref.id === targetId);
   if (idx < 0) {
     throw new Error(
       `Ticket ${targetId} is not attached to project "${slug}"`,
@@ -459,15 +509,75 @@ export async function setPrimaryZendeskTicket(
   if (idx === 0) {
     return { zendesk_tickets: existing, changed: false };
   }
-  // Splice + unshift so the picked entry moves to the front and the
-  // existing primary slides down to second; relative order of the rest
-  // stays stable so the user's curated ordering is preserved.
   const next = [...existing];
   const [picked] = next.splice(idx, 1);
   next.unshift(picked!);
-  const merged = { ...data, zendesk_tickets: next };
+  const merged = { ...data, zendesk_tickets: serializeTicketRefs(next) };
   await writeFileAtomic(path, serializeMarkdown(merged, content));
   return { zendesk_tickets: next, changed: true };
+}
+
+export interface RefreshZendeskMetadataResult {
+  zendesk_tickets: ZendeskTicketRef[];
+  /** Number of tickets whose metadata was newly persisted this call. */
+  updated: number;
+}
+
+/**
+ * Merge fresh ticket metadata (subject + status + updated_at + priority)
+ * into the project's `zendesk_tickets` frontmatter. Existing rich entries
+ * are *replaced* with the new metadata when supplied; bare-id entries
+ * graduate to rich entries. Tickets not in `summaries` are left alone.
+ *
+ * Used as a one-shot backfill when the user clicks "Refresh metadata"
+ * on the Threads panel — the upstream search runs once and we persist
+ * what it returned so subsequent renders read directly from frontmatter.
+ */
+export async function refreshProjectZendeskMetadata(
+  opts: ResolvedVaultOptions,
+  slug: string,
+  summaries: ZendeskTicketRef[],
+): Promise<RefreshZendeskMetadataResult> {
+  const project = await readProject(opts, slug);
+  if (!project) {
+    throw new Error(`Project "${slug}" not found`);
+  }
+  if (project.source.kind === "hive-mind") {
+    throw new Error(
+      `Project "${slug}" lives in Hive Mind; ticket edits go through the shared-notes flow`,
+    );
+  }
+  const path = project.source.absolute_path;
+  const raw = await tryReadFile(path);
+  if (raw === null) {
+    throw new Error(`Project file disappeared at ${path}`);
+  }
+  const { data, content } = parseMarkdown(raw);
+  const existing = normalizeZendeskTickets(data["zendesk_tickets"]) ?? [];
+
+  const summaryById = new Map(summaries.map((s) => [s.id, s]));
+  let updated = 0;
+  const next = existing.map((ref) => {
+    const fresh = summaryById.get(ref.id);
+    if (!fresh) return ref;
+    // Only count as updated when at least one new field would land.
+    const wouldChange =
+      (fresh.subject !== undefined && fresh.subject !== ref.subject) ||
+      (fresh.status !== undefined && fresh.status !== ref.status) ||
+      (fresh.priority !== undefined && fresh.priority !== ref.priority) ||
+      (fresh.updated_at !== undefined &&
+        fresh.updated_at !== ref.updated_at);
+    if (!wouldChange) return ref;
+    updated += 1;
+    return { ...ref, ...fresh, id: ref.id };
+  });
+
+  if (updated === 0) {
+    return { zendesk_tickets: existing, updated: 0 };
+  }
+  const merged = { ...data, zendesk_tickets: serializeTicketRefs(next) };
+  await writeFileAtomic(path, serializeMarkdown(merged, content));
+  return { zendesk_tickets: next, updated };
 }
 
 /**

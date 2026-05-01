@@ -43,10 +43,12 @@ import {
   ensureProjectId,
   listProjects,
   readProject,
+  refreshProjectZendeskMetadata,
   setPrimaryZendeskTicket,
   type AddProjectZendeskTicketResult,
   type CreateProjectInput,
   type CreateProjectResult,
+  type RefreshZendeskMetadataResult,
   type SetPrimaryZendeskTicketResult,
 } from "./projects";
 import { readVaultStatus } from "./status";
@@ -81,6 +83,7 @@ export type {
   AddProjectZendeskTicketResult,
   CreateProjectInput,
   CreateProjectResult,
+  RefreshZendeskMetadataResult,
   SetPrimaryZendeskTicketResult,
 } from "./projects";
 export type { ResolveFollowUpResult } from "./follow-ups";
@@ -108,6 +111,7 @@ export {
   readTodayNote,
   readVaultStatus,
   readWorkingWith,
+  refreshProjectZendeskMetadata,
   resolveFollowUp,
   setPrimaryZendeskTicket,
   splitTasks,
@@ -163,12 +167,16 @@ export interface Vault {
   ) => ReturnType<typeof deleteProjectTask>;
   addProjectZendeskTicket: (
     slug: string,
-    ticketRef: string,
+    ticketRef: Parameters<typeof addProjectZendeskTicket>[2],
   ) => ReturnType<typeof addProjectZendeskTicket>;
   setPrimaryZendeskTicket: (
     slug: string,
     ticketId: string,
   ) => ReturnType<typeof setPrimaryZendeskTicket>;
+  refreshProjectZendeskMetadata: (
+    slug: string,
+    summaries: Parameters<typeof refreshProjectZendeskMetadata>[2],
+  ) => ReturnType<typeof refreshProjectZendeskMetadata>;
   resolveFollowUp: (
     followUpId: string,
     note?: string,
@@ -210,6 +218,8 @@ export function createVault(options: VaultOptions): Vault {
       addProjectZendeskTicket(resolved, slug, ticketRef),
     setPrimaryZendeskTicket: (slug, ticketId) =>
       setPrimaryZendeskTicket(resolved, slug, ticketId),
+    refreshProjectZendeskMetadata: (slug, summaries) =>
+      refreshProjectZendeskMetadata(resolved, slug, summaries),
     resolveFollowUp: (followUpId, note) =>
       resolveFollowUp(resolved, followUpId, note),
     watch: (handler) => watchVault(resolved, handler),

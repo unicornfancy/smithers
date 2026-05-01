@@ -13,6 +13,7 @@ import {
   deleteProjectTask,
   editProjectTaskText,
   parseProjectTasks,
+  refreshProjectZendeskMetadata,
   resolveFollowUp,
   setPrimaryZendeskTicket,
   toggleProjectTask,
@@ -276,71 +277,67 @@ const z1 = await addProjectZendeskTicket(opts, "zendesk-project", "11134851");
 if (!z1.added || z1.zendesk_tickets.length !== 1) {
   throw new Error("expected first attach to add: " + JSON.stringify(z1));
 }
+if (z1.zendesk_tickets[0].id !== "11134851") {
+  throw new Error("expected ZendeskTicketRef shape: " + JSON.stringify(z1.zendesk_tickets[0]));
+}
 console.log(`[zendesk] attached id 11134851 -> ${JSON.stringify(z1.zendesk_tickets)}`);
 
-const z2 = await addProjectZendeskTicket(
-  opts,
-  "zendesk-project",
-  "https://automattic.zendesk.com/agent/tickets/12000123",
-);
+// Attach with rich summary — subject + status + updated_at should persist
+const z2 = await addProjectZendeskTicket(opts, "zendesk-project", {
+  id: "12000123",
+  subject: "Calendar dates switching",
+  status: "open",
+  priority: "normal",
+  updated_at: "2026-04-29T15:33:05Z",
+});
 if (!z2.added || z2.zendesk_tickets.length !== 2) {
-  throw new Error("expected URL form to add as second: " + JSON.stringify(z2));
+  throw new Error("expected rich attach to add as second: " + JSON.stringify(z2));
+}
+if (z2.zendesk_tickets[1].subject !== "Calendar dates switching") {
+  throw new Error("expected subject to persist: " + JSON.stringify(z2.zendesk_tickets[1]));
 }
 
-// --- Idempotency: attaching same id again (different form) should no-op ---
+// --- Idempotency: same id in different form ---
 const z3 = await addProjectZendeskTicket(
   opts,
   "zendesk-project",
   "https://automattic.zendesk.com/agent/tickets/11134851",
 );
-if (z3.added) {
-  throw new Error("expected URL form of existing id to be a no-op");
-}
-if (z3.zendesk_tickets.length !== 2) {
-  throw new Error("array length should not change on duplicate");
-}
+if (z3.added) throw new Error("expected URL form of existing id to be a no-op");
+if (z3.zendesk_tickets.length !== 2) throw new Error("array length should not change on duplicate");
 console.log("[zendesk] URL form of existing id correctly de-duped");
 
-// --- Idempotency: attaching exact same string ---
-const z4 = await addProjectZendeskTicket(opts, "zendesk-project", "11134851");
-if (z4.added) {
-  throw new Error("expected exact-string duplicate to be a no-op");
-}
-
-// --- Empty / whitespace ref rejected ---
+// --- Empty ref rejected ---
 let zRejected = false;
-try {
-  await addProjectZendeskTicket(opts, "zendesk-project", "  ");
-} catch {
-  zRejected = true;
-}
+try { await addProjectZendeskTicket(opts, "zendesk-project", "  "); } catch { zRejected = true; }
 if (!zRejected) throw new Error("expected empty ticket ref to be rejected");
 
-// --- Frontmatter persisted as YAML array, original prose intact ---
+// --- Frontmatter persisted: rich object form for one entry, bare id for the other ---
 const finalContent = readFileSync(zPath, "utf8");
-if (!finalContent.includes("zendesk_tickets:")) {
-  throw new Error("expected zendesk_tickets in frontmatter:\n" + finalContent);
+if (!finalContent.includes("Calendar dates switching")) {
+  throw new Error("expected persisted subject in YAML:\n" + finalContent);
 }
-if (!finalContent.includes("Some prose.")) {
-  throw new Error("body should be untouched");
-}
+if (!finalContent.includes("Some prose.")) throw new Error("body should be untouched");
 
-console.log("[zendesk] OK — append + URL/id de-dup + idempotent same-string + body intact");
+console.log("[zendesk] OK — bare-id + rich-object attach, dedup by id, subject persists in frontmatter");
 
 // --- setPrimary: reorder array so picked id lands at position 0 ---
 const p1 = await setPrimaryZendeskTicket(opts, "zendesk-project", "12000123");
-if (!p1.changed || p1.zendesk_tickets[0] !== "https://automattic.zendesk.com/agent/tickets/12000123") {
-  throw new Error("expected URL form to move to position 0: " + JSON.stringify(p1));
+if (!p1.changed || p1.zendesk_tickets[0].id !== "12000123") {
+  throw new Error("expected 12000123 to move to position 0: " + JSON.stringify(p1));
 }
-// Existing primary should slide down to position 1
-if (p1.zendesk_tickets[1] !== "11134851") {
+if (p1.zendesk_tickets[1].id !== "11134851") {
   throw new Error("expected old primary at index 1: " + JSON.stringify(p1));
 }
-console.log(`[primary] promoted by URL -> ${JSON.stringify(p1.zendesk_tickets)}`);
+// Subject should ride along
+if (p1.zendesk_tickets[0].subject !== "Calendar dates switching") {
+  throw new Error("expected subject to survive reorder");
+}
+console.log(`[primary] promoted by id, subject preserved -> ${JSON.stringify(p1.zendesk_tickets[0])}`);
 
-// Promote by raw id when current entry is a URL
+// Promote back via raw id
 const p2 = await setPrimaryZendeskTicket(opts, "zendesk-project", "11134851");
-if (!p2.changed || p2.zendesk_tickets[0] !== "11134851") {
+if (!p2.changed || p2.zendesk_tickets[0].id !== "11134851") {
   throw new Error("expected raw id to move to position 0: " + JSON.stringify(p2));
 }
 
@@ -357,6 +354,31 @@ try {
 }
 if (!primaryRejected) throw new Error("expected unknown ticket to throw");
 console.log("[primary] OK — promote by URL + by raw id, no-op on already-primary, unknown rejects");
+
+// --- refreshProjectZendeskMetadata: backfill subject/status into bare entries ---
+// At this point: 11134851 is bare-id (no subject); 12000123 has metadata.
+// Refreshing with new data for 11134851 should write it; passing existing
+// data for 12000123 should not duplicate-write since values unchanged.
+const refresh1 = await refreshProjectZendeskMetadata(opts, "zendesk-project", [
+  { id: "11134851", subject: "Backfilled subject", status: "pending" },
+  { id: "12000123", subject: "Calendar dates switching", status: "open" }, // unchanged
+]);
+if (refresh1.updated !== 1) {
+  throw new Error(`expected 1 update, got ${refresh1.updated}`);
+}
+const fresh = refresh1.zendesk_tickets.find((t) => t.id === "11134851");
+if (fresh?.subject !== "Backfilled subject") {
+  throw new Error("expected subject to be backfilled: " + JSON.stringify(fresh));
+}
+if (fresh?.status !== "pending") {
+  throw new Error("expected status to be backfilled");
+}
+// No-op when nothing would change
+const refresh2 = await refreshProjectZendeskMetadata(opts, "zendesk-project", [
+  { id: "11134851", subject: "Backfilled subject", status: "pending" },
+]);
+if (refresh2.updated !== 0) throw new Error("expected no-op refresh");
+console.log("[refresh] OK — backfills missing metadata, no-ops on unchanged");
 
 // --- resolveFollowUp: flip Status cell to "✅ Resolved …" ---
 // Build a Follow-ups.md with two open rows; pick one to resolve.

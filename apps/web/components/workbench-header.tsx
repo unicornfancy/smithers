@@ -12,7 +12,7 @@ import {
   Slack,
 } from "lucide-react";
 
-import { extractTicketId, zendeskTicketUrl } from "@smithers/mcp-client";
+import { zendeskTicketUrl } from "@smithers/mcp-client";
 import type { Project, ProjectKind, ProjectStatus } from "@smithers/vault";
 
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -144,8 +144,7 @@ function collectQuickLinks(p: Project): QuickLink[] {
   if (tickets.length > 0) {
     // Link the header pill at the primary thread; the workbench's
     // ZendeskThreadsPanel surfaces the rest with their own links.
-    const primary = tickets[0]!;
-    const primaryId = extractTicketId(primary) ?? primary;
+    const primaryId = tickets[0]!.id;
     out.push({
       label: tickets.length > 1 ? `Zendesk · ${tickets.length}` : "Zendesk",
       href: zendeskTicketUrl(primaryId),

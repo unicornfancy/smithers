@@ -17,6 +17,7 @@ import type { FollowUp } from "@smithers/vault";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MakePrimaryButton } from "@/components/make-primary-button";
+import { RefreshZendeskMetadataButton } from "@/components/refresh-zendesk-metadata-button";
 import { ResolveFollowUpButton } from "@/components/resolve-follow-up-button";
 import { ZendeskAttachModal } from "@/components/zendesk-attach-modal";
 
@@ -24,6 +25,12 @@ interface Props {
   projectSlug: string;
   /** Resolved ticket summaries, in the same order the user listed them. */
   tickets: ZendeskTicketSummary[];
+  /**
+   * Search hints used by the Refresh button to backfill metadata
+   * for tickets stored as bare ids. Usually [partner display name,
+   * deslug'd partner, project name].
+   */
+  refreshHints: string[];
   /**
    * All follow-ups for this project (active + resolved). The panel
    * groups them by referenced #ticket_id and renders matched ones
@@ -58,11 +65,13 @@ interface Props {
 export function ZendeskThreadsPanel({
   projectSlug,
   tickets,
+  refreshHints,
   followUps,
   recentActivityByTicketId,
   defaultSearchQuery,
   alwaysShow,
 }: Props) {
+  const anyMissingSubject = tickets.some((t) => t.subject == null);
   const allFollowUps = [...followUps.active, ...followUps.resolved];
   if (tickets.length === 0 && allFollowUps.length === 0 && !alwaysShow)
     return null;
@@ -95,7 +104,13 @@ export function ZendeskThreadsPanel({
               {closed.length > 0 ? ` · ${closed.length} closed` : ""}
             </span>
           ) : null}
-          <span className="ml-auto">
+          <span className="ml-auto flex items-center gap-1.5">
+            {anyMissingSubject ? (
+              <RefreshZendeskMetadataButton
+                projectSlug={projectSlug}
+                hints={refreshHints}
+              />
+            ) : null}
             <ZendeskAttachModal
               projectSlug={projectSlug}
               existingTicketIds={existingIds}

@@ -87,7 +87,7 @@ export default async function ProjectWorkbenchPage({
           github_repo: detail.github_repo,
           linear_project_id: detail.linear_project_id,
           linear_project_slug: detail.linear_project_slug,
-          zendesk_tickets: detail.zendesk_tickets,
+          zendesk_tickets: detail.zendesk_tickets?.map((t) => t.id),
           p2_url: detail.p2_url,
           primary_slack_channel: detail.primary_slack_channel,
           team_slack_channel: detail.team_slack_channel,
@@ -118,17 +118,19 @@ export default async function ProjectWorkbenchPage({
   // Per-ticket summaries for the threads panel. One MCP call per
   // configured ticket — fan out in parallel, drop any that resolve to
   // null (parse failures or already-deleted tickets).
+  // Read tickets straight from frontmatter — subject/status are
+  // persisted at attach time, so the panel renders without an upstream
+  // call. Bare-id entries (legacy) get rendered with subject:null and
+  // can be backfilled via the panel's Refresh button.
   const zendeskTicketRefs = detail.zendesk_tickets ?? [];
-  const zendeskTickets =
-    zendeskTicketRefs.length === 0
-      ? []
-      : (
-          await Promise.all(
-            zendeskTicketRefs.map((ref) =>
-              mcp.contextA8C.fetchZendeskTicketSummary(ref).catch(() => null),
-            ),
-          )
-        ).filter((t): t is NonNullable<typeof t> => t !== null);
+  const zendeskTickets = zendeskTicketRefs.map((ref) => ({
+    id: ref.id,
+    subject: ref.subject ?? null,
+    status: ref.status ?? null,
+    priority: ref.priority ?? null,
+    updated_at: ref.updated_at ?? null,
+    url: `https://automattic.zendesk.com/agent/tickets/${ref.id}`,
+  }));
 
   // Eager-fetch recent comments only for *active* tickets — closed
   // ones go into a folded disclosure that the user usually won't open,
@@ -262,6 +264,11 @@ export default async function ProjectWorkbenchPage({
         <ZendeskThreadsPanel
           projectSlug={detail.slug}
           tickets={zendeskTickets}
+          refreshHints={[
+            partnerProfile?.display_name ?? "",
+            detail.partner ? detail.partner.replace(/-/g, " ") : "",
+            detail.name,
+          ].filter(Boolean)}
           followUps={projectFollowUps}
           recentActivityByTicketId={recentActivityByTicketId}
           defaultSearchQuery={

@@ -77,6 +77,22 @@ export interface ContextA8CClient {
   ): Promise<ZendeskTicketSummary | null>;
 
   /**
+   * Bulk version of the per-ticket fetch. Uses a single search query
+   * (typically the partner's display name) to retrieve a batch of
+   * tickets at once, then matches them against the supplied refs by
+   * ticket_id. Refs that don't appear in the search results fall
+   * back to a degraded summary so the panel can still render the row.
+   *
+   * The upstream MCP only exposes a `search` tool — there's no
+   * single-ticket fetcher — so this is the only reliable way to
+   * populate subject + status for several tickets at once.
+   */
+  fetchZendeskTicketSummaries(
+    refs: string[],
+    opts?: { searchHint?: string },
+  ): Promise<ZendeskTicketSummary[]>;
+
+  /**
    * Search Zendesk tickets by subject / requester / tags. Used by the
    * "Attach Zendesk thread" modal — interactive, so we surface a hard
    * ok/error rather than a SourceResult (no caching: each query is

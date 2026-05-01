@@ -100,7 +100,16 @@ export function ZendeskAttachModal({
     setJustAttached((prev) => new Set(prev).add(ticket.id));
     startAttachTransition(async () => {
       try {
-        const r = await attachZendeskTicketAction(projectSlug, ticket.id);
+        // Send the full ticket summary so subject/status/updated_at land
+        // in frontmatter — that's what lets the panel render without a
+        // fresh upstream lookup on subsequent renders.
+        const r = await attachZendeskTicketAction(projectSlug, {
+          id: ticket.id,
+          subject: ticket.subject,
+          status: ticket.status,
+          priority: ticket.priority,
+          updated_at: ticket.updated_at,
+        });
         if (r.added) {
           toast.success(
             `Attached ticket ${ticket.id}${ticket.subject ? ` — ${truncate(ticket.subject, 40)}` : ""}`,

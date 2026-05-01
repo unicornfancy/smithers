@@ -103,23 +103,111 @@ export async function searchZendeskTicketsAction(
 }
 
 /**
- * Attach a Zendesk ticket reference (raw id or full URL) to the project's
- * frontmatter. Idempotent — duplicates are silently skipped, surfaced via
- * the `added` flag so the UI can give the right feedback.
+ * Attach a Zendesk ticket to the project's frontmatter. Accepts either a
+ * bare ref (id or URL) or a richer summary object — when the summary
+ * form is supplied, subject/status/updated_at are persisted so the
+ * panel can render without an upstream lookup. Idempotent: duplicates
+ * (matched by canonical numeric id) are silently skipped.
  */
 export async function attachZendeskTicketAction(
   slug: string,
-  ticketRef: string,
+  ticket:
+    | string
+    | {
+        id: string;
+        subject?: string | null;
+        status?: string | null;
+        priority?: string | null;
+        updated_at?: string | null;
+      },
 ): Promise<{ added: boolean; total: number }> {
   if (!slug) throw new Error("slug is required");
-  const trimmed = ticketRef.trim();
-  if (!trimmed) throw new Error("Ticket reference is required");
+  if (!ticket) throw new Error("Ticket reference is required");
+
+  const arg =
+    typeof ticket === "string"
+      ? ticket.trim()
+      : {
+          id: ticket.id,
+          subject: ticket.subject ?? undefined,
+          status: ticket.status ?? undefined,
+          priority: ticket.priority ?? undefined,
+          updated_at: ticket.updated_at ?? undefined,
+        };
+  if (typeof arg === "string" && !arg) {
+    throw new Error("Ticket reference is required");
+  }
 
   const vault = await getVault();
-  const result = await vault.addProjectZendeskTicket(slug, trimmed);
+  const result = await vault.addProjectZendeskTicket(slug, arg);
 
   revalidatePath(`/projects/${slug}`);
   return { added: result.added, total: result.zendesk_tickets.length };
+}
+
+/**
+ * One-shot backfill of zendesk_tickets metadata. Fans out a few
+ * search queries (project name, deslugged partner, partner display
+ * name) and merges any returned subjects/statuses into frontmatter
+ * for tickets that currently have no persisted metadata. Tickets the
+ * search doesn't surface stay as bare-id entries — the user can run
+ * the action again later or attach fresh metadata via the modal.
+ */
+export async function refreshZendeskMetadataAction(
+  slug: string,
+  hints: string[],
+): Promise<{ updated: number; total: number }> {
+  if (!slug) throw new Error("slug is required");
+
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) throw new Error(`Project "${slug}" not found`);
+  const refs = project.zendesk_tickets ?? [];
+  if (refs.length === 0) return { updated: 0, total: 0 };
+
+  const targetIds = new Set(refs.map((r) => r.id));
+  const seen = new Map<
+    string,
+    {
+      id: string;
+      subject?: string;
+      status?: string;
+      priority?: string;
+      updated_at?: string;
+    }
+  >();
+
+  const mcp = await getMcpClient();
+  // Run the hints in parallel; union the results. We dedupe by
+  // ticket_id and only keep entries that match one of our attached
+  // tickets so the call stays cheap.
+  await Promise.all(
+    hints.filter(Boolean).map(async (hint) => {
+      const res = await mcp.contextA8C
+        .searchZendeskTickets(hint, { limit: 50 })
+        .catch(() => ({ ok: false as const, error: "search failed" }));
+      if (!res.ok) return;
+      for (const t of res.tickets) {
+        if (!targetIds.has(t.id)) continue;
+        if (!seen.has(t.id)) {
+          seen.set(t.id, {
+            id: t.id,
+            subject: t.subject ?? undefined,
+            status: t.status ?? undefined,
+            priority: t.priority ?? undefined,
+            updated_at: t.updated_at ?? undefined,
+          });
+        }
+      }
+    }),
+  );
+
+  const result = await vault.refreshProjectZendeskMetadata(
+    slug,
+    Array.from(seen.values()),
+  );
+  revalidatePath(`/projects/${slug}`);
+  return { updated: result.updated, total: refs.length };
 }
 
 /**

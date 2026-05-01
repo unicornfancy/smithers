@@ -1,5 +1,24 @@
 // Shared types for the vault layer.
 
+/**
+ * A Zendesk ticket reference persisted to project frontmatter. The id
+ * is mandatory; everything else is captured opportunistically when
+ * the user attaches the ticket via the workbench (so the panel can
+ * render subject + status without a fresh upstream lookup).
+ */
+export interface ZendeskTicketRef {
+  /** Numeric ticket id as a string ("11134851"). */
+  id: string;
+  /** Subject captured at attach time. */
+  subject?: string;
+  /** Status captured at attach time ("open", "pending", "solved", etc.). */
+  status?: string;
+  /** Priority captured at attach time. */
+  priority?: string;
+  /** ISO timestamp from the upstream ticket record. */
+  updated_at?: string;
+}
+
 export type ProjectKind = "partner" | "team" | "personal";
 
 export type ProjectStatus =
@@ -28,13 +47,16 @@ export interface ProjectFrontmatter {
   linear_project_id?: string;
   linear_project_slug?: string;
   /**
-   * Zendesk tickets (Automattic Zendesk) attached to this project.
-   * Each entry is either a raw ticket id ("11134851") or a full URL
-   * ("https://automattic.zendesk.com/agent/tickets/11134851"). The
-   * first entry is treated as the primary thread; everything after
-   * is secondary.
+   * Zendesk tickets attached to this project. Each entry is either a
+   * raw ticket id, a full URL, or a richer object with persisted
+   * metadata (subject + status + updated_at + priority) captured at
+   * attach time. The first entry is treated as the primary thread.
+   *
+   * Persisting subject/status in frontmatter is what lets Smithers
+   * render the panel without an upstream lookup — markdown is the
+   * source of truth.
    */
-  zendesk_tickets?: string[];
+  zendesk_tickets?: Array<string | ZendeskTicketRef>;
   p2_url?: string;
 
   primary_slack_channel?: string;
@@ -71,13 +93,12 @@ export interface Project {
   linear_project_id?: string;
   linear_project_slug?: string;
   /**
-   * Zendesk tickets (Automattic Zendesk) attached to this project.
-   * Each entry is either a raw ticket id ("11134851") or a full URL
-   * ("https://automattic.zendesk.com/agent/tickets/11134851"). The
-   * first entry is treated as the primary thread; everything after
-   * is secondary.
+   * Zendesk tickets attached to this project. Always normalized to the
+   * rich object form by the parser — the on-disk YAML may store a
+   * mix of bare strings and objects, but consumers always see
+   * ZendeskTicketRef. The first entry is the primary thread.
    */
-  zendesk_tickets?: string[];
+  zendesk_tickets?: ZendeskTicketRef[];
   p2_url?: string;
   primary_slack_channel?: string;
   team_slack_channel?: string;

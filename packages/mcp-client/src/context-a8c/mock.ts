@@ -142,6 +142,21 @@ export class MockContextA8CTransport implements ContextA8CClient {
     };
   }
 
+  async fetchZendeskTicketSummaries(
+    refs: string[],
+    _opts: { searchHint?: string } = {},
+  ): Promise<import("./types").ZendeskTicketSummary[]> {
+    // Mock: just resolve each ref individually via the existing
+    // single-ticket mock — searchHint is ignored because every id
+    // produces a deterministic seeded summary regardless.
+    const out: import("./types").ZendeskTicketSummary[] = [];
+    for (const ref of refs) {
+      const r = await this.fetchZendeskTicketSummary(ref);
+      if (r) out.push(r);
+    }
+    return out;
+  }
+
   async fetchZendeskTicketActivity(
     ticketRef: string,
     opts: { limit?: number; projectSlug?: string } = {},
