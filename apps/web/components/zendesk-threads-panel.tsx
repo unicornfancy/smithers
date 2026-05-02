@@ -77,7 +77,7 @@ export function ZendeskThreadsPanel({
   defaultSearchQuery,
   alwaysShow,
 }: Props) {
-  const anyMissingSubject = tickets.some((t) => t.subject == null);
+  const hasTickets = tickets.length > 0;
   const allFollowUps = [...followUps.active, ...followUps.resolved];
   if (tickets.length === 0 && allFollowUps.length === 0 && !alwaysShow)
     return null;
@@ -115,7 +115,7 @@ export function ZendeskThreadsPanel({
               projectSlug={projectSlug}
               initialTerms={savedSearchTerms}
             />
-            {anyMissingSubject ? (
+            {hasTickets ? (
               <RefreshZendeskMetadataButton
                 projectSlug={projectSlug}
                 hints={refreshHints}

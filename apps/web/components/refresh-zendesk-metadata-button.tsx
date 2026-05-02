@@ -40,7 +40,7 @@ export function RefreshZendeskMetadataButton({ projectSlug, hints }: Props) {
           toast.info(
             r.total === 0
               ? "No tickets attached"
-              : "No new metadata found — Zendesk search didn't surface those tickets",
+              : "Everything's already current",
           );
         }
         router.refresh();
