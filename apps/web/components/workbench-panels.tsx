@@ -395,10 +395,21 @@ export function CallNotesPanel({
   projectSlug,
   projectName,
   recordings,
+  savedNotesByRecordingId,
 }: {
   projectSlug: string;
   projectName: string;
   recordings: CallRecordingRef[];
+  /**
+   * Per-recording lookup: if a recording has a saved Call Notes file
+   * (vault `Call Notes/<file>.md` with this recording_id in
+   * frontmatter), the row gets a "Notes saved" pill so the user knows
+   * the analysis is persisted and clicking Process loads from cache.
+   */
+  savedNotesByRecordingId?: Record<
+    string,
+    { relative_path: string; analyzed_at: string }
+  >;
 }) {
   if (recordings.length === 0) {
     return (
@@ -422,39 +433,71 @@ export function CallNotesPanel({
       meta="Last 30 days · via Fathom"
     >
       <ul className="flex flex-col divide-y">
-        {recordings.map((r) => (
-          <li
-            key={r.recording_id}
-            className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0"
-          >
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <p className="text-sm leading-snug">{r.title ?? r.recording_id}</p>
-              <p className="text-muted-foreground text-xs tabular-nums">
-                {new Date(r.recorded_at).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <ProcessCallDialog projectSlug={projectSlug} recording={r} />
-              {r.source_url ? (
-                <a
-                  href={r.source_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
-                >
-                  Open
-                </a>
-              ) : null}
-            </div>
-          </li>
-        ))}
+        {recordings.map((r) => {
+          const savedNotes = savedNotesByRecordingId?.[r.recording_id];
+          return (
+            <li
+              key={r.recording_id}
+              className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0"
+            >
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <p className="text-sm leading-snug">
+                  {r.title ?? r.recording_id}
+                </p>
+                <p className="text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs tabular-nums">
+                  <span>
+                    {new Date(r.recorded_at).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </span>
+                  {savedNotes ? (
+                    <span
+                      className="inline-flex items-center gap-1 rounded bg-emerald-100/60 px-1.5 py-0.5 text-[10px] font-medium text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
+                      title={`Saved at ${savedNotes.relative_path} · analyzed ${formatRelative(savedNotes.analyzed_at)}`}
+                    >
+                      Notes saved
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <ProcessCallDialog projectSlug={projectSlug} recording={r} />
+                {r.source_url ? (
+                  <a
+                    href={r.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
+                  >
+                    Open
+                  </a>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </Section>
   );
+}
+
+function formatRelative(iso: string): string {
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return iso;
+  const seconds = Math.floor((Date.now() - ts) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 // -- Milestones (partner-only, deadlines.md) ------------------------------

@@ -180,6 +180,27 @@ export default async function ProjectWorkbenchPage({
     )
     .slice(0, 8);
 
+  // Cross-link Fathom recordings to any saved Call Notes file we've
+  // already analyzed. Lookup is per-recording; cheap because the
+  // helper only reads frontmatter on each candidate file.
+  const savedCallNotesByRecordingId: Record<
+    string,
+    { relative_path: string; analyzed_at: string }
+  > = {};
+  await Promise.all(
+    projectRecordings.map(async (r) => {
+      const saved = await vault
+        .findCallNotesByRecordingId(r.recording_id)
+        .catch(() => null);
+      if (saved) {
+        savedCallNotesByRecordingId[r.recording_id] = {
+          relative_path: saved.relative_path,
+          analyzed_at: saved.analyzed_at,
+        };
+      }
+    }),
+  );
+
   const projectDrafts = allDrafts.filter(
     (d) => d.project_slug === detail.slug,
   );
@@ -285,6 +306,7 @@ export default async function ProjectWorkbenchPage({
           projectSlug={detail.slug}
           projectName={detail.name}
           recordings={projectRecordings}
+          savedNotesByRecordingId={savedCallNotesByRecordingId}
         />
 
         {isPartner ? (

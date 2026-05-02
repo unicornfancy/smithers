@@ -46,11 +46,10 @@ In rough priority order based on user signal this week:
 - **One agent per file, no shared "agent base class"** — system prompt + JSON schema + validate fn co-located. Easier to read, harder to overgeneralize.
 - **Stay on ContextA8C as the single MCP front door** for now — direct Linear MCP would be richer but adds a parallel client. v1.5 territory.
 - **`maxItems` is forbidden in agent schemas** — Anthropic's structured-output validator rejects it. Use prompt + post-validation `.slice(0, N)`.
+- **Change-project-kind: Partner → Team/Personal unlinks, doesn't delete** — the Hive Mind copy stays in place; Smithers just stops treating the local project as partner-kind. Reversible.
 
 ## Open questions
 
-- Should saved Call Notes files appear in the workbench `Recent calls` panel with a "Has notes" indicator linking to the saved file? Today the panel only lists Fathom recordings; the saved notes are findable only by `Call Notes/` directory listing. ?
-- For the change-project-kind wizard: Partner → Team/Personal — delete the Hive Mind copy or just unlink and leave it? Original plan was unlink. ?
 - The `learn-style-from-archives` button is on `/drafts`. Should it also live on a future `/style-guide` page? ?
 - For Linear sync (v1.5): canonical source-of-truth split. Pull-from-Linear (Linear authoritative for state/target_date), push-to-Linear (Smithers authoritative for partner-status), or bidirectional with conflict resolution? Decision deferred until the slice starts.
 - The "From this call" P2-update + recap-message drafts always re-fetch the transcript even when the call analysis was loaded from saved notes. Should the cached file also stash the transcript so the side-drafts skip the round-trip? ?
