@@ -52,6 +52,7 @@ import {
   filterFollowUpsForProject,
   listFollowUps,
   resolveFollowUp,
+  snoozeFollowUp,
 } from "./follow-ups";
 import { readProjectDetail } from "./project-detail";
 import {
@@ -120,6 +121,7 @@ export type {
   AppendFollowUpInput,
   AppendFollowUpResult,
   ResolveFollowUpResult,
+  SnoozeFollowUpResult,
 } from "./follow-ups";
 export type {
   ArchiveDraftResult,
@@ -162,6 +164,7 @@ export {
   readWorkingWith,
   refreshProjectZendeskMetadata,
   resolveFollowUp,
+  snoozeFollowUp,
   setPrimaryZendeskTicket,
   setProjectZendeskSearchTerms,
   splitTasks,
@@ -246,6 +249,10 @@ export interface Vault {
     followUpId: string,
     note?: string,
   ) => ReturnType<typeof resolveFollowUp>;
+  snoozeFollowUp: (
+    followUpId: string,
+    newFollowUpBy: string,
+  ) => ReturnType<typeof snoozeFollowUp>;
   appendFollowUp: (
     input: Parameters<typeof appendFollowUp>[1],
   ) => ReturnType<typeof appendFollowUp>;
@@ -315,6 +322,8 @@ export function createVault(options: VaultOptions): Vault {
       updateProjectFrontmatter(resolved, slug, patch),
     resolveFollowUp: (followUpId, note) =>
       resolveFollowUp(resolved, followUpId, note),
+    snoozeFollowUp: (followUpId, newFollowUpBy) =>
+      snoozeFollowUp(resolved, followUpId, newFollowUpBy),
     appendFollowUp: (input) => appendFollowUp(resolved, input),
     appendDecisionsToProject: (slug, input) =>
       appendDecisionsToProject(resolved, slug, input),

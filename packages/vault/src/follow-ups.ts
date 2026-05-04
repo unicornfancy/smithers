@@ -172,6 +172,95 @@ function cellByName(
   return idx >= 0 ? (cells[idx] ?? "") : "";
 }
 
+export interface SnoozeFollowUpResult {
+  follow_up_id: string;
+  /** The new value written into the Follow-up By cell (YYYY-MM-DD). */
+  follow_up_by: string;
+  /** True when the file was rewritten; false when the cell already held that date. */
+  changed: boolean;
+}
+
+/**
+ * Push a follow-up's `Follow-up By` cell forward to a new date. Reuses
+ * the same content-derived row-finder as `resolveFollowUp` so a stale
+ * id from the UI still hits the right row as long as project + task +
+ * sent are unchanged. Idempotent: re-snoozing to the same date is a
+ * no-op. Throws clearly when the id isn't found.
+ *
+ * Like `resolveFollowUp`, this only rewrites the cell — it does not
+ * move the row between Open / Resolved tables.
+ */
+export async function snoozeFollowUp(
+  opts: ResolvedVaultOptions,
+  followUpId: string,
+  newFollowUpBy: string,
+): Promise<SnoozeFollowUpResult> {
+  const target = newFollowUpBy.trim();
+  if (!target) throw new Error("newFollowUpBy is required");
+
+  const paths = vaultPaths(opts);
+  const raw = await tryReadFile(paths.followUps);
+  if (raw === null) {
+    throw new Error(`Follow-ups.md not found at ${paths.followUps}`);
+  }
+
+  const lines = raw.split(/\r?\n/);
+  let header: string[] | null = null;
+  let foundLineIndex = -1;
+  let foundCells: string[] | null = null;
+  let foundFollowUpByCol = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.trimStart().startsWith("|")) continue;
+    if (isSeparatorRow(line.trim())) continue;
+    const cells = splitRow(line);
+    const lower = cells.map((c) => c.toLowerCase());
+    const looksLikeHeader =
+      lower.includes("project") && lower.includes("task");
+    if (looksLikeHeader) {
+      header = lower;
+      continue;
+    }
+    if (!header) continue;
+    const project = cellByName(cells, header, "project");
+    const task = cellByName(cells, header, "task");
+    const sent = cellByName(cells, header, "sent");
+    if (!project || !task) continue;
+    const id = deterministicId(project, task, sent);
+    if (id !== followUpId) continue;
+
+    foundLineIndex = i;
+    foundCells = cells;
+    // Tolerate the spelling variants the parser already accepts.
+    foundFollowUpByCol = header.indexOf("follow-up by");
+    if (foundFollowUpByCol < 0) foundFollowUpByCol = header.indexOf("follow up by");
+    break;
+  }
+
+  if (foundLineIndex < 0 || !foundCells) {
+    throw new Error(
+      `Follow-up ${followUpId} not found in Follow-ups.md`,
+    );
+  }
+  if (foundFollowUpByCol < 0) {
+    throw new Error(
+      `Follow-up ${followUpId} is in a table without a Follow-up By column`,
+    );
+  }
+
+  const current = foundCells[foundFollowUpByCol] ?? "";
+  if (current.trim() === target) {
+    return { follow_up_id: followUpId, follow_up_by: target, changed: false };
+  }
+
+  foundCells[foundFollowUpByCol] = target;
+  lines[foundLineIndex] = `| ${foundCells.join(" | ")} |`;
+
+  await writeFileAtomic(paths.followUps, lines.join("\n"));
+  return { follow_up_id: followUpId, follow_up_by: target, changed: true };
+}
+
 export interface AppendFollowUpInput {
   /** Free-text project name as it appears in the Project column. */
   project: string;

@@ -21,6 +21,7 @@ import { DraftZendeskReplyButton } from "@/components/draft-zendesk-reply-button
 import { MakePrimaryButton } from "@/components/make-primary-button";
 import { RefreshZendeskMetadataButton } from "@/components/refresh-zendesk-metadata-button";
 import { ResolveFollowUpButton } from "@/components/resolve-follow-up-button";
+import { SnoozeFollowUpButton } from "@/components/snooze-follow-up-button";
 import { ZendeskAttachModal } from "@/components/zendesk-attach-modal";
 import { ZendeskSearchSettingsModal } from "@/components/zendesk-search-settings-modal";
 
@@ -403,6 +404,12 @@ function FollowUpRow({
             projectSlug={projectSlug}
             followUpId={fu.follow_up_id}
             label={fu.task}
+          />
+          <SnoozeFollowUpButton
+            projectSlug={projectSlug}
+            followUpId={fu.follow_up_id}
+            label={fu.task}
+            alwaysVisible={showHint}
           />
           <ResolveFollowUpButton
             projectSlug={projectSlug}

@@ -934,3 +934,32 @@ export async function resolveFollowUpAction(
   revalidatePath(`/projects/${slug}`);
   return { changed: result.changed };
 }
+
+/**
+ * Push a follow-up's `Follow-up By` cell forward by N days without
+ * marking it resolved. Used by the "Snooze" affordance on the workbench
+ * — partner says "ping me next week", thread needs more time. The
+ * client picks the offset (3d / 1w / 2w); the server computes the new
+ * date relative to today so the user doesn't have to.
+ */
+export async function snoozeFollowUpAction(
+  slug: string,
+  followUpId: string,
+  days: number,
+): Promise<{ changed: boolean; follow_up_by: string }> {
+  if (!slug) throw new Error("slug is required");
+  if (!followUpId) throw new Error("followUpId is required");
+  if (!Number.isFinite(days) || days <= 0) {
+    throw new Error("days must be a positive number");
+  }
+
+  const target = new Date();
+  target.setUTCDate(target.getUTCDate() + Math.round(days));
+  const newFollowUpBy = target.toISOString().slice(0, 10);
+
+  const vault = await getVault();
+  const result = await vault.snoozeFollowUp(followUpId, newFollowUpBy);
+
+  revalidatePath(`/projects/${slug}`);
+  return { changed: result.changed, follow_up_by: result.follow_up_by };
+}

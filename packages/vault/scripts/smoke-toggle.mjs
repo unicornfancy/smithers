@@ -21,6 +21,7 @@ import {
   saveCallNotes,
   setPrimaryZendeskTicket,
   setProjectZendeskSearchTerms,
+  snoozeFollowUp,
   toggleProjectTask,
   updateProjectFrontmatter,
   resolveVaultOptions,
@@ -517,6 +518,43 @@ try {
 }
 if (!resolveRejected) throw new Error("expected unknown follow-up to throw");
 console.log("[follow-up] OK — flip-to-resolved, idempotent, unknown rejects");
+
+// --- snoozeFollowUp: push the Follow-up By cell forward, idempotent re-snooze ---
+// Use the still-open "Second task" row from the file we already wrote.
+const snoozeTargetId = deterministicId(
+  "Smoke Project",
+  "Second task",
+  "2026-04-30",
+);
+const snoozeDate = "2026-05-15";
+const sn1 = await snoozeFollowUp(opts, snoozeTargetId, snoozeDate);
+if (!sn1.changed) throw new Error("expected snooze to write a new date");
+if (sn1.follow_up_by !== snoozeDate) {
+  throw new Error(`expected follow_up_by=${snoozeDate}, got ${sn1.follow_up_by}`);
+}
+const snoozedFile = readFileSync(followUpsPath, "utf8");
+if (!snoozedFile.includes(`| 2026-04-30 | ${snoozeDate} |`)) {
+  throw new Error("expected new Follow-up By cell in the row:\n" + snoozedFile);
+}
+// Resolved sibling row should still be marked resolved (not clobbered)
+if (!snoozedFile.includes("✅ Resolved")) {
+  throw new Error("snooze should not affect the previously resolved row");
+}
+
+// Idempotent: re-snoozing to the same date is a no-op
+const sn2 = await snoozeFollowUp(opts, snoozeTargetId, snoozeDate);
+if (sn2.changed) throw new Error("expected no-op re-snooze");
+if (sn2.follow_up_by !== snoozeDate) throw new Error("expected same date returned");
+
+// Unknown id throws cleanly
+let snoozeRejected = false;
+try {
+  await snoozeFollowUp(opts, "no-such-id", "2026-05-20");
+} catch {
+  snoozeRejected = true;
+}
+if (!snoozeRejected) throw new Error("expected unknown id to throw");
+console.log("[snooze] OK — pushes Follow-up By forward, idempotent re-snooze, unknown rejects");
 
 // --- appendFollowUp: append a row to Open Follow-ups table ---
 const af1 = await appendFollowUp(opts, {
