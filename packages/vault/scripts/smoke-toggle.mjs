@@ -24,6 +24,7 @@ import {
   snoozeFollowUp,
   toggleProjectTask,
   updateProjectFrontmatter,
+  updateFollowUp,
   resolveVaultOptions,
 } from "../src/index.ts";
 
@@ -577,6 +578,29 @@ if (!afterAppend.includes("Second task")) {
 }
 console.log("[append-followup] OK — row added with status, source preserved");
 
+// --- updateFollowUp: edit task text + follow_up_by, idempotent, unknown rejects ---
+// Use the appended row we just created ("Send Loom of staging accordion blocks")
+const updateTargetId = af1.follow_up_id;
+// Change the follow_up_by date
+const uf1 = await updateFollowUp(opts, updateTargetId, { follow_up_by: "2026-05-20" });
+if (!uf1.changed) throw new Error("expected updateFollowUp to write a new date");
+const afterUpdate1 = readFileSync(followUpsPath, "utf8");
+if (!afterUpdate1.includes("2026-05-20")) {
+  throw new Error("expected new follow_up_by cell in file:\n" + afterUpdate1);
+}
+// Idempotent: re-patching follow_up_by with the same value is a no-op
+const uf2 = await updateFollowUp(opts, updateTargetId, { follow_up_by: "2026-05-20" });
+if (uf2.changed) throw new Error("expected no-op when follow_up_by unchanged");
+// Unknown id throws
+let updateRejected = false;
+try {
+  await updateFollowUp(opts, "no-such-id", { task: "anything" });
+} catch {
+  updateRejected = true;
+}
+if (!updateRejected) throw new Error("expected unknown follow-up to throw");
+console.log("[update-followup] OK — changes field, idempotent on unchanged, unknown rejects");
+
 // --- appendDecisionsToProject: section creation + per-call sub-blocks ---
 const dec1 = await appendDecisionsToProject(opts, "smoke-project", {
   call_title: "Strategy sync",
@@ -678,6 +702,102 @@ if (!updatedRaw.includes("Updated summary.")) {
   throw new Error("expected updated summary in re-saved file");
 }
 console.log("[call-notes] OK — saved, round-trips via recording_id, re-save reuses file");
+
+// --- parseTaskMarkers / priority + due_date round-trip ---
+const { parseTaskMarkers } = await import("../src/tasks.ts");
+
+// Basic parse
+const mk1 = parseTaskMarkers("Review contract terms [high] [2026-05-15]");
+if (mk1.text !== "Review contract terms") throw new Error(`expected clean text, got "${mk1.text}"`);
+if (mk1.priority !== "high") throw new Error(`expected priority=high, got ${mk1.priority}`);
+if (mk1.due_date !== "2026-05-15") throw new Error(`expected due_date=2026-05-15, got ${mk1.due_date}`);
+
+// Order doesn't matter: date before priority
+const mk2 = parseTaskMarkers("Send loom [2026-06-01] [medium]");
+if (mk2.text !== "Send loom") throw new Error(`expected "Send loom", got "${mk2.text}"`);
+if (mk2.priority !== "medium") throw new Error(`expected priority=medium, got ${mk2.priority}`);
+if (mk2.due_date !== "2026-06-01") throw new Error(`expected due_date=2026-06-01, got ${mk2.due_date}`);
+
+// Only priority, no due date
+const mk3 = parseTaskMarkers("Deploy to staging [low]");
+if (mk3.text !== "Deploy to staging") throw new Error(`expected "Deploy to staging", got "${mk3.text}"`);
+if (mk3.priority !== "low") throw new Error(`expected priority=low, got ${mk3.priority}`);
+if (mk3.due_date !== undefined) throw new Error(`expected no due_date, got ${mk3.due_date}`);
+
+// No markers
+const mk4 = parseTaskMarkers("Plain task");
+if (mk4.text !== "Plain task") throw new Error(`expected "Plain task", got "${mk4.text}"`);
+if (mk4.priority !== undefined) throw new Error("expected no priority");
+if (mk4.due_date !== undefined) throw new Error("expected no due_date");
+
+console.log("[markers] parse: clean text, priority, due_date all correct in all variants");
+
+// --- appendProjectTask with markers + round-trip via parseProjectTasks ---
+const markersFilePath = join(projectsDir, "Markers Project.md");
+writeFileSync(
+  markersFilePath,
+  `---
+slug: markers-project
+name: Markers Project
+kind: personal
+status: active
+---
+
+# Markers Project
+
+## Open items
+`,
+);
+
+const mapp1 = await appendProjectTask(opts, "markers-project", "Urgent review", {
+  priority: "high",
+  due_date: "2026-05-20",
+});
+const afterMapp1 = readFileSync(markersFilePath, "utf8");
+if (!afterMapp1.includes("- [ ] Urgent review [high] [2026-05-20]")) {
+  throw new Error("expected markers serialized in file:\n" + afterMapp1);
+}
+// Parse back and confirm fields
+const parsedMapp1 = parseProjectTasks(afterMapp1.split(/---\n/).slice(2).join("---\n"));
+const taskMapp1 = parsedMapp1.find((t) => t.task_id === mapp1.task_id);
+if (!taskMapp1) throw new Error("could not find appended task by task_id");
+if (taskMapp1.text !== "Urgent review") throw new Error(`expected clean text, got "${taskMapp1.text}"`);
+if (taskMapp1.priority !== "high") throw new Error(`expected priority=high, got ${taskMapp1.priority}`);
+if (taskMapp1.due_date !== "2026-05-20") throw new Error(`expected due_date=2026-05-20, got ${taskMapp1.due_date}`);
+
+// Append a second task with different markers (same clean text, different line → different task_id)
+const mapp1b = await appendProjectTask(opts, "markers-project", "Urgent review", {
+  priority: "medium",
+  due_date: "2026-06-01",
+});
+const afterMapp1b = readFileSync(markersFilePath, "utf8");
+const parsedMapp1b = parseProjectTasks(afterMapp1b.split(/---\n/).slice(2).join("---\n"));
+const taskMapp1b = parsedMapp1b.find((t) => t.task_id === mapp1b.task_id);
+if (!taskMapp1b) throw new Error("could not find second appended task");
+if (taskMapp1b.priority !== "medium") throw new Error(`expected priority=medium, got ${taskMapp1b.priority}`);
+
+console.log("[markers] append: markers serialized and parsed back correctly");
+
+// --- editProjectTaskText preserves markers ---
+// taskMapp1 has [high] [2026-05-20] — edit its text, expect markers survive
+const editedMapp1 = await editProjectTaskText(opts, "markers-project", taskMapp1.task_id, "Critical review updated");
+const afterMarkersEdit = readFileSync(markersFilePath, "utf8");
+if (!afterMarkersEdit.includes("- [ ] Critical review updated [high] [2026-05-20]")) {
+  throw new Error("expected markers preserved after edit:\n" + afterMarkersEdit);
+}
+// old text should be gone
+if (afterMarkersEdit.includes("- [ ] Urgent review [high]")) {
+  throw new Error("old text+markers should be gone");
+}
+// new task_id from reparsed file
+const parsedMarkersEdit = parseProjectTasks(afterMarkersEdit.split(/---\n/).slice(2).join("---\n"));
+const editedMarkersTask = parsedMarkersEdit.find((t) => t.task_id === editedMapp1.task_id);
+if (!editedMarkersTask) throw new Error("could not find edited task by new task_id");
+if (editedMarkersTask.text !== "Critical review updated") throw new Error(`expected clean text, got "${editedMarkersTask.text}"`);
+if (editedMarkersTask.priority !== "high") throw new Error(`expected priority preserved, got ${editedMarkersTask.priority}`);
+if (editedMarkersTask.due_date !== "2026-05-20") throw new Error(`expected due_date preserved, got ${editedMarkersTask.due_date}`);
+
+console.log("[markers] edit: markers preserved after text rename, clean text in task_id, fields correct");
 
 console.log(`[smoke] cleaning up ${root}`);
 rmSync(root, { recursive: true, force: true });

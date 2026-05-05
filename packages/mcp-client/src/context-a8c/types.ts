@@ -127,6 +127,16 @@ export interface ContextA8CClient {
     project_id?: string;
     project_slug?: string;
   }): Promise<LinearProjectMetadata | null>;
+
+  /**
+   * Search GitHub issues across a list of repos for mentions of the
+   * given handle. Used by the /today page to surface GitHub pings.
+   * Degrades gracefully when GITHUB_TOKEN is absent — returns [].
+   */
+  listGithubMentionPings(
+    repos: string[],
+    handle: string,
+  ): Promise<Ping[]>;
 }
 
 export interface LinearProjectMetadata {

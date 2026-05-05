@@ -20,6 +20,11 @@ export interface AnalyzeCallTranscriptInput {
   };
   /** Optional style guide so summaries / drafts sound like the user. */
   style?: StyleReference;
+  /**
+   * One-off instructions appended to the system prompt for this run only.
+   * Not persisted anywhere. Example: "focus on action items for Katie".
+   */
+  additionalInstructions?: string;
 }
 
 export interface CallActionItem {
@@ -27,6 +32,10 @@ export interface CallActionItem {
   text: string;
   /** When the model is sure who owns the action ("user", "partner", or a name). */
   owner?: "user" | "partner" | "team" | "unknown";
+  /** Suggested priority based on urgency discussed in the call. */
+  priority?: "high" | "medium" | "low";
+  /** Suggested due date in YYYY-MM-DD format if a timeframe was discussed. */
+  due_date?: string;
 }
 
 export interface CallFollowUp {
@@ -70,7 +79,7 @@ const SYSTEM_PROMPT = `You are Smithers, a personal assistant analyzing the tran
 Five sections:
 
 1. summary — 2-3 sentence TL;DR, plain English, written in the user's voice. Don't editorialize; describe what happened.
-2. action_items — concrete things to do. Each must be specific enough to start in 30 seconds. Owner is "user" when the user committed to doing it, "partner" when the partner committed, "team" when a teammate committed, "unknown" when not stated. Skip soft suggestions ("we should think about X") — only include real commitments.
+2. action_items — concrete things to do. Each must be specific enough to start in 30 seconds. Owner is "user" when the user committed to doing it, "partner" when the partner committed, "team" when a teammate committed, "unknown" when not stated. Skip soft suggestions ("we should think about X") — only include real commitments. For each action item, suggest a priority (high/medium/low) based on urgency discussed in the call, and a due_date in YYYY-MM-DD format if a specific timeframe was discussed or implied (e.g. "by next Friday", "end of next week"). Leave priority and due_date absent when not determinable from the transcript.
 3. follow_ups — things the user is waiting on or wants a reply about later. These differ from action_items in that the user isn't doing the work; they're tracking when to nudge. Always include a one-sentence rationale.
 4. decisions — concrete decisions reached. Skip exploration / hand-waving. Include the why when stated.
 5. key_quotes — 1-3 short, memorable partner statements (or notable user commitments). Skip filler.
@@ -100,6 +109,15 @@ const OUTPUT_SCHEMA = {
           owner: {
             type: "string",
             enum: ["user", "partner", "team", "unknown"],
+          },
+          priority: {
+            type: "string",
+            enum: ["high", "medium", "low"],
+            description: "Urgency of the action item based on the transcript.",
+          },
+          due_date: {
+            type: "string",
+            description: "YYYY-MM-DD if a timeframe was discussed, else omit.",
           },
         },
         required: ["text", "owner"],
@@ -155,9 +173,12 @@ export async function analyzeCallTranscript(
   runtime: AgentRuntimeOptions,
   input: AnalyzeCallTranscriptInput,
 ): Promise<AgentResult<AnalyzeCallTranscriptOutput>> {
+  const system = input.additionalInstructions?.trim()
+    ? `${SYSTEM_PROMPT}\n\nAdditional instructions for this run: ${input.additionalInstructions.trim()}`
+    : SYSTEM_PROMPT;
   return runAgent(runtime, {
     agent: "analyze-call-transcript",
-    system: SYSTEM_PROMPT,
+    system,
     user: renderUserPrompt(input),
     outputSchema: OUTPUT_SCHEMA,
     outputName: "AnalyzeCallTranscriptOutput",
@@ -236,7 +257,17 @@ function validateActionItem(raw: unknown): CallActionItem {
   ) {
     throw new Error(`owner must be user|partner|team|unknown, got ${String(owner)}`);
   }
-  return { text, owner };
+  const priorityRaw = obj["priority"];
+  const priority =
+    priorityRaw === "high" || priorityRaw === "medium" || priorityRaw === "low"
+      ? priorityRaw
+      : undefined;
+  const dueDateRaw = obj["due_date"];
+  const due_date =
+    typeof dueDateRaw === "string" && dueDateRaw.trim()
+      ? dueDateRaw.trim()
+      : undefined;
+  return { text, owner, ...(priority ? { priority } : {}), ...(due_date ? { due_date } : {}) };
 }
 
 function validateFollowUp(raw: unknown): CallFollowUp {

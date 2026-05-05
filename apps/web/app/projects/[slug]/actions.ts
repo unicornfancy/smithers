@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import {
   analyzeCallTranscript,
+  chatAboutTranscript,
   composeCallRecap,
   composeFollowUpNudge,
   draftP2Update,
@@ -20,10 +21,11 @@ import {
   type SuggestNextStepOutput,
 } from "@smithers/agents";
 import type {
+  CallRecordingRef,
   LinearProjectMetadata,
   ZendeskSearchResult,
 } from "@smithers/mcp-client";
-import type { UpdateProjectFrontmatterPatch } from "@smithers/vault";
+import type { ChatMessage, UpdateProjectFrontmatterPatch, UpdateFollowUpPatch } from "@smithers/vault";
 import {
   filterFollowUpsForProject,
   parseProjectTasks,
@@ -478,7 +480,12 @@ export async function analyzeCallAction(
   slug: string,
   recordingId: string,
   url?: string,
-  opts?: { force?: boolean; recording_title?: string; recorded_at?: string },
+  opts?: {
+    force?: boolean;
+    recording_title?: string;
+    recorded_at?: string;
+    additionalInstructions?: string;
+  },
 ): Promise<
   | {
       ok: true;
@@ -486,6 +493,8 @@ export async function analyzeCallAction(
       cached: boolean;
       analyzed_at: string;
       notes_path?: string;
+      /** Transcript text — present when freshly fetched; absent when served from cache. */
+      transcript?: string;
     }
   | {
       ok: false;
@@ -544,6 +553,7 @@ export async function analyzeCallAction(
       project,
       call: { recording_id: recordingId, url },
       style,
+      additionalInstructions: opts?.additionalInstructions,
     });
     // Persist to Call Notes/ so subsequent Process clicks hit the cache.
     // Coerce optional fields to defaults the vault shape expects.
@@ -584,6 +594,7 @@ export async function analyzeCallAction(
       cached: false,
       analyzed_at: saved?.analyzed_at ?? new Date().toISOString(),
       notes_path: saved?.relative_path,
+      transcript,
     };
   } catch (err) {
     return {
@@ -592,6 +603,33 @@ export async function analyzeCallAction(
       message: err instanceof Error ? err.message : "Agent call failed",
     };
   }
+}
+
+/**
+ * Fetch just the transcript text for a Fathom recording. Used by the
+ * chat panel when the analysis was loaded from cache (in which case
+ * analyzeCallAction doesn't re-fetch the transcript).
+ */
+export async function fetchTranscriptAction(
+  recordingId: string,
+  url?: string,
+): Promise<
+  | { ok: true; transcript: string }
+  | { ok: false; message: string }
+> {
+  if (!recordingId) return { ok: false, message: "recordingId is required" };
+  const mcp = await getMcpClient();
+  const transcript = await mcp.fathom
+    .fetchTranscript({ recording_id: recordingId, url })
+    .catch(() => null);
+  if (!transcript) {
+    return {
+      ok: false,
+      message:
+        "Couldn't fetch the transcript from Fathom. The recording may not be processed yet.",
+    };
+  }
+  return { ok: true, transcript };
 }
 
 /**
@@ -733,8 +771,12 @@ export async function acceptCallActionItemsAction(
     if (!text) continue;
     const ownerSuffix =
       item.owner && item.owner !== "unknown" ? ` _(${item.owner})_` : "";
+    const markers =
+      item.priority || item.due_date
+        ? { priority: item.priority, due_date: item.due_date }
+        : undefined;
     try {
-      await vault.appendProjectTask(slug, `${text}${ownerSuffix}`);
+      await vault.appendProjectTask(slug, `${text}${ownerSuffix}`, markers);
       added += 1;
     } catch {
       // Continue with the rest if any single append fails.
@@ -962,4 +1004,211 @@ export async function snoozeFollowUpAction(
 
   revalidatePath(`/projects/${slug}`);
   return { changed: result.changed, follow_up_by: result.follow_up_by };
+}
+
+/**
+ * Multi-turn conversational Q&A about a call transcript. Sends the full
+ * transcript + conversation history + new user message to Claude and
+ * returns the assistant's reply as plain text. The transcript never
+ * leaves the server; only the reply is returned to the client.
+ */
+export async function chatAboutCallAction(
+  _projectSlug: string,
+  transcript: string,
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  userMessage: string,
+): Promise<{ ok: true; reply: string } | { ok: false; message: string }> {
+  if (!transcript) return { ok: false, message: "No transcript available" };
+  if (!userMessage.trim()) return { ok: false, message: "Message is empty" };
+
+  const runtime = await getAgentRuntime();
+  if (!runtime) {
+    return {
+      ok: false,
+      message: "Set ANTHROPIC_API_KEY in .env.local to enable chat",
+    };
+  }
+
+  try {
+    const reply = await chatAboutTranscript(runtime, {
+      transcript,
+      history: messages,
+      userMessage,
+    });
+    return { ok: true, reply };
+  } catch (err) {
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : "Chat request failed",
+    };
+  }
+}
+
+/**
+ * Convert a project task (open checkbox) into a follow-up row. Appends the
+ * follow-up to Follow-ups.md and then removes the checkbox line from the
+ * project body so it doesn't appear in both places.
+ *
+ * Returns discriminated result. On success, call router.refresh() so the
+ * workbench re-renders with the task gone and the follow-up visible.
+ */
+export async function convertTaskToFollowUpAction(
+  projectSlug: string,
+  taskId: string,
+  fields: { sent_to?: string; sent?: string; follow_up_by?: string },
+): Promise<
+  | { ok: true }
+  | { ok: false; reason: "not-found" | "error"; message?: string }
+> {
+  if (!projectSlug) throw new Error("projectSlug is required");
+  if (!taskId) throw new Error("taskId is required");
+
+  const vault = await getVault();
+  const project = await vault.readProject(projectSlug);
+  if (!project) return { ok: false, reason: "not-found", message: "Project not found" };
+
+  // Resolve the task so we can get its text.
+  const detail = await vault
+    .readProjectDetail(projectSlug)
+    .catch(() => null);
+  if (!detail) return { ok: false, reason: "not-found", message: "Project detail not found" };
+
+  const tasks = parseProjectTasks(detail.body);
+  const task = tasks.find((t) => t.task_id === taskId);
+  if (!task) {
+    return {
+      ok: false,
+      reason: "not-found",
+      message: `Task ${taskId} not found in ${projectSlug}`,
+    };
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const sentTo = fields.sent_to?.trim() ?? "";
+  const sent = fields.sent?.trim() || today;
+  const followUpBy = fields.follow_up_by?.trim() || undefined;
+
+  // Build the task text: prepend "Sent to <name>: " if a recipient was given.
+  const taskText = sentTo ? `${task.text} (sent to ${sentTo})` : task.text;
+
+  try {
+    await vault.appendFollowUp({
+      project: project.name,
+      task: taskText,
+      sent,
+      follow_up_by: followUpBy,
+    });
+    await vault.deleteProjectTask(projectSlug, taskId);
+    revalidatePath(`/projects/${projectSlug}`);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Conversion failed",
+    };
+  }
+}
+
+/**
+ * Convert an active follow-up back into a project task. Resolves the
+ * follow-up (marks it done) and appends a fresh `- [ ]` checkbox to the
+ * project body with the follow-up's task text.
+ *
+ * Returns discriminated result. On success, call router.refresh().
+ */
+export async function convertFollowUpToTaskAction(
+  projectSlug: string,
+  followUpId: string,
+): Promise<
+  | { ok: true }
+  | { ok: false; reason: "not-found" | "error"; message?: string }
+> {
+  if (!projectSlug) throw new Error("projectSlug is required");
+  if (!followUpId) throw new Error("followUpId is required");
+
+  const vault = await getVault();
+  const project = await vault.readProject(projectSlug);
+  if (!project) return { ok: false, reason: "not-found", message: "Project not found" };
+
+  const followUps = await vault.listFollowUps().catch(() => ({
+    active: [] as Awaited<ReturnType<typeof vault.listFollowUps>>["active"],
+    resolved: [] as Awaited<ReturnType<typeof vault.listFollowUps>>["resolved"],
+  }));
+  const followUp = [...followUps.active, ...followUps.resolved].find(
+    (f) => f.follow_up_id === followUpId,
+  );
+  if (!followUp) {
+    return {
+      ok: false,
+      reason: "not-found",
+      message: `Follow-up ${followUpId} not found`,
+    };
+  }
+
+  try {
+    await vault.resolveFollowUp(followUpId, "converted to task");
+    await vault.appendProjectTask(projectSlug, followUp.task);
+    revalidatePath(`/projects/${projectSlug}`);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Conversion failed",
+    };
+  }
+}
+
+/**
+ * Update editable fields on a follow-up row in Follow-ups.md. Used by the
+ * inline edit form on the /follow-ups page. Patch semantics: undefined
+ * leaves the cell alone; empty string clears it.
+ */
+export async function updateFollowUpAction(
+  _projectSlug: string,
+  followUpId: string,
+  patch: UpdateFollowUpPatch,
+): Promise<{ ok: true; changed: boolean } | { ok: false; reason: "not-found" | "error"; message?: string }> {
+  if (!followUpId) throw new Error("followUpId is required");
+
+  try {
+    const vault = await getVault();
+    const result = await vault.updateFollowUp(followUpId, patch);
+    // Revalidate both the global follow-ups page and any project page.
+    revalidatePath("/follow-ups");
+    if (_projectSlug) revalidatePath(`/projects/${_projectSlug}`);
+    return { ok: true, changed: result.changed };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("not found")) {
+      return { ok: false, reason: "not-found", message: msg };
+    }
+    return { ok: false, reason: "error", message: msg };
+  }
+}
+
+/**
+ * Append the full chat conversation as a `## Chat` section to the
+ * Call Notes file for the given recording. If no notes file exists yet
+ * for this recording, the action is a no-op (returns changed: false).
+ */
+export async function saveChatToCallNotesAction(
+  _projectSlug: string,
+  recordingId: string,
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+): Promise<{ ok: true; changed: boolean } | { ok: false; message: string }> {
+  if (!recordingId) return { ok: false, message: "recordingId is required" };
+  if (messages.length === 0) return { ok: false, message: "No messages to save" };
+
+  try {
+    const vault = await getVault();
+    const result = await vault.appendChatToCallNotes(recordingId, messages);
+    return { ok: true, changed: result.changed };
+  } catch (err) {
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : "Couldn't save chat",
+    };
+  }
 }

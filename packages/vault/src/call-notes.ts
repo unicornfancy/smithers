@@ -362,6 +362,71 @@ function renderCallNotesBody(
   return lines.join("\n");
 }
 
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AppendChatToCallNotesResult {
+  /** true when the file was modified; false when no file was found. */
+  changed: boolean;
+}
+
+/**
+ * Append (or replace) a `## Chat` section to an existing Call Notes file
+ * identified by recording_id. The section is formatted with bold speaker
+ * labels so it renders cleanly in Obsidian. If the file already has a
+ * `## Chat` section, it is replaced in full — so saving the same
+ * conversation twice is idempotent.
+ *
+ * Returns `{ changed: false }` when no file exists for the recording_id.
+ */
+export async function appendChatToCallNotes(
+  opts: ResolvedVaultOptions,
+  recordingId: string,
+  messages: ChatMessage[],
+): Promise<AppendChatToCallNotesResult> {
+  if (!recordingId) return { changed: false };
+  const existing = await findCallNotesByRecordingId(opts, recordingId);
+  if (!existing) return { changed: false };
+
+  const raw = await tryReadFile(existing.absolute_path);
+  if (!raw) return { changed: false };
+
+  const chatSection = renderChatSection(messages);
+
+  // Replace existing ## Chat block if present, otherwise append.
+  const CHAT_HEADING = "\n## Chat";
+  const idx = raw.indexOf(CHAT_HEADING);
+  let updated: string;
+  if (idx !== -1) {
+    // Find the next ## heading after ## Chat, if any, to know the slice boundary.
+    const afterHeading = idx + CHAT_HEADING.length;
+    const nextHeading = raw.indexOf("\n## ", afterHeading);
+    if (nextHeading !== -1) {
+      updated = raw.slice(0, idx) + chatSection + "\n" + raw.slice(nextHeading);
+    } else {
+      updated = raw.slice(0, idx) + chatSection;
+    }
+  } else {
+    // Append after trimming trailing newlines.
+    updated = raw.trimEnd() + "\n" + chatSection;
+  }
+
+  await writeFileAtomic(existing.absolute_path, updated);
+  return { changed: true };
+}
+
+function renderChatSection(messages: ChatMessage[]): string {
+  const lines: string[] = ["", "## Chat", ""];
+  for (const msg of messages) {
+    const label = msg.role === "user" ? "**You:**" : "**Smithers:**";
+    lines.push(`${label} ${msg.content.trim()}`);
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
 /**
  * Slug helper kept inside this module so callers can derive the same
  * filename basis if they want to render hyperlinks elsewhere.

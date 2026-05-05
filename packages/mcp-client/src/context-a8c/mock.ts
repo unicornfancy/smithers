@@ -84,6 +84,17 @@ const ZENDESK_SUBJECTS = [
   "Feature request: editorial dashboard",
 ];
 
+const GITHUB_ISSUE_TITLES = [
+  "Accessibility: focus ring missing on donate CTA",
+  "Mobile layout breaks below 375px",
+  "Update footer copyright year",
+];
+
+const GITHUB_MENTION_EXCERPTS = [
+  "@unicornfancy can you review the deploy checklist before we cut the release?",
+  "@unicornfancy — the footer is still showing the old logo on staging, can you confirm?",
+];
+
 export class MockContextA8CTransport implements ContextA8CClient {
   constructor(
     private readonly opts: ResolvedMcpClientOptions,
@@ -278,6 +289,39 @@ export class MockContextA8CTransport implements ContextA8CClient {
     );
   }
 
+  async listGithubMentionPings(
+    repos: string[],
+    _handle: string,
+  ): Promise<Ping[]> {
+    if (repos.length === 0) return [];
+    const rng = createRng(dailySeed("github-pings:global"));
+    const now = Date.now();
+    const out: Ping[] = [];
+    // 1–2 mock GitHub mention pings
+    const count = 1 + Math.floor(rng() * 2);
+    for (let i = 0; i < count && i < repos.length; i += 1) {
+      const repo = repos[i]!;
+      const minutesAgo = 45 + Math.floor(rng() * 5 * 60);
+      const excerpt = GITHUB_MENTION_EXCERPTS[i % GITHUB_MENTION_EXCERPTS.length]!;
+      const issueNum = 20 + Math.floor(rng() * 80);
+      out.push({
+        id: `mock:github:${repo}:issue:${issueNum}:mention`,
+        source: "github",
+        timestamp: new Date(now - minutesAgo * 60_000).toISOString(),
+        from: {
+          name: "github-user",
+          handle: "github-user",
+          is_external: true,
+        },
+        excerpt,
+        url: `https://github.com/${repo}/issues/${issueNum}`,
+        project_match: undefined,
+        is_mock: true,
+      });
+    }
+    return out;
+  }
+
   private generateActivity(query: ProjectActivityQuery): ActivityEvent[] {
     const rng = createRng(dailySeed(`activity:${query.project_slug}`));
     const limit = query.limit ?? 20;
@@ -330,6 +374,34 @@ export class MockContextA8CTransport implements ContextA8CClient {
           title,
           excerpt: `Pull request in ${query.refs.github_repo}`,
           url: `https://github.com/${query.refs.github_repo}/pull/${100 + Math.floor(rng() * 50)}`,
+          project_match: {
+            project_slug: query.project_slug,
+            matched_by: "github_repo",
+          },
+          is_mock: true,
+        });
+      }
+      // 2–3 mock issues
+      const issueCount = 2 + Math.floor(rng() * 2);
+      for (let i = 0; i < issueCount; i += 1) {
+        const hoursAgo = 2 + Math.floor(rng() * 48);
+        const title = pickN(rng, GITHUB_ISSUE_TITLES, 1)[0]!;
+        const actor = pickN(rng, INTERNAL_PEOPLE, 1)[0]!;
+        const issueNum = 10 + i + Math.floor(rng() * 40);
+        const isClosed = rng() < 0.4;
+        events.push({
+          id: `gh-issue:${query.project_slug}:${i}`,
+          source: "github",
+          kind: isClosed ? "issue-closed" : "issue-opened",
+          timestamp: new Date(now - hoursAgo * 60 * 60_000).toISOString(),
+          actor: {
+            name: actor.name,
+            handle: actor.handle,
+            is_external: false,
+          },
+          title: `#${issueNum}: ${title}`,
+          excerpt: `${query.refs.github_repo} · #${issueNum}${isClosed ? " · closed" : " · open"}`,
+          url: `https://github.com/${query.refs.github_repo}/issues/${issueNum}`,
           project_match: {
             project_slug: query.project_slug,
             matched_by: "github_repo",

@@ -276,8 +276,10 @@ export default async function ProjectWorkbenchPage({
         <div className="grid gap-3 lg:grid-cols-2">
           <OpenItemsPanel
             projectSlug={detail.slug}
+            projectName={detail.name}
             open={open}
             done={done}
+            githubRepo={detail.github_repo}
           />
           <DraftsForProjectPanel
             drafts={projectDrafts}

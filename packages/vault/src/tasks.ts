@@ -15,10 +15,60 @@ export interface ProjectTask {
   section?: string;
   /** Indentation depth in spaces (used for nested bullets). */
   indent: number;
+  /** Optional priority tag parsed from trailing `[high]`/`[medium]`/`[low]`. */
+  priority?: "high" | "medium" | "low";
+  /** Optional ISO due date parsed from trailing `[YYYY-MM-DD]`. */
+  due_date?: string;
 }
 
 const TASK_RE = /^(?<indent>\s*)[-*+]\s+\[(?<state> |x|X)\]\s+(?<text>.+?)\s*$/;
 const HEADING_RE = /^(?<hashes>#{2,4})\s+(?<text>.+?)\s*$/;
+
+const PRIORITY_RE = /\[(high|medium|low)\]/i;
+const DUE_DATE_RE = /\[(\d{4}-\d{2}-\d{2})\]/;
+
+/**
+ * Strip priority and due-date markers from the end of a raw task text string.
+ * Returns clean display text plus the extracted fields.
+ *
+ * Markers are always in brackets: `[high]`, `[medium]`, `[low]`, `[YYYY-MM-DD]`.
+ * Order doesn't matter; both are optional. The clean text is used for
+ * task_id hashing so ids are stable regardless of which markers are present.
+ */
+export function parseTaskMarkers(rawText: string): {
+  text: string;
+  priority?: "high" | "medium" | "low";
+  due_date?: string;
+} {
+  let text = rawText;
+  let priority: "high" | "medium" | "low" | undefined;
+  let due_date: string | undefined;
+
+  const priorityMatch = text.match(PRIORITY_RE);
+  if (priorityMatch) {
+    priority = priorityMatch[1]!.toLowerCase() as "high" | "medium" | "low";
+    text = text.replace(PRIORITY_RE, "").trim();
+  }
+
+  const dateMatch = text.match(DUE_DATE_RE);
+  if (dateMatch) {
+    due_date = dateMatch[1]!;
+    text = text.replace(DUE_DATE_RE, "").trim();
+  }
+
+  return { text, priority, due_date };
+}
+
+/** Serialize priority and/or due_date back to inline marker strings. */
+function serializeMarkers(
+  priority?: "high" | "medium" | "low",
+  due_date?: string,
+): string {
+  const parts: string[] = [];
+  if (priority) parts.push(`[${priority}]`);
+  if (due_date) parts.push(`[${due_date}]`);
+  return parts.length > 0 ? ` ${parts.join(" ")}` : "";
+}
 
 /**
  * Extract checkbox tasks from a markdown body.
@@ -41,9 +91,10 @@ export function parseProjectTasks(body: string): ProjectTask[] {
     }
     const task = line.match(TASK_RE);
     if (task?.groups) {
-      const text = task.groups["text"]!;
+      const rawText = task.groups["text"]!;
       const done = task.groups["state"]!.toLowerCase() === "x";
       const indent = task.groups["indent"]?.length ?? 0;
+      const { text, priority, due_date } = parseTaskMarkers(rawText);
       out.push({
         task_id: deterministicId(section ?? "", text, String(i)),
         text,
@@ -51,6 +102,8 @@ export function parseProjectTasks(body: string): ProjectTask[] {
         line_number: i + 1,
         section,
         indent,
+        ...(priority !== undefined ? { priority } : {}),
+        ...(due_date !== undefined ? { due_date } : {}),
       });
     }
   }
@@ -162,6 +215,7 @@ export async function appendProjectTask(
   opts: ResolvedVaultOptions,
   slug: string,
   text: string,
+  markers?: { priority?: "high" | "medium" | "low"; due_date?: string },
 ): Promise<AppendProjectTaskResult> {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -184,7 +238,7 @@ export async function appendProjectTask(
 
   const { data, content } = parseMarkdown(raw);
   const lines = content.split(/\r?\n/);
-  const newLine = `- [ ] ${trimmed}`;
+  const newLine = `- [ ] ${trimmed}${serializeMarkers(markers?.priority, markers?.due_date)}`;
 
   let insertedLineIndex: number;
   // Walk backwards to find the last task line; insert right after it.
@@ -296,11 +350,12 @@ export async function editProjectTaskText(
     );
   }
   // Capture indent + bullet + checkbox state, swap the text after the
-  // closing `]`. Anchored on `\s+` after the bracket so we don't mangle
-  // a trailing comment or markdown link in the new text.
+  // closing `]`, preserving any priority/due-date markers that were on
+  // the original line.
+  const markerSuffix = serializeMarkers(target.priority, target.due_date);
   const updated = line.replace(
     /^(\s*[-*+]\s+\[(?: |x|X)\]\s+).+?\s*$/,
-    (_m, prefix: string) => `${prefix}${trimmed}`,
+    (_m, prefix: string) => `${prefix}${trimmed}${markerSuffix}`,
   );
   if (updated === line) {
     throw new Error(

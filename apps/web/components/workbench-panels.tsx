@@ -13,6 +13,9 @@ import {
   StickyNote,
 } from "lucide-react";
 
+import { ConvertFollowUpToTaskButton } from "@/components/convert-follow-up-to-task-button";
+import { ConvertTaskToFollowUpButton } from "@/components/convert-task-to-follow-up-button";
+
 import type {
   CallRecordingRef,
   PartnerProfile,
@@ -112,12 +115,16 @@ export function ProjectBriefPanel({
 
 export function OpenItemsPanel({
   projectSlug,
+  projectName,
   open,
   done,
+  githubRepo,
 }: {
   projectSlug: string;
+  projectName?: string;
   open: ProjectTask[];
   done: ProjectTask[];
+  githubRepo?: string | null;
 }) {
   return (
     <Section
@@ -153,12 +160,37 @@ export function OpenItemsPanel({
                   taskId={t.task_id}
                   text={t.text}
                 />
-                {t.section ? (
-                  <p className="text-muted-foreground text-[11px] uppercase tracking-wide">
-                    {t.section}
-                  </p>
-                ) : null}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {t.section ? (
+                    <p className="text-muted-foreground text-[11px] uppercase tracking-wide">
+                      {t.section}
+                    </p>
+                  ) : null}
+                  {t.priority ? (
+                    <PriorityBadge priority={t.priority} />
+                  ) : null}
+                  {t.due_date ? (
+                    <DueDateLabel due_date={t.due_date} />
+                  ) : null}
+                </div>
               </div>
+              {githubRepo ? (
+                <a
+                  href={`https://github.com/${githubRepo}/issues/new?title=${encodeURIComponent(t.text)}&body=${encodeURIComponent(`From Smithers project: ${projectName ?? projectSlug}`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Create GitHub issue"
+                  className="text-muted-foreground hover:text-foreground shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                  aria-label={`Create GitHub issue: ${t.text}`}
+                >
+                  <GitHubIcon className="size-3.5" />
+                </a>
+              ) : null}
+              <ConvertTaskToFollowUpButton
+                projectSlug={projectSlug}
+                taskId={t.task_id}
+                taskText={t.text}
+              />
               <DeleteProjectTaskButton
                 projectSlug={projectSlug}
                 taskId={t.task_id}
@@ -201,6 +233,65 @@ export function OpenItemsPanel({
       )}
       <AddProjectTaskInput projectSlug={projectSlug} />
     </Section>
+  );
+}
+
+function PriorityBadge({
+  priority,
+}: {
+  priority: "high" | "medium" | "low";
+}) {
+  const styles = {
+    high: "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300",
+    medium: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+    low: "bg-slate-100 text-slate-500 dark:bg-slate-800/50 dark:text-slate-400",
+  };
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        styles[priority],
+      )}
+    >
+      {priority}
+    </span>
+  );
+}
+
+function DueDateLabel({ due_date }: { due_date: string }) {
+  const ts = Date.parse(due_date);
+  const isPast = !Number.isNaN(ts) && ts < Date.now();
+  const formatted = Number.isNaN(ts)
+    ? due_date
+    : new Date(ts).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      });
+  return (
+    <span
+      className={cn(
+        "text-[11px]",
+        isPast
+          ? "text-amber-600 dark:text-amber-400"
+          : "text-muted-foreground",
+      )}
+    >
+      due {formatted}
+    </span>
+  );
+}
+
+function GitHubIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+    </svg>
   );
 }
 
@@ -295,9 +386,11 @@ function DraftRow({ draft, dim = false }: { draft: Draft; dim?: boolean }) {
 export function FollowUpsForProjectPanel({
   followUps,
   projectName,
+  projectSlug,
 }: {
   followUps: { active: FollowUp[]; resolved: FollowUp[] };
   projectName: string;
+  projectSlug: string;
 }) {
   const totalActive = followUps.active.length;
   return (
@@ -323,7 +416,11 @@ export function FollowUpsForProjectPanel({
       ) : (
         <ul className="flex flex-col divide-y">
           {followUps.active.map((f) => (
-            <FollowUpRow key={f.follow_up_id} row={f} />
+            <FollowUpRow
+              key={f.follow_up_id}
+              row={f}
+              projectSlug={projectSlug}
+            />
           ))}
           {followUps.resolved.slice(0, 3).map((f) => (
             <FollowUpRow key={f.follow_up_id} row={f} dim />
@@ -339,11 +436,20 @@ export function FollowUpsForProjectPanel({
   );
 }
 
-function FollowUpRow({ row, dim = false }: { row: FollowUp; dim?: boolean }) {
+function FollowUpRow({
+  row,
+  dim = false,
+  projectSlug,
+}: {
+  row: FollowUp;
+  dim?: boolean;
+  projectSlug?: string;
+}) {
+  const isActive = row.status !== "resolved";
   return (
     <li
       className={cn(
-        "flex items-start gap-2 py-2 first:pt-0 last:pb-0",
+        "group flex items-start gap-2 py-2 first:pt-0 last:pb-0",
         dim && "text-muted-foreground",
       )}
     >
@@ -360,6 +466,13 @@ function FollowUpRow({ row, dim = false }: { row: FollowUp; dim?: boolean }) {
           {row.status_note ? ` · ${row.status_note}` : ""}
         </p>
       </div>
+      {isActive && projectSlug ? (
+        <ConvertFollowUpToTaskButton
+          projectSlug={projectSlug}
+          followUpId={row.follow_up_id}
+          label={row.task}
+        />
+      ) : null}
     </li>
   );
 }

@@ -4,6 +4,7 @@ import type { FollowUp } from "@smithers/vault";
 
 import { AppHeader } from "@/components/app-header";
 import { ComposeNudgeButton } from "@/components/compose-nudge-button";
+import { EditableFollowUpRow } from "@/components/editable-follow-up-row";
 import { EmptyState, VaultMissingNotice } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,6 +64,7 @@ export default async function FollowUpsPage() {
                 rows={active}
                 showCompose
                 apiKeyConfigured={agentStatus.configured}
+                editable
               />
             </CardContent>
           </Card>
@@ -91,15 +93,18 @@ export default async function FollowUpsPage() {
 
 interface FollowUpTableProps {
   rows: FollowUp[];
-  /** When true, render the per-row Compose-nudge action. */
+  /** When true, render the per-row Compose-nudge action and Edit button. */
   showCompose?: boolean;
   apiKeyConfigured?: boolean;
+  /** When true, rows are editable (active follow-ups on the Waiting card). */
+  editable?: boolean;
 }
 
 function FollowUpTable({
   rows,
   showCompose = false,
   apiKeyConfigured = false,
+  editable = false,
 }: FollowUpTableProps) {
   return (
     <div className="overflow-x-auto">
@@ -111,61 +116,75 @@ function FollowUpTable({
             <th className="py-2 pr-4 font-medium">Sent</th>
             <th className="py-2 pr-4 font-medium">Due</th>
             <th className="py-2 pr-4 font-medium">Status</th>
-            {showCompose ? <th className="py-2 font-medium">Action</th> : null}
+            <th className="py-2 font-medium">
+              {showCompose || editable ? "Action" : null}
+            </th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr
-              key={r.follow_up_id}
-              className="hover:bg-muted/40 border-b last:border-0"
-            >
-              <td className="py-2 pr-4 align-top text-xs font-medium">
-                {r.project}
-              </td>
-              <td className="py-2 pr-4 align-top">
-                <div className="flex flex-col gap-0.5">
-                  <p className="leading-snug">{r.task}</p>
-                  {r.status_note ? (
-                    <p className="text-muted-foreground text-xs leading-snug">
-                      {r.status_note}
-                    </p>
-                  ) : null}
-                </div>
-              </td>
-              <td className="text-muted-foreground py-2 pr-4 align-top tabular-nums">
-                {r.sent}
-              </td>
-              <td className="text-muted-foreground py-2 pr-4 align-top tabular-nums">
-                {r.follow_up_by ?? "—"}
-              </td>
-              <td className="py-2 pr-4 align-top">
-                <span
-                  className={
-                    r.status === "resolved"
-                      ? "text-emerald-700 dark:text-emerald-400"
-                      : r.status === "escalated"
-                        ? "text-amber-700 dark:text-amber-400"
-                        : "text-foreground"
+          {rows.map((r) => {
+            if (editable) {
+              return (
+                <EditableFollowUpRow
+                  key={r.follow_up_id}
+                  followUp={r}
+                  showCompose={showCompose}
+                  composeSlot={
+                    showCompose ? (
+                      <ComposeNudgeButton
+                        followUpId={r.follow_up_id}
+                        apiKeyConfigured={apiKeyConfigured}
+                      />
+                    ) : null
                   }
-                >
-                  {r.status === "resolved"
-                    ? "✓ resolved"
-                    : r.status === "escalated"
-                      ? "⚠ escalated"
-                      : "⏳ waiting"}
-                </span>
-              </td>
-              {showCompose ? (
-                <td className="py-2 align-top">
-                  <ComposeNudgeButton
-                    followUpId={r.follow_up_id}
-                    apiKeyConfigured={apiKeyConfigured}
-                  />
+                />
+              );
+            }
+            return (
+              <tr
+                key={r.follow_up_id}
+                className="hover:bg-muted/40 border-b last:border-0"
+              >
+                <td className="py-2 pr-4 align-top text-xs font-medium">
+                  {r.project}
                 </td>
-              ) : null}
-            </tr>
-          ))}
+                <td className="py-2 pr-4 align-top">
+                  <div className="flex flex-col gap-0.5">
+                    <p className="leading-snug">{r.task}</p>
+                    {r.status_note ? (
+                      <p className="text-muted-foreground text-xs leading-snug">
+                        {r.status_note}
+                      </p>
+                    ) : null}
+                  </div>
+                </td>
+                <td className="text-muted-foreground py-2 pr-4 align-top tabular-nums">
+                  {r.sent}
+                </td>
+                <td className="text-muted-foreground py-2 pr-4 align-top tabular-nums">
+                  {r.follow_up_by ?? "—"}
+                </td>
+                <td className="py-2 pr-4 align-top">
+                  <span
+                    className={
+                      r.status === "resolved"
+                        ? "text-emerald-700 dark:text-emerald-400"
+                        : r.status === "escalated"
+                          ? "text-amber-700 dark:text-amber-400"
+                          : "text-foreground"
+                    }
+                  >
+                    {r.status === "resolved"
+                      ? "resolved"
+                      : r.status === "escalated"
+                        ? "escalated"
+                        : "waiting"}
+                  </span>
+                </td>
+                <td className="py-2 align-top" />
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

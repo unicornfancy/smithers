@@ -6,11 +6,16 @@ import {
   AlertCircle,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Clock,
   Copy,
   ListChecks,
   Loader2,
+  MessageSquare,
   Quote,
+  Save,
+  Send,
   Sparkles,
   Star,
 } from "lucide-react";
@@ -33,8 +38,11 @@ import {
   acceptCallDecisionsAction,
   acceptCallFollowUpsAction,
   analyzeCallAction,
+  chatAboutCallAction,
   composeCallRecapAction,
   draftP2UpdateFromCallAction,
+  fetchTranscriptAction,
+  saveChatToCallNotesAction,
 } from "@/app/projects/[slug]/actions";
 import { cn } from "@/lib/utils";
 import { AiDraftDialog } from "@/components/ai-draft-dialog";
@@ -77,6 +85,14 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
   const [selectedFollowUps, setSelectedFollowUps] = React.useState<Set<number>>(
     new Set(),
   );
+  // Per-item priority/due_date overrides. Initialized from agent suggestions;
+  // user can change them before accepting.
+  const [actionPriorities, setActionPriorities] = React.useState<
+    Record<number, "high" | "medium" | "low" | "">
+  >({});
+  const [actionDueDates, setActionDueDates] = React.useState<
+    Record<number, string>
+  >({});
   const [acceptedSummary, setAcceptedSummary] = React.useState(false);
   const [acceptingActions, startAcceptActions] = React.useTransition();
   const [acceptingFollowUps, startAcceptFollowUps] = React.useTransition();
@@ -87,6 +103,27 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
     analyzed_at: string;
     notes_path?: string;
   } | null>(null);
+
+  // Re-analyze: optional one-off instructions appended to the system prompt.
+  const [additionalInstructions, setAdditionalInstructions] =
+    React.useState("");
+
+  // Chat panel state.
+  const [transcript, setTranscript] = React.useState<string | null>(null);
+  const [chatOpen, setChatOpen] = React.useState(false);
+  const [chatMessages, setChatMessages] = React.useState<
+    Array<{ role: "user" | "assistant"; content: string }>
+  >([]);
+  const [chatInput, setChatInput] = React.useState("");
+  const [chatPending, startChatSend] = React.useTransition();
+  const [chatSaved, setChatSaved] = React.useState(false);
+  const [chatSaving, startChatSave] = React.useTransition();
+  const chatBottomRef = React.useRef<HTMLDivElement>(null);
+
+  // Scroll chat thread to bottom whenever messages change.
+  React.useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
 
   // Side-drafts: P2 post + recap message. Each opens its own
   // AiDraftDialog with the agent output.
@@ -104,12 +141,18 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
     setError(null);
     setSelectedActions(new Set());
     setSelectedFollowUps(new Set());
+    setActionPriorities({});
+    setActionDueDates({});
     setAcceptedSummary(false);
     setDecisionsAdded(false);
     setCachedMeta(null);
+    setChatMessages([]);
+    setChatSaved(false);
+    setChatInput("");
   }
 
   function run(force = false) {
+    const instructions = additionalInstructions.trim();
     reset();
     setOpen(true);
     startTransition(async () => {
@@ -122,10 +165,13 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
             force,
             recording_title: recording.title ?? undefined,
             recorded_at: recording.recorded_at ?? undefined,
+            additionalInstructions: instructions || undefined,
           },
         );
         if (r.ok) {
           setData(r.data);
+          // Store transcript if the action returned it (fresh run only).
+          if (r.transcript) setTranscript(r.transcript);
           setCachedMeta({
             cached: r.cached,
             analyzed_at: r.analyzed_at,
@@ -137,6 +183,17 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
           setSelectedFollowUps(
             new Set(r.data.follow_ups.map((_, i) => i)),
           );
+          // Seed overrides from agent suggestions.
+          const priorities: Record<number, "high" | "medium" | "low" | ""> = {};
+          const dueDates: Record<number, string> = {};
+          r.data.action_items.forEach((a, i) => {
+            priorities[i] = a.priority ?? "";
+            dueDates[i] = a.due_date ?? "";
+          });
+          setActionPriorities(priorities);
+          setActionDueDates(dueDates);
+          // Clear instructions after a successful run.
+          setAdditionalInstructions("");
         } else if (r.reason === "not-configured") {
           setError(
             "Set ANTHROPIC_API_KEY in .env.local to enable call analysis.",
@@ -172,9 +229,19 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
 
   function acceptActions() {
     if (!data) return;
-    const picks: CallActionItem[] = data.action_items.filter((_, i) =>
-      selectedActions.has(i),
-    );
+    const picks: CallActionItem[] = data.action_items
+      .filter((_, i) => selectedActions.has(i))
+      .map((a, _unused, _arr) => {
+        // find the original index in data.action_items for the override lookup
+        const origIdx = data.action_items.indexOf(a);
+        const priority = actionPriorities[origIdx] || undefined;
+        const due_date = actionDueDates[origIdx] || undefined;
+        return {
+          ...a,
+          priority: priority as "high" | "medium" | "low" | undefined,
+          due_date,
+        };
+      });
     if (picks.length === 0) {
       toast.info("No action items selected");
       return;
@@ -326,6 +393,95 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
     });
   }
 
+  function sendChatMessage() {
+    const msg = chatInput.trim();
+    if (!msg || chatPending) return;
+    const currentTranscript = transcript;
+    if (!currentTranscript) {
+      // Transcript not yet loaded; fetch it first, then re-send.
+      startChatSend(async () => {
+        const tr = await fetchTranscriptAction(
+          recording.recording_id,
+          recording.source_url,
+        );
+        if (!tr.ok) {
+          toast.error(tr.message);
+          return;
+        }
+        setTranscript(tr.transcript);
+        const optimistic: Array<{ role: "user" | "assistant"; content: string }> =
+          [...chatMessages, { role: "user", content: msg }];
+        setChatMessages(optimistic);
+        setChatInput("");
+        setChatSaved(false);
+        const r = await chatAboutCallAction(
+          projectSlug,
+          tr.transcript,
+          chatMessages,
+          msg,
+        );
+        if (r.ok) {
+          setChatMessages([
+            ...optimistic,
+            { role: "assistant", content: r.reply },
+          ]);
+        } else {
+          toast.error(r.message);
+          // Roll back the optimistic user message on error.
+          setChatMessages(chatMessages);
+          setChatInput(msg);
+        }
+      });
+      return;
+    }
+    const optimistic: Array<{ role: "user" | "assistant"; content: string }> = [
+      ...chatMessages,
+      { role: "user", content: msg },
+    ];
+    setChatMessages(optimistic);
+    setChatInput("");
+    setChatSaved(false);
+    startChatSend(async () => {
+      const r = await chatAboutCallAction(
+        projectSlug,
+        currentTranscript,
+        chatMessages,
+        msg,
+      );
+      if (r.ok) {
+        setChatMessages([
+          ...optimistic,
+          { role: "assistant", content: r.reply },
+        ]);
+      } else {
+        toast.error(r.message);
+        setChatMessages(chatMessages);
+        setChatInput(msg);
+      }
+    });
+  }
+
+  function saveChat() {
+    if (chatMessages.length === 0 || chatSaving) return;
+    startChatSave(async () => {
+      const r = await saveChatToCallNotesAction(
+        projectSlug,
+        recording.recording_id,
+        chatMessages,
+      );
+      if (r.ok && r.changed) {
+        toast.success("Conversation saved to Call Notes");
+        setChatSaved(true);
+      } else if (r.ok && !r.changed) {
+        toast.info(
+          "No Call Notes file found for this recording — analyze the call first",
+        );
+      } else if (!r.ok) {
+        toast.error(r.message);
+      }
+    });
+  }
+
   async function copySummary() {
     if (!data) return;
     try {
@@ -370,40 +526,49 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
               into the vault — items you uncheck stay here.
             </DialogDescription>
             {cachedMeta ? (
-              <div className="mt-1 flex items-center gap-2 text-[11px]">
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5",
-                    cachedMeta.cached
-                      ? "bg-muted text-muted-foreground"
-                      : "bg-emerald-100/60 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200",
-                  )}
-                  title={
-                    cachedMeta.notes_path
-                      ? `Saved at ${cachedMeta.notes_path}`
-                      : undefined
-                  }
-                >
-                  {cachedMeta.cached
-                    ? `Loaded from saved notes · ${formatRelative(cachedMeta.analyzed_at)}`
-                    : `Saved · ${formatRelative(cachedMeta.analyzed_at)}`}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => run(true)}
-                  disabled={running}
-                  className="h-6 gap-1 px-1.5 text-[11px]"
-                  title="Discard the saved analysis and run the agent again"
-                >
-                  {running ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <Sparkles className="size-3" />
-                  )}
-                  Re-analyze
-                </Button>
+              <div className="mt-1 flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5",
+                      cachedMeta.cached
+                        ? "bg-muted text-muted-foreground"
+                        : "bg-emerald-100/60 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200",
+                    )}
+                    title={
+                      cachedMeta.notes_path
+                        ? `Saved at ${cachedMeta.notes_path}`
+                        : undefined
+                    }
+                  >
+                    {cachedMeta.cached
+                      ? `Loaded from saved notes · ${formatRelative(cachedMeta.analyzed_at)}`
+                      : `Saved · ${formatRelative(cachedMeta.analyzed_at)}`}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => run(true)}
+                    disabled={running}
+                    className="h-6 gap-1 px-1.5 text-[11px]"
+                    title="Discard the saved analysis and run the agent again"
+                  >
+                    {running ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="size-3" />
+                    )}
+                    Re-analyze
+                  </Button>
+                </div>
+                <textarea
+                  rows={3}
+                  value={additionalInstructions}
+                  onChange={(e) => setAdditionalInstructions(e.target.value)}
+                  placeholder="Additional instructions for this run, e.g. focus on action items for Katie"
+                  className="w-full resize-none rounded-md border bg-background px-2.5 py-1.5 text-[12px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                />
               </div>
             ) : null}
           </DialogHeader>
@@ -520,6 +685,36 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
                               owner: {a.owner}
                             </p>
                           ) : null}
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <select
+                              value={actionPriorities[i] ?? ""}
+                              onChange={(e) =>
+                                setActionPriorities((prev) => ({
+                                  ...prev,
+                                  [i]: e.target.value as "high" | "medium" | "low" | "",
+                                }))
+                              }
+                              className="h-5 rounded border bg-background px-1 text-[11px] text-foreground"
+                              aria-label="Priority"
+                            >
+                              <option value="">no priority</option>
+                              <option value="high">high</option>
+                              <option value="medium">medium</option>
+                              <option value="low">low</option>
+                            </select>
+                            <input
+                              type="date"
+                              value={actionDueDates[i] ?? ""}
+                              onChange={(e) =>
+                                setActionDueDates((prev) => ({
+                                  ...prev,
+                                  [i]: e.target.value,
+                                }))
+                              }
+                              className="h-5 rounded border bg-background px-1 text-[11px] text-foreground"
+                              aria-label="Due date"
+                            />
+                          </div>
                         </div>
                       </li>
                     ))}
@@ -643,6 +838,119 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
                   </ul>
                 </Section>
               ) : null}
+
+              {/* Chat about this call */}
+              <div className="border-t pt-3">
+                <button
+                  type="button"
+                  onClick={() => setChatOpen((v) => !v)}
+                  className="flex w-full items-center gap-2 text-left"
+                >
+                  <MessageSquare className="text-muted-foreground size-3.5" />
+                  <span className="text-foreground text-xs font-medium uppercase tracking-wide">
+                    Chat about this call
+                  </span>
+                  <span className="ml-auto">
+                    {chatOpen ? (
+                      <ChevronDown className="text-muted-foreground size-3.5" />
+                    ) : (
+                      <ChevronRight className="text-muted-foreground size-3.5" />
+                    )}
+                  </span>
+                </button>
+
+                {chatOpen ? (
+                  <div className="mt-2 flex flex-col gap-2">
+                    {/* Message thread */}
+                    {chatMessages.length > 0 ? (
+                      <div className="flex max-h-64 flex-col gap-2 overflow-y-auto rounded-md border p-2">
+                        {chatMessages.map((msg, i) => (
+                          <div
+                            key={i}
+                            className={cn(
+                              "flex flex-col gap-0.5",
+                              msg.role === "user" ? "items-end" : "items-start",
+                            )}
+                          >
+                            <span className="text-muted-foreground text-[10px] font-medium">
+                              {msg.role === "user" ? "You" : "Smithers"}
+                            </span>
+                            <p
+                              className={cn(
+                                "max-w-[90%] rounded-md px-2.5 py-1.5 text-[12px] leading-relaxed",
+                                msg.role === "user"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted text-foreground",
+                              )}
+                            >
+                              {msg.content}
+                            </p>
+                          </div>
+                        ))}
+                        {chatPending ? (
+                          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                            <Loader2 className="size-3 animate-spin" />
+                            Thinking…
+                          </div>
+                        ) : null}
+                        <div ref={chatBottomRef} />
+                      </div>
+                    ) : null}
+
+                    {/* Input row */}
+                    <div className="flex gap-1.5">
+                      <textarea
+                        rows={2}
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            sendChatMessage();
+                          }
+                        }}
+                        placeholder="Ask something about this call…"
+                        disabled={chatPending}
+                        className="min-w-0 flex-1 resize-none rounded-md border bg-background px-2.5 py-1.5 text-[12px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={sendChatMessage}
+                        disabled={chatPending || !chatInput.trim()}
+                        className="h-auto self-stretch px-2.5"
+                      >
+                        {chatPending ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <Send className="size-3" />
+                        )}
+                      </Button>
+                    </div>
+
+                    {/* Save conversation */}
+                    {chatMessages.length > 0 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={saveChat}
+                        disabled={chatSaving || chatSaved}
+                        className="h-6 gap-1 self-end px-1.5 text-[11px]"
+                      >
+                        {chatSaving ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : chatSaved ? (
+                          <Check className="size-3" />
+                        ) : (
+                          <Save className="size-3" />
+                        )}
+                        {chatSaved ? "Saved" : "Save conversation"}
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
         </DialogContent>

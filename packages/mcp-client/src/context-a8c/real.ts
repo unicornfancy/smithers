@@ -127,6 +127,22 @@ interface GithubPullsResult {
   result?: GithubPull[];
 }
 
+interface GithubIssue {
+  number?: number;
+  title?: string;
+  html_url?: string;
+  state?: string;
+  body?: string | null;
+  updated_at?: string;
+  created_at?: string;
+  user?: { login?: string; avatar_url?: string };
+  /** Present when the issue is actually a PR. Filter these out. */
+  pull_request?: unknown;
+}
+interface GithubIssuesResult {
+  result?: GithubIssue[];
+}
+
 interface SlackMessage {
   ts?: string;
   date?: string;
@@ -250,6 +266,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
     if (allow("github") && query.refs.github_repo) {
       tasks.push(this.fetchGithubCommits(query));
       tasks.push(this.fetchGithubPullRequests(query));
+      tasks.push(this.fetchGithubIssues(query));
     }
     if (allow("slack") && query.refs.primary_slack_channel) {
       tasks.push(this.fetchSlackMessages(query));
@@ -421,6 +438,76 @@ export class RealContextA8CTransport implements ContextA8CClient {
     );
   }
 
+  private async fetchGithubIssues(
+    query: ProjectActivityQuery,
+  ): Promise<SourceResult<ActivityEvent[]>> {
+    const repo = query.refs.github_repo!;
+    const [owner, name] = repo.split("/");
+    if (!owner || !name) {
+      return failedResult(
+        "context_a8c.github",
+        "invalid",
+        `Bad github_repo "${repo}" — expected owner/name`,
+      );
+    }
+    return runIsolated(
+      { cache: this.cache, health: this.health },
+      {
+        source: "context_a8c.github",
+        cacheKey: `real:context_a8c:project_activity:github_issues:${repo}`,
+        ttl: ACTIVITY_TTL,
+        fetcher: async () => {
+          // Try ContextA8C first; fall back to direct REST if the tool
+          // isn't exposed or the session is expired.
+          let issues: GithubIssue[] | null = null;
+          try {
+            const result = await this.mcp.callJsonTool<GithubIssuesResult>(
+              "context-a8c-execute-tool",
+              {
+                provider: "github",
+                tool: "issues",
+                params: { owner, repo: name, state: "all", perPage: 10 },
+              },
+            );
+            const raw = asArray<GithubIssue>(result?.result);
+            // Only use the ContextA8C result if it actually returned items
+            // — an empty array might mean "tool exists but no issues", but
+            // a null result means the tool wasn't found.
+            if (result !== null) {
+              issues = raw;
+            }
+          } catch {
+            // ContextA8C session expired or tool not found — fall through.
+          }
+
+          if (issues === null) {
+            // Fall back to GitHub REST API.
+            const token = process.env.GITHUB_TOKEN;
+            if (!token) return [];
+            const url = `https://api.github.com/repos/${owner}/${name}/issues?state=all&sort=updated&direction=desc&per_page=10`;
+            const res = await fetch(url, {
+              headers: {
+                Authorization: `token ${token}`,
+                Accept: "application/vnd.github.v3+json",
+              },
+            });
+            if (!res.ok) return [];
+            const raw = (await res.json()) as GithubIssue[];
+            issues = Array.isArray(raw) ? raw : [];
+          }
+
+          // Filter out PRs — GitHub issues endpoint returns both.
+          const pureIssues = issues.filter((i) => !i.pull_request);
+          return mapGithubIssuesToActivity(
+            pureIssues,
+            repo,
+            query.project_slug,
+          );
+        },
+      },
+    );
+  }
+
   private async fetchSlackMessages(
     query: ProjectActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>> {
@@ -494,6 +581,61 @@ export class RealContextA8CTransport implements ContextA8CClient {
         },
       },
     );
+  }
+
+  async listGithubMentionPings(
+    repos: string[],
+    handle: string,
+  ): Promise<Ping[]> {
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) return [];
+
+    const results = await Promise.allSettled(
+      repos.map(async (repo) => {
+        const [owner, name] = repo.split("/");
+        if (!owner || !name) return [] as Ping[];
+        const url = `https://api.github.com/repos/${owner}/${name}/issues?state=open&mentions=${handle}&per_page=10`;
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `token ${token}`,
+            Accept: "application/vnd.github.v3+json",
+          },
+        });
+        if (!res.ok) return [] as Ping[];
+        const raw = (await res.json()) as GithubIssue[];
+        const issues = Array.isArray(raw)
+          ? raw.filter((i) => !i.pull_request)
+          : [];
+        return issues
+          .map((issue): Ping | null => {
+            if (!issue.number || !issue.updated_at) return null;
+            const excerpt = issue.body
+              ? issue.body.slice(0, 200)
+              : (issue.title ?? "");
+            return {
+              id: `github:${repo}:issue:${issue.number}:mention`,
+              source: "github",
+              timestamp: issue.updated_at,
+              from: {
+                name: issue.user?.login ?? "github",
+                handle: issue.user?.login,
+                is_external: true,
+              },
+              excerpt,
+              url: issue.html_url,
+              project_match: undefined,
+              is_mock: false,
+            };
+          })
+          .filter((p): p is Ping => p !== null);
+      }),
+    );
+
+    const out: Ping[] = [];
+    for (const r of results) {
+      if (r.status === "fulfilled") out.push(...r.value);
+    }
+    return out;
   }
 
   async getLinearProjectMetadata(refs: {
@@ -1100,6 +1242,48 @@ function mapGithubPull(
     title,
     excerpt: `${repo} · #${num}${merged ? " · merged" : ` · ${pull.state ?? "open"}`}`,
     url: pull.html_url,
+    project_match: { project_slug: projectSlug, matched_by: "github_repo" },
+    is_mock: false,
+  };
+}
+
+export function mapGithubIssuesToActivity(
+  issues: GithubIssue[],
+  repo: string,
+  projectSlug: string,
+): ActivityEvent[] {
+  return issues
+    .map((i) => mapGithubIssue(i, repo, projectSlug))
+    .filter((e): e is ActivityEvent => e !== null);
+}
+
+function mapGithubIssue(
+  issue: GithubIssue,
+  repo: string,
+  projectSlug: string,
+): ActivityEvent | null {
+  const num = issue.number;
+  const title = issue.title;
+  const timestamp = issue.updated_at ?? issue.created_at;
+  if (!num || !title || !timestamp) return null;
+  const kind: ActivityEvent["kind"] =
+    issue.state === "closed" ? "issue-closed" : "issue-opened";
+  return {
+    id: `github:${repo}:issue:${num}`,
+    source: "github",
+    kind,
+    timestamp,
+    actor: issue.user
+      ? {
+          name: issue.user.login ?? "github",
+          handle: issue.user.login,
+          is_external: false,
+          avatar_url: issue.user.avatar_url,
+        }
+      : undefined,
+    title: `#${num}: ${title}`,
+    excerpt: issue.body ? issue.body.slice(0, 200) : undefined,
+    url: issue.html_url,
     project_match: { project_slug: projectSlug, matched_by: "github_repo" },
     is_mock: false,
   };

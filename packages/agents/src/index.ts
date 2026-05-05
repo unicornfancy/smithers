@@ -91,3 +91,9 @@ export {
   type LearnStyleSample,
   type StylePattern,
 } from "./agents/learn-style-from-archives";
+
+export {
+  chatAboutTranscript,
+  type ChatAboutTranscriptInput,
+  type ChatMessage as TranscriptChatMessage,
+} from "./agents/chat-about-transcript";

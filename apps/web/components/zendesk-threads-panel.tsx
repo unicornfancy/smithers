@@ -16,6 +16,7 @@ import type { FollowUp } from "@smithers/vault";
 
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConvertFollowUpToTaskButton } from "@/components/convert-follow-up-to-task-button";
 import { DraftFollowUpNudgeButton } from "@/components/draft-follow-up-nudge-button";
 import { DraftZendeskReplyButton } from "@/components/draft-zendesk-reply-button";
 import { MakePrimaryButton } from "@/components/make-primary-button";
@@ -400,6 +401,11 @@ function FollowUpRow({
       </div>
       {fu.status !== "resolved" ? (
         <div className="flex shrink-0 items-center gap-1">
+          <ConvertFollowUpToTaskButton
+            projectSlug={projectSlug}
+            followUpId={fu.follow_up_id}
+            label={fu.task}
+          />
           <DraftFollowUpNudgeButton
             projectSlug={projectSlug}
             followUpId={fu.follow_up_id}

@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   AlertTriangle,
   CircleDot,
+  Github,
   Inbox,
   LifeBuoy,
   MessageSquare,
@@ -138,6 +139,8 @@ function PingIcon({ source }: { source: Ping["source"] }) {
       return <LifeBuoy className="size-3.5" />;
     case "linear":
       return <CircleDot className="size-3.5" />;
+    case "github":
+      return <Github className="size-3.5" />;
   }
 }
 
@@ -151,6 +154,8 @@ function sourceLabel(source: Ping["source"]): string {
       return "Zendesk";
     case "linear":
       return "Linear";
+    case "github":
+      return "GitHub";
   }
 }
 

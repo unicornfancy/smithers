@@ -351,6 +351,120 @@ export async function appendFollowUp(
   };
 }
 
+export interface UpdateFollowUpPatch {
+  task?: string;
+  sent_to?: string;
+  sent?: string;
+  follow_up_by?: string;
+  status?: "waiting" | "escalated";
+}
+
+export interface UpdateFollowUpResult {
+  follow_up_id: string;
+  /** True when the file was rewritten; false when nothing changed. */
+  changed: boolean;
+}
+
+/**
+ * Update one or more cells of a follow-up row in Follow-ups.md.
+ *
+ * Finds the row by follow_up_id (same content-derived lookup as
+ * resolveFollowUp) and patches only the fields that are present in the
+ * patch object. Empty string clears the cell; undefined leaves it alone.
+ *
+ * The `task` patch is handled carefully: because follow_up_id is derived
+ * from project + task + sent, editing the task text does NOT change the
+ * follow_up_id returned — the caller gets the original id back. The next
+ * page render will compute a fresh id from the new text.
+ *
+ * Returns `{ changed: false }` when the patch would produce no diff.
+ */
+export async function updateFollowUp(
+  opts: ResolvedVaultOptions,
+  followUpId: string,
+  patch: UpdateFollowUpPatch,
+): Promise<UpdateFollowUpResult> {
+  const paths = vaultPaths(opts);
+  const raw = await tryReadFile(paths.followUps);
+  if (raw === null) {
+    throw new Error(`Follow-ups.md not found at ${paths.followUps}`);
+  }
+
+  const lines = raw.split(/\r?\n/);
+  let header: string[] | null = null;
+  let foundLineIndex = -1;
+  let foundCells: string[] | null = null;
+  let foundHeader: string[] | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.trimStart().startsWith("|")) continue;
+    if (isSeparatorRow(line.trim())) continue;
+    const cells = splitRow(line);
+    const lower = cells.map((c) => c.toLowerCase());
+    const looksLikeHeader =
+      lower.includes("project") && lower.includes("task");
+    if (looksLikeHeader) {
+      header = lower;
+      continue;
+    }
+    if (!header) continue;
+    const project = cellByName(cells, header, "project");
+    const task = cellByName(cells, header, "task");
+    const sent = cellByName(cells, header, "sent");
+    if (!project || !task) continue;
+    const id = deterministicId(project, task, sent);
+    if (id !== followUpId) continue;
+
+    foundLineIndex = i;
+    foundCells = [...cells];
+    foundHeader = header;
+    break;
+  }
+
+  if (foundLineIndex < 0 || !foundCells || !foundHeader) {
+    throw new Error(`Follow-up ${followUpId} not found in Follow-ups.md`);
+  }
+
+  // Apply the patch. For each field: if the patch value is undefined, leave
+  // the cell alone. If it's an empty string, clear the cell. Otherwise set it.
+  let changed = false;
+
+  function applyPatch(colName: string, value: string | undefined): void {
+    if (value === undefined) return;
+    const idx = foundHeader!.indexOf(colName);
+    if (idx < 0) return;
+    const current = foundCells![idx] ?? "";
+    const next = value.trim();
+    if (current === next) return;
+    foundCells![idx] = next;
+    changed = true;
+  }
+
+  if (patch.task !== undefined) applyPatch("task", patch.task);
+  if (patch.sent !== undefined) applyPatch("sent", patch.sent);
+  if (patch.follow_up_by !== undefined) applyPatch("follow-up by", patch.follow_up_by);
+
+  // Status: map "waiting" → "⏳ Waiting", "escalated" → "⚠ Escalated"
+  if (patch.status !== undefined) {
+    const statusText =
+      patch.status === "escalated" ? "⚠ Escalated" : "⏳ Waiting";
+    applyPatch("status", statusText);
+  }
+
+  // sent_to: this field may not exist in the standard table; skip silently
+  // if the column isn't present (the table format doesn't include it by default).
+  if (patch.sent_to !== undefined) applyPatch("sent to", patch.sent_to);
+
+  if (!changed) {
+    return { follow_up_id: followUpId, changed: false };
+  }
+
+  lines[foundLineIndex] = `| ${foundCells.join(" | ")} |`;
+  await writeFileAtomic(paths.followUps, lines.join("\n"));
+  return { follow_up_id: followUpId, changed: true };
+}
+
 function renderRow(
   headerCells: string[],
   values: Record<string, string>,

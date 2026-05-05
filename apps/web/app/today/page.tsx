@@ -85,12 +85,33 @@ export default async function TodayPage() {
   const latestDailyNote = dailyNotes.at(-1);
 
   const mcp = await getMcpClient();
-  const pingsResult = await mcp.contextA8C.listPings({ limit: 10 });
+
+  const githubRepos = projects
+    .map((p) => p.github_repo)
+    .filter((r): r is string => Boolean(r));
+
+  const [pingsResult, githubPings] = await Promise.all([
+    mcp.contextA8C.listPings({ limit: 10 }),
+    mcp.contextA8C.listGithubMentionPings(githubRepos, "unicornfancy").catch(
+      () => [] as Ping[],
+    ),
+  ]);
+
+  // Merge GitHub mention pings into the main SourceResult so the
+  // existing PingsToAction component and filterPingsResult helper
+  // handle them uniformly.
+  const mergedPingsResult: typeof pingsResult = pingsResult.ok
+    ? { ...pingsResult, data: [...pingsResult.data, ...githubPings] }
+    : {
+        ...pingsResult,
+        cachedData: [...(pingsResult.cachedData ?? []), ...githubPings],
+      };
+
   const dismissedPingIds = await listDismissedIds("ping").catch(
     () => new Set<string>(),
   );
   const filteredPingsResult = filterPingsResult(
-    pingsResult,
+    mergedPingsResult,
     dismissedPingIds,
   );
   const pings = filteredPingsResult.ok

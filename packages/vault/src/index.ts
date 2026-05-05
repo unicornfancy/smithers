@@ -18,9 +18,12 @@ export const VAULT_PACKAGE_VERSION = "0.0.3";
 import { resolveVaultOptions, type VaultOptions } from "./config";
 import { listAgendas } from "./agendas";
 import {
+  appendChatToCallNotes,
   findCallNotesByRecordingId,
   listCallNotes,
   saveCallNotes,
+  type AppendChatToCallNotesResult,
+  type ChatMessage,
   type SavedCallAnalysis,
   type SavedCallNote,
   type SaveCallNotesInput,
@@ -53,6 +56,7 @@ import {
   listFollowUps,
   resolveFollowUp,
   snoozeFollowUp,
+  updateFollowUp,
 } from "./follow-ups";
 import { readProjectDetail } from "./project-detail";
 import {
@@ -122,6 +126,8 @@ export type {
   AppendFollowUpResult,
   ResolveFollowUpResult,
   SnoozeFollowUpResult,
+  UpdateFollowUpPatch,
+  UpdateFollowUpResult,
 } from "./follow-ups";
 export type {
   ArchiveDraftResult,
@@ -131,6 +137,8 @@ export type {
   UpdateDraftBodyResult,
 } from "./drafts";
 export type {
+  AppendChatToCallNotesResult,
+  ChatMessage,
   SavedCallAnalysis,
   SavedCallNote,
   SaveCallNotesInput,
@@ -138,6 +146,7 @@ export type {
 } from "./call-notes";
 export {
   addProjectZendeskTicket,
+  appendChatToCallNotes,
   appendDecisionsToProject,
   appendFollowUp,
   appendProjectTask,
@@ -165,6 +174,7 @@ export {
   refreshProjectZendeskMetadata,
   resolveFollowUp,
   snoozeFollowUp,
+  updateFollowUp,
   setPrimaryZendeskTicket,
   setProjectZendeskSearchTerms,
   splitTasks,
@@ -215,6 +225,7 @@ export interface Vault {
   appendProjectTask: (
     slug: string,
     text: string,
+    markers?: Parameters<typeof appendProjectTask>[3],
   ) => ReturnType<typeof appendProjectTask>;
   editProjectTaskText: (
     slug: string,
@@ -253,6 +264,10 @@ export interface Vault {
     followUpId: string,
     newFollowUpBy: string,
   ) => ReturnType<typeof snoozeFollowUp>;
+  updateFollowUp: (
+    followUpId: string,
+    patch: Parameters<typeof updateFollowUp>[2],
+  ) => ReturnType<typeof updateFollowUp>;
   appendFollowUp: (
     input: Parameters<typeof appendFollowUp>[1],
   ) => ReturnType<typeof appendFollowUp>;
@@ -266,6 +281,10 @@ export interface Vault {
   findCallNotesByRecordingId: (
     recordingId: string,
   ) => ReturnType<typeof findCallNotesByRecordingId>;
+  appendChatToCallNotes: (
+    recordingId: string,
+    messages: ChatMessage[],
+  ) => ReturnType<typeof appendChatToCallNotes>;
   updateDraftBody: (
     draftId: string,
     newBody: string,
@@ -304,8 +323,8 @@ export function createVault(options: VaultOptions): Vault {
     readWorkingWith: () => readWorkingWith(resolved),
     toggleProjectTask: (slug, taskId, done) =>
       toggleProjectTask(resolved, slug, taskId, done),
-    appendProjectTask: (slug, text) =>
-      appendProjectTask(resolved, slug, text),
+    appendProjectTask: (slug, text, markers) =>
+      appendProjectTask(resolved, slug, text, markers),
     editProjectTaskText: (slug, taskId, newText) =>
       editProjectTaskText(resolved, slug, taskId, newText),
     deleteProjectTask: (slug, taskId) =>
@@ -324,12 +343,16 @@ export function createVault(options: VaultOptions): Vault {
       resolveFollowUp(resolved, followUpId, note),
     snoozeFollowUp: (followUpId, newFollowUpBy) =>
       snoozeFollowUp(resolved, followUpId, newFollowUpBy),
+    updateFollowUp: (followUpId, patch) =>
+      updateFollowUp(resolved, followUpId, patch),
     appendFollowUp: (input) => appendFollowUp(resolved, input),
     appendDecisionsToProject: (slug, input) =>
       appendDecisionsToProject(resolved, slug, input),
     saveCallNotes: (input) => saveCallNotes(resolved, input),
     findCallNotesByRecordingId: (recordingId) =>
       findCallNotesByRecordingId(resolved, recordingId),
+    appendChatToCallNotes: (recordingId, messages) =>
+      appendChatToCallNotes(resolved, recordingId, messages),
     updateDraftBody: (draftId, newBody) =>
       updateDraftBody(resolved, draftId, newBody),
     createDraftFromAi: (input) => createDraftFromAi(resolved, input),

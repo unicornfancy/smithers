@@ -1,6 +1,6 @@
 # STATE.md — Smithers (snapshot)
 
-_Updated 2026-05-02_
+_Updated 2026-05-04_
 
 ## Just completed
 
@@ -12,6 +12,13 @@ _Updated 2026-05-02_
   - Caveat: `analyze-call-transcript` only verified on the seeded mock transcript. Live Fathom transcript fetch was broken until `143c9d2` (recording_id type coercion); not yet visually confirmed end-to-end against a real call.
 - **AI affordances on workbench (5c04c87, f888ced, 4436e41)** — `For You Today` panel runs `suggest-next-step` on demand; `Draft nudge` button on each active follow-up; `Draft reply` button on each active Zendesk row.
   - Caveat: Zendesk reply context is subject-only because `comments` is broken; agent leans on subject + style guide and tends to draft clarifying-question replies when it lacks specifics.
+- **Call transcript chat + regenerate instructions (this session)** — "Chat about this call" multi-turn panel added to Process Call dialog (transcript as context, save conversation to Call Notes file as `## Chat` section). "Additional instructions for this run" textarea added near Re-analyze button for one-off prompt overrides.
+  - Caveat: `chatAboutCallAction` uses the Anthropic SDK directly in actions.ts (not a structured agent) — transcript is passed as full context on every turn.
+  - Caveat: not yet visually tested end-to-end against a live call.
+- **Task priority + due date + GitHub issue creation (this session)** — Inline bracket notation `[high]`/`[medium]`/`[low]` and `[YYYY-MM-DD]` at end of task lines. Parser strips markers from display text and task_id hash for stable ids. Priority badge (rose/amber/slate) and due date label (amber warning if past) on task rows. GitHub icon button on open tasks (when `github_repo` set) opens pre-filled new-issue tab. `analyze-call-transcript` agent now suggests priority + due_date per action item; Process Call dialog shows editable pre-fills before accepting.
+- **Convert between To-dos and Follow-ups + edit follow-ups inline (this session)** — "Convert to follow-up" button on open task rows (dialog: sent-to, sent date, follow-by date → removes task, adds follow-up). "Convert to to-do" button on active follow-up rows (immediate: resolves follow-up, appends task checkbox). Edit button on every active row of `/follow-ups` page with inline form (task text, sent-to, dates, status).
+  - Note: `updateFollowUp` looks up rows by content-derived id. Editing task text changes the id for subsequent lookups — documented in the helper.
+- **GitHub Issues in activity feed + mention pings (this session)** — GitHub issues (open/closed) added to project workbench Live Activity feed via ContextA8C `github/issues` with REST API fallback. GitHub mention pings for `unicornfancy` surfaced on `/today` Pings panel by querying open issues where user is mentioned. Both degrade gracefully when GITHUB_TOKEN absent.
 
 ## In flight
 
@@ -26,7 +33,8 @@ In rough priority order based on user signal this week:
 1. **More AI affordances** — punch-list candidates: Summarize Zendesk thread, Verify @handles before posting, Find related context.
 2. **Project metadata modal: Linear sync probe** — `getLinearProjectMetadata` calls `tool: "project"`. Not yet verified live; if upstream uses a different name, modal sidebar shows "couldn't load Linear data". Same iteration pattern as Zendesk.
 3. **`/today` polish** — day-specific banners (Mon Weekly Update, Fri reflection), AFK state, weekend / new-user / no-data states. Dashboard you see every morning; high-frequency value.
-4. **Edit existing follow-ups inline** — `/follow-ups` is read-only; editor is on the punch list.
+4. ~~**Edit existing follow-ups inline**~~ — shipped this session.
+5. **Wire GITHUB_TOKEN** — add to `.env.local` to enable GitHub Issues in activity feed and mention pings on /today.
 5. **`/agendas/[project]` editor** — currently a 23-line stub.
 6. **`/style-guide` editor** — stub. Pair with style-guide write path so `learn-style-from-archives` can append directly.
 7. **`/weekly-updates/[YYYY-WN]` editor** — two-column markdown + sources sidebar; stub.
