@@ -697,6 +697,8 @@ export class RealContextA8CTransport implements ContextA8CClient {
               : undefined,
         lead,
         url: typeof p["url"] === "string" ? (p["url"] as string) : undefined,
+        health: typeof p["health"] === "string" ? (p["health"] as string) : undefined,
+        progress: typeof p["progress"] === "number" ? (p["progress"] as number) : undefined,
       };
     } catch {
       return null;

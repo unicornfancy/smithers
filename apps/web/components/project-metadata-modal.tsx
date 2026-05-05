@@ -622,6 +622,50 @@ function LinearSidebar({
               <span className="text-foreground">{meta.lead}</span>
             </div>
           ) : null}
+          {meta.health ? (
+            <div className="flex flex-col gap-0.5">
+              <span className="text-muted-foreground/70 uppercase tracking-wide">
+                Health
+              </span>
+              <span
+                className={
+                  meta.health === "onTrack"
+                    ? "text-emerald-700 dark:text-emerald-400"
+                    : meta.health === "atRisk"
+                      ? "text-amber-700 dark:text-amber-400"
+                      : meta.health === "offTrack"
+                        ? "text-rose-700 dark:text-rose-400"
+                        : "text-foreground"
+                }
+              >
+                {meta.health === "onTrack"
+                  ? "On track"
+                  : meta.health === "atRisk"
+                    ? "At risk"
+                    : meta.health === "offTrack"
+                      ? "Off track"
+                      : meta.health}
+              </span>
+            </div>
+          ) : null}
+          {meta.progress !== undefined ? (
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground/70 uppercase tracking-wide">
+                  Progress
+                </span>
+                <span className="text-foreground tabular-nums">
+                  {meta.progress}%
+                </span>
+              </div>
+              <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+                <div
+                  className="bg-primary h-full rounded-full transition-all"
+                  style={{ width: `${Math.min(100, meta.progress)}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </aside>

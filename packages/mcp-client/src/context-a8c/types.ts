@@ -155,6 +155,10 @@ export interface LinearProjectMetadata {
   lead?: string;
   /** Linear UI URL for the project, for "Open in Linear" links. */
   url?: string;
+  /** Health status: "onTrack" | "atRisk" | "offTrack" | etc. */
+  health?: string;
+  /** Completion percentage (0–100). */
+  progress?: number;
 }
 
 export type ZendeskSearchResult =

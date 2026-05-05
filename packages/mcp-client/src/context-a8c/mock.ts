@@ -173,6 +173,8 @@ export class MockContextA8CTransport implements ContextA8CClient {
       target_date: new Date(Date.now() + 21 * 86_400_000).toISOString().slice(0, 10),
       lead: "Riley Chen",
       url: `https://linear.app/automattic/project/${refs.project_slug ?? "mock"}`,
+      health: "onTrack",
+      progress: Math.floor(rng() * 80) + 5,
     };
   }
 
