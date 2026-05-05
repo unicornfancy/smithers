@@ -21,6 +21,8 @@ export interface LearnStyleFromArchivesInput {
   samples: LearnStyleSample[];
   /** Optional: existing style guide so suggestions complement rather than duplicate. */
   existing_style_guide?: string;
+  /** Optional: list of available my-voice filenames for routing learnings. */
+  available_files?: string[];
 }
 
 export interface StylePattern {
@@ -32,6 +34,13 @@ export interface StylePattern {
   channel?: string;
 }
 
+export interface FileAddition {
+  /** One of the my-voice filenames: "SKILL.md", "PARTNER_COMMS.md", etc. */
+  filename: string;
+  /** Markdown to append verbatim. Should start with a datestamped ## heading. */
+  content: string;
+}
+
 export interface LearnStyleFromArchivesOutput {
   /** 3-7 patterns observed across the diffs. */
   patterns: StylePattern[];
@@ -39,10 +48,13 @@ export interface LearnStyleFromArchivesOutput {
    * A markdown-formatted block ready to paste into the user's style
    * guide. Should include the patterns as bullet items with brief
    * examples — not a full rewrite of the existing guide.
+   * @deprecated use file_additions for the write path; keep for display
    */
   suggested_addition: string;
   /** One-sentence framing for the panel header. */
   framing: string;
+  /** One entry per file that should be updated. May be empty if no learnings apply. */
+  file_additions: FileAddition[];
 }
 
 const SYSTEM_PROMPT = `You are Smithers, a personal assistant analyzing the user's editing patterns to update their writing style guide. You'll see N pairs of (original, final) drafts — original is what an AI agent wrote, final is what the user shipped after editing. Your job is to identify the 3-7 patterns that show up most consistently across the diffs and write a short style-guide block the user can paste into their existing guide.
@@ -65,6 +77,14 @@ Quality rules:
 - Cite a concrete example in the rationale — not the full diff, just the changed phrase.
 - 3-7 patterns total. Quality > quantity.
 - The suggested_addition is a markdown bullet list ready to paste — header should be "## Patterns from recent edits" or similar, optionally dated.
+
+Routing learnings to the correct file (for file_additions):
+- zendesk / email channel patterns → PARTNER_COMMS.md
+- p2 / weekly update patterns → INTERNAL_STYLE_GUIDE.md
+- general voice / tone patterns → SKILL.md
+- Each file_additions entry must start with a ## heading: "## Learnings from archives — YYYY-MM-DD" (use today's date).
+- Only include entries for files where you have learnings to add. Empty array is valid.
+- suggested_addition remains a single combined markdown block for display (all patterns together).
 
 Always return your output as JSON matching the requested schema.`;
 
@@ -97,8 +117,30 @@ const OUTPUT_SCHEMA = {
       description:
         "A markdown block (header + bullet list) the user can paste into their style guide.",
     },
+    file_additions: {
+      type: "array",
+      description:
+        "One entry per my-voice file that should receive appended learnings. May be empty.",
+      items: {
+        type: "object",
+        properties: {
+          filename: {
+            type: "string",
+            description:
+              "The target filename, e.g. SKILL.md or PARTNER_COMMS.md.",
+          },
+          content: {
+            type: "string",
+            description:
+              "Markdown to append, starting with a ## datestamped heading.",
+          },
+        },
+        required: ["filename", "content"],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ["framing", "patterns", "suggested_addition"],
+  required: ["framing", "patterns", "suggested_addition", "file_additions"],
   additionalProperties: false,
 };
 
@@ -124,6 +166,15 @@ function renderUserPrompt(input: LearnStyleFromArchivesInput): string {
   lines.push(
     `Analyze ${input.samples.length} draft pairs. For each pair, compare the AI's first pass (original) to what the user shipped (final). Identify consistent voice + style patterns.`,
   );
+
+  if (input.available_files && input.available_files.length > 0) {
+    lines.push("", "# Available my-voice files for routing");
+    lines.push(input.available_files.map((f) => `- ${f}`).join("\n"));
+    lines.push(
+      "",
+      "Route each learning to the appropriate file per the routing rules in the system prompt.",
+    );
+  }
 
   if (input.existing_style_guide && input.existing_style_guide.trim()) {
     lines.push("", "# Existing style guide");
@@ -173,7 +224,20 @@ function validateOutput(raw: unknown): LearnStyleFromArchivesOutput {
           : undefined,
     };
   });
-  return { framing, patterns, suggested_addition };
+  const rawFileAdditions = obj["file_additions"];
+  const file_additions: FileAddition[] = Array.isArray(rawFileAdditions)
+    ? rawFileAdditions.map((fa) => {
+        if (!fa || typeof fa !== "object") {
+          throw new Error("file_addition is not an object");
+        }
+        const o = fa as Record<string, unknown>;
+        return {
+          filename: requireString(o, "filename"),
+          content: requireString(o, "content"),
+        };
+      })
+    : [];
+  return { framing, patterns, suggested_addition, file_additions };
 }
 
 function requireString(obj: Record<string, unknown>, key: string): string {

@@ -86,6 +86,7 @@ export {
 
 export {
   learnStyleFromArchives,
+  type FileAddition,
   type LearnStyleFromArchivesInput,
   type LearnStyleFromArchivesOutput,
   type LearnStyleSample,

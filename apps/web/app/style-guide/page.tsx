@@ -1,25 +1,29 @@
 import { AppHeader } from "@/components/app-header";
-import { PageShell, PlaceholderCard } from "@/components/page-shell";
+import { PageShell } from "@/components/page-shell";
+import { StyleGuideEditor } from "@/components/style-guide-editor";
+import { getMyVoiceStatusAction, readStyleFileAction } from "./actions";
 
-export const metadata = {
-  title: "Style Guide · Smithers",
-};
+export const dynamic = "force-dynamic";
+export const metadata = { title: "Style Guide · Smithers" };
 
-export default function StyleGuidePage() {
+export default async function StyleGuidePage() {
+  const [status, initialContent] = await Promise.all([
+    getMyVoiceStatusAction(),
+    readStyleFileAction("SKILL.md"),
+  ]);
+
   return (
     <>
       <AppHeader
         title="Style Guide"
-        subtitle="Templates and learned voice rules"
+        subtitle="Voice rules and communication patterns"
       />
       <PageShell>
-        <PlaceholderCard
-          title="Templates"
-          description="Editable canonical templates: project brief email, P2 call notes, partner welcome, weekly update — populated from ~/Documents/A8C Claude/Katie Style Guide.md on first run."
-        />
-        <PlaceholderCard
-          title="Learnings"
-          description="Auto-populated rules from draft archival diffs. Each learning has Keep / Merge with-/ Remove buttons. Periodic AI-assisted dedup pass after every 10 archives (review-then-accept)."
+        <StyleGuideEditor
+          initialFilename="SKILL.md"
+          initialContent={initialContent}
+          configured={status.configured}
+          myVoicePath={status.path}
         />
       </PageShell>
     </>

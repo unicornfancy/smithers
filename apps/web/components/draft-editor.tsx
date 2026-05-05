@@ -77,6 +77,22 @@ export function DraftEditor({ draftId, initialBody, archived }: Props) {
         try {
           await archiveDraftAction(draftId);
           toast.success("Draft archived");
+          // Fire-and-forget: learn from this archive in the background.
+          fetch("/api/learn-from-archive", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          })
+            .then((r) => r.json())
+            .then((data: { ok: boolean; applied?: { filename: string }[] }) => {
+              if (data.ok && data.applied && data.applied.length > 0) {
+                const n = data.applied.length;
+                toast.success(
+                  `${n} learning${n === 1 ? "" : "s"} added to style guide`,
+                );
+              }
+            })
+            .catch(() => {}); // silent failure — learning is best-effort
           // Refresh so the page picks up the new state — the editor
           // will re-mount as read-only.
           router.refresh();

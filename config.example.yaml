@@ -15,6 +15,9 @@ paths:
   hive_mind: "~/Team51-Hive-Mind"
   # Where Smithers stores its SQLite cache and logs.
   data: "~/.smithers"
+  # Where your my-voice skill files live (SKILL.md, PARTNER_COMMS.md, etc.).
+  # Leave empty to disable /style-guide editing.
+  my_voice: ""
 
 mcps:
   # ContextA8C: Slack/Linear/GitHub/Zendesk/P2/wpcom aggregator
