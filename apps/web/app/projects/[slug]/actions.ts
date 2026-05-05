@@ -1007,6 +1007,36 @@ export async function snoozeFollowUpAction(
 }
 
 /**
+ * Append a follow-up row with source linkage (source_type + source_ref).
+ * Used by the "Watch for reply" dialog on Zendesk and GitHub rows so the
+ * follow-up can be cross-referenced back to the originating ticket/issue.
+ */
+export async function createLinkedFollowUpAction(
+  projectSlug: string,
+  input: import("@smithers/vault").AppendFollowUpInput,
+): Promise<
+  | { ok: true; follow_up_id: string }
+  | { ok: false; reason: "error"; message?: string }
+> {
+  if (!projectSlug) throw new Error("projectSlug is required");
+  if (!input.task?.trim()) throw new Error("task is required");
+  if (!input.project?.trim()) throw new Error("project is required");
+
+  try {
+    const vault = await getVault();
+    const result = await vault.appendFollowUp(input);
+    revalidatePath(`/projects/${projectSlug}`);
+    return { ok: true, follow_up_id: result.follow_up_id };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Failed to create follow-up",
+    };
+  }
+}
+
+/**
  * Multi-turn conversational Q&A about a call transcript. Sends the full
  * transcript + conversation history + new user message to Claude and
  * returns the assistant's reply as plain text. The transcript never
@@ -1040,72 +1070,6 @@ export async function chatAboutCallAction(
     return {
       ok: false,
       message: err instanceof Error ? err.message : "Chat request failed",
-    };
-  }
-}
-
-/**
- * Convert a project task (open checkbox) into a follow-up row. Appends the
- * follow-up to Follow-ups.md and then removes the checkbox line from the
- * project body so it doesn't appear in both places.
- *
- * Returns discriminated result. On success, call router.refresh() so the
- * workbench re-renders with the task gone and the follow-up visible.
- */
-export async function convertTaskToFollowUpAction(
-  projectSlug: string,
-  taskId: string,
-  fields: { sent_to?: string; sent?: string; follow_up_by?: string },
-): Promise<
-  | { ok: true }
-  | { ok: false; reason: "not-found" | "error"; message?: string }
-> {
-  if (!projectSlug) throw new Error("projectSlug is required");
-  if (!taskId) throw new Error("taskId is required");
-
-  const vault = await getVault();
-  const project = await vault.readProject(projectSlug);
-  if (!project) return { ok: false, reason: "not-found", message: "Project not found" };
-
-  // Resolve the task so we can get its text.
-  const detail = await vault
-    .readProjectDetail(projectSlug)
-    .catch(() => null);
-  if (!detail) return { ok: false, reason: "not-found", message: "Project detail not found" };
-
-  const tasks = parseProjectTasks(detail.body);
-  const task = tasks.find((t) => t.task_id === taskId);
-  if (!task) {
-    return {
-      ok: false,
-      reason: "not-found",
-      message: `Task ${taskId} not found in ${projectSlug}`,
-    };
-  }
-
-  const today = new Date().toISOString().slice(0, 10);
-  const sentTo = fields.sent_to?.trim() ?? "";
-  const sent = fields.sent?.trim() || today;
-  const followUpBy = fields.follow_up_by?.trim() || undefined;
-
-  // Build the task text: prepend "Sent to <name>: " if a recipient was given.
-  const taskText = sentTo ? `${task.text} (sent to ${sentTo})` : task.text;
-
-  try {
-    await vault.appendFollowUp({
-      project: project.name,
-      task: taskText,
-      sent,
-      follow_up_by: followUpBy,
-    });
-    await vault.deleteProjectTask(projectSlug, taskId);
-    revalidatePath(`/projects/${projectSlug}`);
-    return { ok: true };
-  } catch (err) {
-    return {
-      ok: false,
-      reason: "error",
-      message: err instanceof Error ? err.message : "Conversion failed",
     };
   }
 }

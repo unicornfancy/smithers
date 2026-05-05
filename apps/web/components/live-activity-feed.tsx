@@ -25,11 +25,20 @@ import type {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ResolveFollowUpButton } from "@/components/resolve-follow-up-button";
+import { SnoozeFollowUpButton } from "@/components/snooze-follow-up-button";
+import { WatchForReplyDialog } from "@/components/watch-for-reply-dialog";
+
+import type { LinkedFollowUpMap } from "@/app/projects/[slug]/page";
 
 interface LiveActivityFeedProps {
   result: SourceResult<ActivityEvent[]>;
   /** Source-id chips rendered in the header (e.g. ["GitHub", "Slack"]). */
   configured: { label: string; configured: boolean; reason?: string }[];
+  /** Cross-reference map from source_ref to linked follow-up + activity flag. */
+  linkedFollowUps?: LinkedFollowUpMap;
+  projectSlug?: string;
+  projectName?: string;
 }
 
 const SOURCE_BY_LABEL: Record<string, ActivitySource> = {
@@ -44,6 +53,9 @@ const SOURCE_BY_LABEL: Record<string, ActivitySource> = {
 export function LiveActivityFeed({
   result,
   configured,
+  linkedFollowUps,
+  projectSlug,
+  projectName,
 }: LiveActivityFeedProps) {
   const events = result.ok ? result.data : (result.cachedData ?? []);
   const isMock = events.some((e) => e.is_mock);
@@ -169,7 +181,13 @@ export function LiveActivityFeed({
         ) : (
           <ul className="flex flex-col divide-y">
             {filtered.map((event) => (
-              <ActivityRow key={event.id} event={event} />
+              <ActivityRow
+                key={event.id}
+                event={event}
+                linkedFollowUps={linkedFollowUps}
+                projectSlug={projectSlug}
+                projectName={projectName}
+              />
             ))}
           </ul>
         )}
@@ -178,7 +196,17 @@ export function LiveActivityFeed({
   );
 }
 
-function ActivityRow({ event }: { event: ActivityEvent }) {
+function ActivityRow({
+  event,
+  linkedFollowUps,
+  projectSlug,
+  projectName,
+}: {
+  event: ActivityEvent;
+  linkedFollowUps?: LinkedFollowUpMap;
+  projectSlug?: string;
+  projectName?: string;
+}) {
   // Whole-row link when we have a URL — bigger click target than a
   // title-only anchor and matches how Linear/GitHub/Slack feeds work.
   // Keep the timestamp outside so it doesn't underline awkwardly with
@@ -196,45 +224,132 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
     <span className="truncate text-sm leading-snug">{event.title}</span>
   );
 
+  // Extract GitHub issue number for cross-referencing.
+  // Event id format: github:{repo}:issue:{number}
+  const issueNumberMatch =
+    (event.kind === "issue-opened" || event.kind === "issue-closed") &&
+    event.source === "github"
+      ? event.id.match(/:issue:(\d+)$/)
+      : null;
+  const issueNumber = issueNumberMatch ? issueNumberMatch[1]! : null;
+  const linkedFollowUp = issueNumber ? linkedFollowUps?.get(issueNumber) : undefined;
+
   return (
-    <li className="group flex items-start gap-2.5 py-2 first:pt-0 last:pb-0">
-      <span className="text-muted-foreground mt-0.5 shrink-0">
-        <ActivityIcon event={event} />
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <div className="flex items-baseline gap-1.5">
-          {event.actor ? (
-            <span
-              className={cn(
-                "text-foreground shrink-0 text-sm font-medium",
-                event.actor.is_external && "text-amber-700 dark:text-amber-400",
-              )}
-            >
-              {event.actor.name}
-            </span>
-          ) : null}
-          {event.actor?.is_external ? (
-            <Badge
-              variant="outline"
-              className="h-4 shrink-0 border-amber-500/40 px-1 text-[9px] font-normal uppercase text-amber-700 dark:text-amber-400"
-            >
-              partner
-            </Badge>
-          ) : null}
-          {Title}
-          {event.url ? (
-            <ExternalLink className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" />
-          ) : null}
+    <li className="group flex flex-col gap-1 py-2 first:pt-0 last:pb-0">
+      <div className="flex items-start gap-2.5">
+        <span className="text-muted-foreground mt-0.5 shrink-0">
+          <ActivityIcon event={event} />
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div className="flex items-baseline gap-1.5">
+            {event.actor ? (
+              <span
+                className={cn(
+                  "text-foreground shrink-0 text-sm font-medium",
+                  event.actor.is_external && "text-amber-700 dark:text-amber-400",
+                )}
+              >
+                {event.actor.name}
+              </span>
+            ) : null}
+            {event.actor?.is_external ? (
+              <Badge
+                variant="outline"
+                className="h-4 shrink-0 border-amber-500/40 px-1 text-[9px] font-normal uppercase text-amber-700 dark:text-amber-400"
+              >
+                partner
+              </Badge>
+            ) : null}
+            {Title}
+            {event.url ? (
+              <ExternalLink className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" />
+            ) : null}
+          </div>
+          <p className="text-muted-foreground truncate text-[11px]">
+            <SourceLabel source={event.source} />
+            {event.excerpt ? <> · {event.excerpt}</> : null}
+          </p>
         </div>
-        <p className="text-muted-foreground truncate text-[11px]">
-          <SourceLabel source={event.source} />
-          {event.excerpt ? <> · {event.excerpt}</> : null}
-        </p>
+        <span className="text-muted-foreground/80 mt-0.5 shrink-0 text-[11px] tabular-nums">
+          {formatRelative(event.timestamp)}
+        </span>
       </div>
-      <span className="text-muted-foreground/80 mt-0.5 shrink-0 text-[11px] tabular-nums">
-        {formatRelative(event.timestamp)}
-      </span>
+      {issueNumber && projectSlug && projectName ? (
+        <IssueFollowUpInline
+          issueNumber={issueNumber}
+          issueTitle={event.title ?? ""}
+          linkedFollowUp={linkedFollowUp}
+          projectSlug={projectSlug}
+          projectName={projectName}
+        />
+      ) : null}
     </li>
+  );
+}
+
+function IssueFollowUpInline({
+  issueNumber,
+  issueTitle,
+  linkedFollowUp,
+  projectSlug,
+  projectName,
+}: {
+  issueNumber: string;
+  issueTitle: string;
+  linkedFollowUp?: import("@/app/projects/[slug]/page").LinkedFollowUpEntry;
+  projectSlug: string;
+  projectName: string;
+}) {
+  if (!linkedFollowUp) {
+    return (
+      <div className="pl-6">
+        <WatchForReplyDialog
+          projectSlug={projectSlug}
+          projectName={projectName}
+          sourceType="github"
+          sourceRef={issueNumber}
+          defaultTask={`Follow up on #${issueNumber}${issueTitle ? ` — ${issueTitle}` : ""}`}
+        />
+      </div>
+    );
+  }
+
+  const { has_activity, follow_up_by, follow_up_id, task } = linkedFollowUp;
+
+  if (has_activity) {
+    return (
+      <div className="ml-6 flex items-center gap-2 rounded border border-amber-500/40 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+        <span className="flex-1">Response detected — resolve this follow-up?</span>
+        <ResolveFollowUpButton
+          projectSlug={projectSlug}
+          followUpId={follow_up_id}
+          label={task}
+          alwaysVisible
+        />
+        <SnoozeFollowUpButton
+          projectSlug={projectSlug}
+          followUpId={follow_up_id}
+          label={task}
+          alwaysVisible
+        />
+      </div>
+    );
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const daysLeft = follow_up_by
+    ? Math.ceil((Date.parse(follow_up_by) - Date.parse(today)) / 86_400_000)
+    : null;
+  const dueText = follow_up_by
+    ? daysLeft !== null && daysLeft < 0
+      ? `due ${follow_up_by} · ${Math.abs(daysLeft)}d overdue`
+      : `due ${follow_up_by} · ${daysLeft}d left`
+    : "no due date";
+
+  return (
+    <p className="text-muted-foreground pl-6 text-[11px]">
+      Watching for reply · {dueText}
+    </p>
   );
 }
 

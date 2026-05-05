@@ -175,6 +175,9 @@ export interface FollowUp {
   status: FollowUpStatus;
   status_note?: string;
   source?: string;
+  source_type?: "zendesk" | "github" | "slack";
+  /** ticket_id for zendesk, issue number string for github, thread url for slack */
+  source_ref?: string;
 }
 
 export interface DailyNote {

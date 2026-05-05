@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 
 import { ConvertFollowUpToTaskButton } from "@/components/convert-follow-up-to-task-button";
-import { ConvertTaskToFollowUpButton } from "@/components/convert-task-to-follow-up-button";
 
 import type {
   CallRecordingRef,
@@ -186,11 +185,6 @@ export function OpenItemsPanel({
                   <GitHubIcon className="size-3.5" />
                 </a>
               ) : null}
-              <ConvertTaskToFollowUpButton
-                projectSlug={projectSlug}
-                taskId={t.task_id}
-                taskText={t.text}
-              />
               <DeleteProjectTaskButton
                 projectSlug={projectSlug}
                 taskId={t.task_id}

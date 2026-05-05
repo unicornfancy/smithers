@@ -4,7 +4,11 @@ import {
   filterFollowUpsForProject,
   parseProjectTasks,
   splitTasks,
+  type FollowUp,
 } from "@smithers/vault";
+
+export type LinkedFollowUpEntry = FollowUp & { has_activity: boolean };
+export type LinkedFollowUpMap = Map<string, LinkedFollowUpEntry>;
 
 import { LiveActivityFeed } from "@/components/live-activity-feed";
 import { NeedsDecisionPanel } from "@/components/needs-decision-panel";
@@ -209,6 +213,35 @@ export default async function ProjectWorkbenchPage({
     resolved: filterFollowUpsForProject(allFollowUps.resolved, detail),
   };
 
+  // Build a map from source_ref → follow-up + whether the source shows activity
+  // that arrived after the follow-up was sent (= response detected).
+  const linkedFollowUpMap: LinkedFollowUpMap = new Map();
+  const activityEvents =
+    activityResult.ok ? activityResult.data : (activityResult.cachedData ?? []);
+  for (const fu of projectFollowUps.active) {
+    if (!fu.source_type || !fu.source_ref) continue;
+    let has_activity = false;
+    if (fu.source_type === "github") {
+      // Event id format: github:{repo}:issue:{number}
+      const match = activityEvents.find(
+        (e) =>
+          e.source === "github" &&
+          e.id.endsWith(`:issue:${fu.source_ref}`) &&
+          e.timestamp > (fu.sent ?? ""),
+      );
+      has_activity = Boolean(match);
+    } else if (fu.source_type === "zendesk") {
+      const ref = (detail.zendesk_tickets ?? []).find(
+        (t) => t.id === fu.source_ref,
+      );
+      if (ref) {
+        const s = (ref.status ?? "").toLowerCase();
+        has_activity = s === "pending" || s === "solved";
+      }
+    }
+    linkedFollowUpMap.set(fu.source_ref, { ...fu, has_activity });
+  }
+
   const tasks = parseProjectTasks(detail.body);
   const { open, done } = splitTasks(tasks);
 
@@ -269,6 +302,9 @@ export default async function ProjectWorkbenchPage({
         <LiveActivityFeed
           result={activityResult}
           configured={configuredSources}
+          linkedFollowUps={linkedFollowUpMap}
+          projectSlug={detail.slug}
+          projectName={detail.name}
         />
 
         <ProjectBriefPanel project={detail} body={detail.body} />
@@ -302,6 +338,8 @@ export default async function ProjectWorkbenchPage({
             partnerProfile?.display_name ?? detail.partner ?? detail.name
           }
           alwaysShow={isPartner}
+          linkedFollowUps={linkedFollowUpMap}
+          projectName={detail.name}
         />
 
         <CallNotesPanel

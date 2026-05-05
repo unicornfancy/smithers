@@ -14,6 +14,8 @@ import type {
 } from "@smithers/mcp-client";
 import type { FollowUp } from "@smithers/vault";
 
+import type { LinkedFollowUpMap } from "@/app/projects/[slug]/page";
+
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConvertFollowUpToTaskButton } from "@/components/convert-follow-up-to-task-button";
@@ -23,6 +25,7 @@ import { MakePrimaryButton } from "@/components/make-primary-button";
 import { RefreshZendeskMetadataButton } from "@/components/refresh-zendesk-metadata-button";
 import { ResolveFollowUpButton } from "@/components/resolve-follow-up-button";
 import { SnoozeFollowUpButton } from "@/components/snooze-follow-up-button";
+import { WatchForReplyDialog } from "@/components/watch-for-reply-dialog";
 import { ZendeskAttachModal } from "@/components/zendesk-attach-modal";
 import { ZendeskSearchSettingsModal } from "@/components/zendesk-search-settings-modal";
 
@@ -59,6 +62,14 @@ interface Props {
    * ticket is wired up.
    */
   alwaysShow?: boolean;
+  /**
+   * Cross-reference map from source_ref (ticket id) to the linked follow-up
+   * plus whether a response has been detected. When present, each ticket row
+   * shows an inline follow-up status or a "Watch" affordance.
+   */
+  linkedFollowUps?: LinkedFollowUpMap;
+  /** Project display name — passed through to WatchForReplyDialog. */
+  projectName?: string;
 }
 
 /**
@@ -78,6 +89,8 @@ export function ZendeskThreadsPanel({
   recentActivityByTicketId,
   defaultSearchQuery,
   alwaysShow,
+  linkedFollowUps,
+  projectName,
 }: Props) {
   const hasTickets = tickets.length > 0;
   const allFollowUps = [...followUps.active, ...followUps.resolved];
@@ -167,10 +180,12 @@ export function ZendeskThreadsPanel({
               <ThreadCard
                 key={t.id}
                 projectSlug={projectSlug}
+                projectName={projectName}
                 ticket={t}
                 primary={t.id === primaryId}
                 followUps={followUpsByTicket.get(t.id) ?? []}
                 recentActivity={recentActivityByTicketId?.[t.id] ?? []}
+                linkedFollowUp={linkedFollowUps?.get(t.id)}
               />
             ))}
           </ul>
@@ -199,6 +214,7 @@ export function ZendeskThreadsPanel({
                 <ThreadCard
                   key={t.id}
                   projectSlug={projectSlug}
+                  projectName={projectName}
                   ticket={t}
                   primary={t.id === primaryId}
                   followUps={followUpsByTicket.get(t.id) ?? []}
@@ -237,20 +253,93 @@ export function ZendeskThreadsPanel({
   );
 }
 
+/**
+ * Inline follow-up status shown below each ticket row. When a linked follow-up
+ * exists and is active, shows either a watching pill (no response yet) or an
+ * amber banner prompting the user to resolve (response detected). When no
+ * linked follow-up exists, shows a hover "Watch" trigger.
+ */
+function LinkedFollowUpInline({
+  linkedFollowUp,
+  projectSlug,
+  projectName,
+  ticket,
+}: {
+  linkedFollowUp?: import("@/app/projects/[slug]/page").LinkedFollowUpEntry;
+  projectSlug: string;
+  projectName: string;
+  ticket: ZendeskTicketSummary;
+}) {
+  if (!linkedFollowUp) {
+    return (
+      <WatchForReplyDialog
+        projectSlug={projectSlug}
+        projectName={projectName}
+        sourceType="zendesk"
+        sourceRef={ticket.id}
+        defaultTask={`Follow up on #${ticket.id}${ticket.subject ? ` — ${ticket.subject}` : ""}`}
+      />
+    );
+  }
+
+  // Active linked follow-up — show status.
+  const { has_activity, follow_up_by, follow_up_id } = linkedFollowUp;
+
+  if (has_activity) {
+    return (
+      <div className="flex items-center gap-2 rounded border border-amber-500/40 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+        <span className="flex-1">Response detected — resolve this follow-up?</span>
+        <ResolveFollowUpButton
+          projectSlug={projectSlug}
+          followUpId={follow_up_id}
+          label={linkedFollowUp.task}
+          alwaysVisible
+        />
+        <SnoozeFollowUpButton
+          projectSlug={projectSlug}
+          followUpId={follow_up_id}
+          label={linkedFollowUp.task}
+          alwaysVisible
+        />
+      </div>
+    );
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const daysLeft = follow_up_by
+    ? Math.ceil((Date.parse(follow_up_by) - Date.parse(today)) / 86_400_000)
+    : null;
+  const dueText = follow_up_by
+    ? daysLeft !== null && daysLeft < 0
+      ? `due ${follow_up_by} · ${Math.abs(daysLeft)}d overdue`
+      : `due ${follow_up_by} · ${daysLeft}d left`
+    : "no due date";
+
+  return (
+    <p className="text-muted-foreground text-[11px]">
+      Watching for reply · {dueText}
+    </p>
+  );
+}
+
 function ThreadCard({
   projectSlug,
+  projectName,
   ticket,
   primary,
   followUps,
   recentActivity,
   dim = false,
+  linkedFollowUp,
 }: {
   projectSlug: string;
+  projectName?: string;
   ticket: ZendeskTicketSummary;
   primary: boolean;
   followUps: FollowUp[];
   recentActivity: ActivityEvent[];
   dim?: boolean;
+  linkedFollowUp?: import("@/app/projects/[slug]/page").LinkedFollowUpEntry;
 }) {
   const activeFu = followUps.filter((f) => f.status !== "resolved");
   const resolvedFu = followUps.filter((f) => f.status === "resolved");
@@ -271,6 +360,12 @@ function ThreadCard({
         primary={primary}
         dim={dim}
         projectSlug={projectSlug}
+      />
+      <LinkedFollowUpInline
+        linkedFollowUp={linkedFollowUp}
+        projectSlug={projectSlug}
+        projectName={projectName ?? ""}
+        ticket={ticket}
       />
       {followUps.length > 0 ? (
         <div className="border-t pt-2">

@@ -272,6 +272,10 @@ export interface AppendFollowUpInput {
   follow_up_by?: string;
   /** Optional source link or note (e.g. "[[Call Notes/2026-05-01]]"). */
   source?: string;
+  /** Where this follow-up originated — enables cross-reference linking. */
+  source_type?: "zendesk" | "github" | "slack";
+  /** Identifier within the source system (ticket_id, issue number, thread url). */
+  source_ref?: string;
 }
 
 export interface AppendFollowUpResult {
@@ -302,11 +306,13 @@ export async function appendFollowUp(
   const sent = (input.sent ?? today).trim();
   const followUpBy = (input.follow_up_by ?? "").trim();
   const source = (input.source ?? "").trim();
+  const sourceType = (input.source_type ?? "").trim();
+  const sourceRef = (input.source_ref ?? "").trim();
 
   const paths = vaultPaths(opts);
   const raw = (await tryReadFile(paths.followUps)) ?? defaultFollowUpsBody();
 
-  const lines = raw.split(/\r?\n/);
+  let lines = raw.split(/\r?\n/);
   // Find the Open Follow-ups header row + insert after the last data row.
   let openHeaderIdx = -1;
   for (let i = 0; i < lines.length; i++) {
@@ -324,6 +330,25 @@ export async function appendFollowUp(
       `Couldn't find an Open Follow-ups header row in Follow-ups.md`,
     );
   }
+
+  // Auto-migrate: if the header row doesn't yet have "source type" / "source ref"
+  // columns, rewrite the header and its separator row to add them.
+  const headerCellsRaw = splitRow(lines[openHeaderIdx]!);
+  const headerCellsLower = headerCellsRaw.map((c) => c.toLowerCase());
+  const needsMigration =
+    !headerCellsLower.includes("source type") ||
+    !headerCellsLower.includes("source ref");
+  if (needsMigration) {
+    const newHeader = `| ${[...headerCellsRaw, "Source Type", "Source Ref"].join(" | ")} |`;
+    lines[openHeaderIdx] = newHeader;
+    // Rewrite the separator row immediately following the header.
+    const sepIdx = openHeaderIdx + 1;
+    if (sepIdx < lines.length && isSeparatorRow(lines[sepIdx]!.trim())) {
+      const colCount = headerCellsRaw.length + 2;
+      lines[sepIdx] = `|${Array(colCount).fill("---|").join("")}`;
+    }
+  }
+
   // Walk forward from the header to the end of this contiguous table.
   let lastTableLineIdx = openHeaderIdx;
   for (let i = openHeaderIdx + 1; i < lines.length; i++) {
@@ -341,6 +366,8 @@ export async function appendFollowUp(
     "follow-up by": followUpBy,
     status: "⏳ Waiting",
     source,
+    "source type": sourceType,
+    "source ref": sourceRef,
   });
   lines.splice(lastTableLineIdx + 1, 0, newRow);
   await writeFileAtomic(paths.followUps, lines.join("\n"));
@@ -481,8 +508,8 @@ function defaultFollowUpsBody(): string {
 
 ## Open Follow-ups
 
-| Project | Task | Sent | Follow-up By | Status | Source |
-|---|---|---|---|---|---|
+| Project | Task | Sent | Follow-up By | Status | Source | Source Type | Source Ref |
+|---|---|---|---|---|---|---|---|
 
 ---
 
@@ -575,6 +602,14 @@ function rowToFollowUp(parsed: ParsedRow): FollowUp | null {
   const status = classifyStatus(statusText);
   const statusNote = stripStatusEmoji(statusText);
 
+  // Tolerate missing columns (old files without these columns parse as undefined).
+  const rawSourceType = c["source type"] || c["source_type"] || undefined;
+  const sourceType =
+    rawSourceType === "zendesk" || rawSourceType === "github" || rawSourceType === "slack"
+      ? rawSourceType
+      : undefined;
+  const sourceRef = c["source ref"] || c["source_ref"] || undefined;
+
   return {
     follow_up_id: deterministicId(project, task, c["sent"] ?? ""),
     project,
@@ -584,6 +619,8 @@ function rowToFollowUp(parsed: ParsedRow): FollowUp | null {
     status,
     status_note: statusNote || undefined,
     source: c["source"] || undefined,
+    source_type: sourceType,
+    source_ref: sourceRef || undefined,
   };
 }
 
