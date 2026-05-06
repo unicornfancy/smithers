@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 export interface VaultOptions {
   /** Absolute or `~`-prefixed path to the markdown vault. */
   vaultPath: string;
+  /** Absolute or `~`-prefixed path to a local Team51-Hive-Mind clone. Leave empty to skip Hive Mind helpers. */
+  hiveMindPath?: string;
   /**
    * Email domains treated as internal — used by the call-notes attendee classifier.
    * Defaults to ["automattic.com"] when not provided.
@@ -13,6 +15,8 @@ export interface VaultOptions {
 
 export interface ResolvedVaultOptions {
   vaultPath: string;
+  /** Empty string when Hive Mind is not configured. */
+  hiveMindPath: string;
   internalEmailDomains: string[];
 }
 
@@ -27,6 +31,7 @@ export function expandPath(p: string): string {
 export function resolveVaultOptions(opts: VaultOptions): ResolvedVaultOptions {
   return {
     vaultPath: expandPath(opts.vaultPath),
+    hiveMindPath: opts.hiveMindPath ? expandPath(opts.hiveMindPath) : "",
     internalEmailDomains:
       opts.internalEmailDomains?.length
         ? opts.internalEmailDomains

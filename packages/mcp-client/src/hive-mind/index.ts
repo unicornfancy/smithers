@@ -4,6 +4,7 @@ import type { ResolvedMcpClientOptions } from "../config";
 import type { SwrCache } from "../cache";
 import type { HealthRegistry } from "../health";
 import { MockHiveMindTransport } from "./mock";
+import { RealHiveMindTransport } from "./real";
 import type { HiveMindClient } from "./types";
 
 export function createHiveMindClient(
@@ -11,14 +12,15 @@ export function createHiveMindClient(
   cache: SwrCache,
   health: HealthRegistry,
 ): HiveMindClient {
-  // Real Hive Mind MCP isn't published yet; fall back to mock regardless
-  // of the flag so the workbench Partner panel renders without a hard
-  // crash. Real wiring lands when the team's MCP server ships.
+  if (!opts.mockHiveMind) {
+    return new RealHiveMindTransport(opts, cache, health);
+  }
   return new MockHiveMindTransport(opts, cache, health);
 }
 
 export type { HiveMindClient } from "./types";
 export type {
+  HiveMindProjectNotes,
   KnowledgeSearchHit,
   KnowledgeSearchQuery,
   PartnerLookupQuery,

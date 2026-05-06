@@ -221,6 +221,8 @@ async function projectFromFile(
     review_interval_days: fm.review_interval_days,
     nda: fm.nda,
     tags: Array.isArray(fm.tags) ? fm.tags : [],
+    hive_mind_partner_slug: fm.hive_mind_partner_slug,
+    hive_mind_project_slug: fm.hive_mind_project_slug,
     heading,
     modified_at: mtime,
   };

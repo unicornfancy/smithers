@@ -91,6 +91,24 @@ import {
   splitTasks,
   toggleProjectTask,
 } from "./tasks";
+import {
+  getHiveMindBrief,
+  getHiveMindCallTranscripts,
+  getHiveMindDrafts,
+  getHiveMindFollowUps,
+  getHiveMindNotes,
+  getHiveMindPartner,
+  getHiveMindProject,
+  getHiveMindZendesk,
+  type FollowUpRow,
+  type HiveMindBrief,
+  type HiveMindCallTranscript,
+  type HiveMindDraft,
+  type HiveMindFollowUpsData,
+  type HiveMindPartner,
+  type HiveMindProject,
+  type HiveMindZendeskData,
+} from "./hive-mind";
 import { watchVault, type VaultEventHandler } from "./watcher";
 
 export * from "./types";
@@ -144,9 +162,27 @@ export type {
   SaveCallNotesInput,
   CallNoteRef,
 } from "./call-notes";
+export type {
+  FollowUpRow,
+  HiveMindBrief,
+  HiveMindCallTranscript,
+  HiveMindDraft,
+  HiveMindFollowUpsData,
+  HiveMindPartner,
+  HiveMindProject,
+  HiveMindZendeskData,
+} from "./hive-mind";
 export {
   addProjectZendeskTicket,
   appendChatToCallNotes,
+  getHiveMindBrief,
+  getHiveMindCallTranscripts,
+  getHiveMindDrafts,
+  getHiveMindFollowUps,
+  getHiveMindNotes,
+  getHiveMindPartner,
+  getHiveMindProject,
+  getHiveMindZendesk,
   appendDecisionsToProject,
   appendFollowUp,
   appendProjectTask,
@@ -296,6 +332,37 @@ export interface Vault {
   listArchivedDraftsWithDiffs: (
     limit?: number,
   ) => ReturnType<typeof listArchivedDraftsWithDiffs>;
+  getHiveMindPartner: (
+    partnerSlug: string,
+  ) => ReturnType<typeof getHiveMindPartner>;
+  getHiveMindProject: (
+    partnerSlug: string,
+    projectSlug: string,
+  ) => ReturnType<typeof getHiveMindProject>;
+  getHiveMindNotes: (
+    partnerSlug: string,
+    projectSlug: string,
+  ) => ReturnType<typeof getHiveMindNotes>;
+  getHiveMindCallTranscripts: (
+    partnerSlug: string,
+    projectSlug: string,
+  ) => ReturnType<typeof getHiveMindCallTranscripts>;
+  getHiveMindDrafts: (
+    partnerSlug: string,
+    projectSlug: string,
+  ) => ReturnType<typeof getHiveMindDrafts>;
+  getHiveMindZendesk: (
+    partnerSlug: string,
+    projectSlug: string,
+  ) => ReturnType<typeof getHiveMindZendesk>;
+  getHiveMindFollowUps: (
+    partnerSlug: string,
+    projectSlug: string,
+  ) => ReturnType<typeof getHiveMindFollowUps>;
+  getHiveMindBrief: (
+    partnerSlug: string,
+    projectSlug: string,
+  ) => ReturnType<typeof getHiveMindBrief>;
   watch: (handler: VaultEventHandler) => ReturnType<typeof watchVault>;
 }
 
@@ -359,6 +426,22 @@ export function createVault(options: VaultOptions): Vault {
     archiveDraft: (draftId) => archiveDraft(resolved, draftId),
     listArchivedDraftsWithDiffs: (limit) =>
       listArchivedDraftsWithDiffs(resolved, limit),
+    getHiveMindPartner: (partnerSlug) =>
+      getHiveMindPartner(resolved, partnerSlug),
+    getHiveMindProject: (partnerSlug, projectSlug) =>
+      getHiveMindProject(resolved, partnerSlug, projectSlug),
+    getHiveMindNotes: (partnerSlug, projectSlug) =>
+      getHiveMindNotes(resolved, partnerSlug, projectSlug),
+    getHiveMindCallTranscripts: (partnerSlug, projectSlug) =>
+      getHiveMindCallTranscripts(resolved, partnerSlug, projectSlug),
+    getHiveMindDrafts: (partnerSlug, projectSlug) =>
+      getHiveMindDrafts(resolved, partnerSlug, projectSlug),
+    getHiveMindZendesk: (partnerSlug, projectSlug) =>
+      getHiveMindZendesk(resolved, partnerSlug, projectSlug),
+    getHiveMindFollowUps: (partnerSlug, projectSlug) =>
+      getHiveMindFollowUps(resolved, partnerSlug, projectSlug),
+    getHiveMindBrief: (partnerSlug, projectSlug) =>
+      getHiveMindBrief(resolved, partnerSlug, projectSlug),
     watch: (handler) => watchVault(resolved, handler),
   };
 }

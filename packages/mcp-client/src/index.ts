@@ -26,16 +26,19 @@ import { HealthRegistry } from "./health";
 import { createContextA8CClient } from "./context-a8c/index";
 import { createHiveMindClient } from "./hive-mind/index";
 import { createFathomClient } from "./fathom/index";
+import { createLinearClient } from "./linear/index";
 
 import type { ContextA8CClient } from "./context-a8c/index";
 import type { HiveMindClient } from "./hive-mind/index";
 import type { FathomClient } from "./fathom/index";
+import type { LinearClient } from "./linear/index";
 import type { SourceHealth } from "./types";
 
 export interface McpClient {
   contextA8C: ContextA8CClient;
   hiveMind: HiveMindClient;
   fathom: FathomClient;
+  linear: LinearClient;
 
   /** Snapshot of all known source health, for /settings → MCP Health. */
   health(): SourceHealth[];
@@ -54,11 +57,13 @@ export function createMcpClient(opts: McpClientOptions = {}): McpClient {
   const contextA8C = createContextA8CClient(resolved, cache, healthRegistry);
   const hiveMind = createHiveMindClient(resolved, cache, healthRegistry);
   const fathom = createFathomClient(resolved, cache, healthRegistry);
+  const linear = createLinearClient(resolved);
 
   return {
     contextA8C,
     hiveMind,
     fathom,
+    linear,
     config: resolved,
     health: () => healthRegistry.snapshot(),
     hasIssues: () => healthRegistry.hasIssues(),
@@ -101,9 +106,17 @@ export {
 } from "./context-a8c/zendesk-refs";
 export type {
   HiveMindClient,
+  HiveMindProjectNotes,
   PartnerLookupQuery,
   KnowledgeSearchQuery,
   KnowledgeSearchHit,
 } from "./hive-mind/index";
 export type { FathomClient, RecordingsQuery } from "./fathom/index";
+export type {
+  LinearClient,
+  LinearProject,
+  LinearIssue,
+  LinearIssueDetail,
+  LinearProjectUpdate,
+} from "./linear/index";
 export { McpClientError } from "./isolation";

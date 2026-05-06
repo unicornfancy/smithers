@@ -26,6 +26,7 @@ export async function getMcpClient(): Promise<McpClient> {
     mockContextA8C: !cfg.mcps.context_a8c.enabled,
     mockFathom: !cfg.mcps.fathom.enabled,
     mockHiveMind: !cfg.mcps.hive_mind.enabled,
+    mockLinear: !process.env["LINEAR_API_KEY"],
     internalEmailDomains: cfg.identity.internal_email_domains,
   });
   return cached;

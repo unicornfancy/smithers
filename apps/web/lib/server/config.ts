@@ -21,6 +21,7 @@ export interface SmithersConfig {
     vault: string;
     hive_mind: string;
     data: string;
+    my_voice?: string;
   };
   mcps: {
     context_a8c: { enabled: boolean; endpoint?: string };
@@ -62,6 +63,7 @@ const DEFAULTS: SmithersConfig = {
     vault: "~/Documents/A8C Claude",
     hive_mind: "~/Team51-Hive-Mind",
     data: "~/.smithers",
+    my_voice: "",
   },
   mcps: {
     context_a8c: { enabled: false },
@@ -155,6 +157,9 @@ function resolvePaths(
       vault: resolveOne(cfg.paths.vault, repoRoot),
       hive_mind: resolveOne(cfg.paths.hive_mind, repoRoot),
       data: resolveOne(cfg.paths.data, repoRoot),
+      my_voice: cfg.paths.my_voice
+        ? resolveOne(cfg.paths.my_voice, repoRoot)
+        : "",
     },
   };
 }
@@ -179,7 +184,11 @@ function mergeWithDefaults(
           ? partial.identity.internal_email_domains
           : DEFAULTS.identity.internal_email_domains,
     },
-    paths: { ...DEFAULTS.paths, ...partial.paths },
+    paths: {
+      ...DEFAULTS.paths,
+      ...partial.paths,
+      my_voice: partial.paths?.my_voice ?? DEFAULTS.paths.my_voice ?? "",
+    },
     mcps: {
       context_a8c: { ...DEFAULTS.mcps.context_a8c, ...partial.mcps?.context_a8c },
       hive_mind: { ...DEFAULTS.mcps.hive_mind, ...partial.mcps?.hive_mind },

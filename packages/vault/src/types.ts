@@ -76,6 +76,11 @@ export interface ProjectFrontmatter {
   nda?: boolean;
 
   tags?: string[];
+
+  /** Override the partner slug used when calling Hive Mind helpers (when it differs from the Smithers slug). */
+  hive_mind_partner_slug?: string;
+  /** Override the project slug used when calling Hive Mind helpers (when it differs from the Smithers slug). */
+  hive_mind_project_slug?: string;
 }
 
 /** A project as Smithers sees it — sourced from vault info.md or a flat `Projects/<name>.md`. */
@@ -117,6 +122,9 @@ export interface Project {
   review_interval_days?: number;
   nda?: boolean;
   tags: string[];
+
+  hive_mind_partner_slug?: string;
+  hive_mind_project_slug?: string;
 
   /** First H1 header of the body, when present. Often equal to `name`. */
   heading?: string;

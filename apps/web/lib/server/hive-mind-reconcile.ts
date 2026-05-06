@@ -8,9 +8,9 @@ import {
   hiveMindPartnerPath,
   listHiveMindPartners,
   readHiveMindPartnerTemplate,
-  writeHiveMindPartnerKnowledge,
   type HiveMindPartnerSummary,
 } from "./hive-mind-fs";
+import { getMcpClient } from "./mcp";
 import { getVault } from "./vault";
 
 export interface VaultPartnerProject {
@@ -157,12 +157,21 @@ export async function applyHiveMindEntry(
       error: `Hive Mind already has an entry for ${partnerSlug}. Edit it directly to update.`,
     };
   }
+  const path = await hiveMindPartnerPath(partnerSlug);
+  if (!path) {
+    return { ok: false, error: "Could not resolve Hive Mind path." };
+  }
   try {
-    const result = await writeHiveMindPartnerKnowledge(
+    const mcp = await getMcpClient();
+    await mcp.hiveMind.writePartnerFile(
       partnerSlug,
+      "partner-knowledge.md",
       preview.content,
     );
-    return { ok: true, path: result.path };
+    await mcp.hiveMind.commit(
+      `feat(partners): add ${partnerSlug} partner-knowledge.md`,
+    );
+    return { ok: true, path };
   } catch (err) {
     return {
       ok: false,

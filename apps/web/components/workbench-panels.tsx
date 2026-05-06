@@ -5,9 +5,9 @@ import {
   CheckCircle2,
   Clock,
   FileEdit,
-  FolderOpen,
   Inbox,
   ListChecks,
+  NotebookText,
   Phone,
   ShieldCheck,
   StickyNote,
@@ -17,8 +17,10 @@ import { ConvertFollowUpToTaskButton } from "@/components/convert-follow-up-to-t
 
 import type {
   CallRecordingRef,
+  LinearProjectUpdate,
   PartnerProfile,
 } from "@smithers/mcp-client";
+import type { HiveMindCallTranscript } from "@smithers/vault";
 import type {
   Draft,
   FollowUp,
@@ -34,8 +36,10 @@ import { Markdown } from "@/components/markdown";
 import { AddProjectTaskInput } from "@/components/add-project-task-input";
 import { DeleteProjectTaskButton } from "@/components/delete-project-task-button";
 import { EditableTaskText } from "@/components/editable-task-text";
+import { AddProjectLogNoteInput } from "@/components/add-project-log-note-input";
 import { ProcessCallDialog } from "@/components/process-call-dialog";
 import { ProjectTaskCheckbox } from "@/components/project-task-checkbox";
+import { ViewTranscriptButton } from "@/components/view-transcript-button";
 
 // -- Section primitive ----------------------------------------------------
 
@@ -83,30 +87,131 @@ function ComingSoon({ children }: { children: React.ReactNode }) {
   );
 }
 
-// -- Project brief --------------------------------------------------------
+// -- Project Log ----------------------------------------------------------
 
-export function ProjectBriefPanel({
+interface ProjectLogEntry {
+  date: string;
+  heading: string;
+  body: string;
+  source: "notes" | "linear";
+  health?: string;
+  author?: string;
+}
+
+function parseNotesEntries(body: string): ProjectLogEntry[] {
+  if (!body.trim()) return [];
+  const entries: ProjectLogEntry[] = [];
+  // Split on lines that start "### YYYY-MM-DD"
+  const parts = body.split(/(?=^### \d{4}-\d{2}-\d{2})/m);
+  for (const part of parts) {
+    const match = part.match(/^### (\d{4}-\d{2}-\d{2})(?:\s+[—\-–]\s+(.+))?\s*\n?([\s\S]*)$/);
+    if (!match) continue;
+    const date = match[1];
+    if (!date) continue;
+    const heading = match[2] ?? "Note";
+    const bodyText = match[3] ?? "";
+    entries.push({
+      date,
+      heading: heading.trim(),
+      body: bodyText.trim(),
+      source: "notes",
+    });
+  }
+  return entries;
+}
+
+function linearUpdateToEntry(update: LinearProjectUpdate): ProjectLogEntry {
+  return {
+    date: update.createdAt.slice(0, 10),
+    heading: "Linear Update",
+    body: update.body,
+    source: "linear",
+    health: update.health,
+    author: update.user.displayName,
+  };
+}
+
+export function ProjectLogPanel({
   project,
-  body,
+  projectNotes,
+  linearUpdates,
 }: {
   project: Project;
-  body: string;
+  projectNotes: string | null;
+  linearUpdates: LinearProjectUpdate[];
 }) {
+  const notesEntries = projectNotes ? parseNotesEntries(projectNotes) : [];
+  const linearEntries = linearUpdates.map(linearUpdateToEntry);
+  const all = [...notesEntries, ...linearEntries].sort((a, b) =>
+    b.date.localeCompare(a.date),
+  );
+
   return (
     <Section
-      icon={<FolderOpen className="size-4" />}
-      title="Project brief"
+      icon={<NotebookText className="size-4" />}
+      title="Project log"
       meta={`updated ${formatDate(project.modified_at)}`}
     >
-      {body.trim().length > 0 ? (
-        <Markdown source={body} />
-      ) : (
-        <p className="text-muted-foreground text-sm italic">
-          No body content in {project.source.relative_path}. Add some markdown
-          there and it will render here.
+      <AddProjectLogNoteInput
+        projectSlug={project.slug}
+        hiveMindConfigured={Boolean(project.hive_mind_partner_slug)}
+      />
+      {all.length === 0 ? (
+        <p className="text-muted-foreground mt-3 text-sm italic">
+          No project log entries yet.
         </p>
+      ) : (
+        <div className="mt-3 flex flex-col divide-y">
+          {all.map((entry, i) => (
+            <div key={`${entry.source}-${entry.date}-${i}`} className="py-3 first:pt-0 last:pb-0">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-muted-foreground text-[11px] tabular-nums">
+                  {entry.date}
+                </span>
+                <span className="text-sm font-medium leading-snug">
+                  {entry.heading}
+                </span>
+                {entry.health ? <HealthBadgeInline health={entry.health} /> : null}
+                {entry.author ? (
+                  <span className="text-muted-foreground text-[11px]">
+                    {entry.author}
+                  </span>
+                ) : null}
+              </div>
+              {entry.body ? (
+                <div className="text-muted-foreground text-sm">
+                  <Markdown source={entry.body} />
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
       )}
     </Section>
+  );
+}
+
+function HealthBadgeInline({ health }: { health: string }) {
+  const styles: Record<string, string> = {
+    onTrack: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+    atRisk: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+    offTrack: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  };
+  const label: Record<string, string> = {
+    onTrack: "On Track",
+    atRisk: "At Risk",
+    offTrack: "Off Track",
+  };
+  const cls = styles[health] ?? "bg-muted text-muted-foreground";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium",
+        cls,
+      )}
+    >
+      {label[health] ?? health}
+    </span>
   );
 }
 
@@ -503,6 +608,7 @@ export function CallNotesPanel({
   projectName,
   recordings,
   savedNotesByRecordingId,
+  callTranscripts,
 }: {
   projectSlug: string;
   projectName: string;
@@ -517,6 +623,7 @@ export function CallNotesPanel({
     string,
     { relative_path: string; analyzed_at: string }
   >;
+  callTranscripts?: HiveMindCallTranscript[];
 }) {
   if (recordings.length === 0) {
     return (
@@ -532,6 +639,12 @@ export function CallNotesPanel({
       </Section>
     );
   }
+  const transcriptByUrl = new Map(
+    (callTranscripts ?? [])
+      .filter((t) => t.frontmatter.recording_url)
+      .map((t) => [t.frontmatter.recording_url!, t]),
+  );
+
   return (
     <Section
       icon={<Phone className="size-4" />}
@@ -542,6 +655,7 @@ export function CallNotesPanel({
       <ul className="flex flex-col divide-y">
         {recordings.map((r) => {
           const savedNotes = savedNotesByRecordingId?.[r.recording_id];
+          const matchedTranscript = r.source_url ? transcriptByUrl.get(r.source_url) : undefined;
           return (
             <li
               key={r.recording_id}
@@ -568,6 +682,9 @@ export function CallNotesPanel({
                     </span>
                   ) : null}
                 </p>
+                {matchedTranscript ? (
+                  <ViewTranscriptButton transcript={matchedTranscript} />
+                ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 <ProcessCallDialog projectSlug={projectSlug} recording={r} />

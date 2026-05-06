@@ -2,6 +2,10 @@
 
 import type { PartnerProfile, SourceResult } from "../types";
 
+export interface HiveMindProjectNotes {
+  body: string;
+}
+
 export interface PartnerLookupQuery {
   /** Partner slug as stored in info.md frontmatter `partner:`. */
   partner_slug: string;
@@ -32,4 +36,38 @@ export interface HiveMindClient {
   searchKnowledge(
     query: KnowledgeSearchQuery,
   ): Promise<SourceResult<KnowledgeSearchHit[]>>;
+
+  writeProjectFile(
+    partner: string,
+    project: string,
+    filename: string,
+    content: string,
+  ): Promise<void>;
+
+  writePartnerFile(
+    partner: string,
+    filename: string,
+    content: string,
+  ): Promise<void>;
+
+  commit(message: string): Promise<{ sha: string; message: string }>;
+
+  updateProjectInfo(
+    partner: string,
+    project: string,
+    fields: Record<string, unknown>,
+  ): Promise<void>;
+
+  addProjectNote(
+    partner: string,
+    project: string,
+    date: string,
+    heading: string,
+    body: string,
+  ): Promise<void>;
+
+  getHiveMindNotes(
+    partner: string,
+    project: string,
+  ): Promise<HiveMindProjectNotes | null>;
 }

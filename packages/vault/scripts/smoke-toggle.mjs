@@ -902,5 +902,97 @@ if (editedMarkersTask.due_date !== "2026-05-20") throw new Error(`expected due_d
 
 console.log("[markers] edit: markers preserved after text rename, clean text in task_id, fields correct");
 
+// --- Hive Mind helpers ---
+// These require hiveMindPath to be configured in config.local.yaml.
+// They read from <hiveMindPath>/knowledge/partners/_example-partner/_example-project/.
+// If hiveMindPath is not set (empty string), all helpers return null / [].
+import {
+  getHiveMindCallTranscripts,
+  getHiveMindDrafts,
+  getHiveMindNotes,
+  getHiveMindPartner,
+  getHiveMindProject,
+} from "../src/hive-mind.ts";
+
+// Test with no hiveMindPath configured: all helpers return null / []
+const hmOptsEmpty = resolveVaultOptions({ vaultPath: root });
+const hmPartnerNull = await getHiveMindPartner(hmOptsEmpty, "_example-partner");
+if (hmPartnerNull !== null) throw new Error("[hive-mind] expected null when hiveMindPath empty");
+const hmProjectNull = await getHiveMindProject(hmOptsEmpty, "_example-partner", "_example-project");
+if (hmProjectNull !== null) throw new Error("[hive-mind] expected null when hiveMindPath empty");
+const hmNotesNull = await getHiveMindNotes(hmOptsEmpty, "_example-partner", "_example-project");
+if (hmNotesNull !== null) throw new Error("[hive-mind] expected null when hiveMindPath empty");
+const hmCallNotesEmpty = await getHiveMindCallTranscripts(hmOptsEmpty, "_example-partner", "_example-project");
+if (hmCallNotesEmpty.length !== 0) throw new Error("[hive-mind] expected [] when hiveMindPath empty");
+const hmDraftsEmpty = await getHiveMindDrafts(hmOptsEmpty, "_example-partner", "_example-project");
+if (hmDraftsEmpty.length !== 0) throw new Error("[hive-mind] expected [] when hiveMindPath empty");
+console.log("[hive-mind] no-hiveMindPath: all helpers return null/[] correctly");
+
+// If config.local.yaml has hiveMindPath set, test against the real Hive Mind repo.
+// Smoke passes without this — configure hiveMindPath to exercise the live paths.
+import { readFile as readFileAsync } from "node:fs/promises";
+import { resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const repoRoot = resolvePath(__dirname, "..", "..", "..");
+let hiveMindPath = "";
+for (const name of ["config.local.yaml", "config.yaml", "config.example.yaml"]) {
+  try {
+    const raw = await readFileAsync(resolvePath(repoRoot, name), "utf-8");
+    const parsed = yaml.load(raw);
+    const p = parsed?.paths?.hive_mind ?? "";
+    if (p && p !== "~/Team51-Hive-Mind") {
+      hiveMindPath = p.startsWith("~/")
+        ? resolvePath(process.env.HOME, p.slice(2))
+        : resolvePath(p);
+      break;
+    }
+    if (p) {
+      const expanded = p.startsWith("~/")
+        ? resolvePath(process.env.HOME, p.slice(2))
+        : resolvePath(p);
+      // Only use it if the path actually exists
+      try { await readFileAsync(resolvePath(expanded, "knowledge", "partners", "_example-partner", "partner-knowledge.md")); hiveMindPath = expanded; break; } catch {}
+    }
+  } catch {}
+}
+
+if (hiveMindPath) {
+  const hmOpts = resolveVaultOptions({ vaultPath: root, hiveMindPath });
+
+  const hmPartner = await getHiveMindPartner(hmOpts, "_example-partner");
+  if (!hmPartner) throw new Error("[hive-mind] getHiveMindPartner returned null for _example-partner");
+  if (!hmPartner.title) throw new Error("[hive-mind] expected title in partner frontmatter");
+  if (!hmPartner.body) throw new Error("[hive-mind] expected non-empty body");
+  console.log(`[hive-mind] getHiveMindPartner: title="${hmPartner.title}" nda=${hmPartner.nda}`);
+
+  const hmProject = await getHiveMindProject(hmOpts, "_example-partner", "_example-project");
+  if (!hmProject) throw new Error("[hive-mind] getHiveMindProject returned null for _example-project");
+  if (!hmProject.title) throw new Error("[hive-mind] expected title in project frontmatter");
+  console.log(`[hive-mind] getHiveMindProject: title="${hmProject.title}" status="${hmProject.status}"`);
+
+  const hmNotes = await getHiveMindNotes(hmOpts, "_example-partner", "_example-project");
+  if (hmNotes === null) throw new Error("[hive-mind] getHiveMindNotes returned null");
+  console.log(`[hive-mind] getHiveMindNotes: ${hmNotes.length} chars`);
+
+  const hmCallNotes = await getHiveMindCallTranscripts(hmOpts, "_example-partner", "_example-project");
+  console.log(`[hive-mind] getHiveMindCallTranscripts: ${hmCallNotes.length} file(s)`);
+
+  const hmDrafts = await getHiveMindDrafts(hmOpts, "_example-partner", "_example-project");
+  console.log(`[hive-mind] getHiveMindDrafts: ${hmDrafts.length} file(s)`);
+
+  // Missing partner/project returns null without throwing
+  const hmMissing = await getHiveMindPartner(hmOpts, "no-such-partner-xyz");
+  if (hmMissing !== null) throw new Error("[hive-mind] expected null for missing partner");
+  const hmMissingProject = await getHiveMindProject(hmOpts, "_example-partner", "no-such-project-xyz");
+  if (hmMissingProject !== null) throw new Error("[hive-mind] expected null for missing project");
+
+  console.log("[hive-mind] live: all helpers pass");
+} else {
+  console.log("[hive-mind] skipping live tests — configure paths.hive_mind in config.local.yaml to enable");
+}
+
 console.log(`[smoke] cleaning up ${root}`);
 rmSync(root, { recursive: true, force: true });

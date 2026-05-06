@@ -1,7 +1,7 @@
 import "server-only";
 
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile, readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
 
 import { parseMarkdown } from "@smithers/vault";
 
@@ -35,7 +35,6 @@ export interface HiveMindPartnerSummary {
 }
 
 const KNOWLEDGE_FILE = "partner-knowledge.md";
-const TEMPLATE_FILE = "partner-knowledge.md";
 
 /**
  * Resolve the absolute path to the Hive Mind clone, expanding `~` and
@@ -137,51 +136,12 @@ export async function hiveMindPartnerPath(slug: string): Promise<string | null> 
 export async function readHiveMindPartnerTemplate(): Promise<string | null> {
   const status = await hiveMindAvailable();
   if (!status.available || !status.path) return null;
-  const path = join(status.path, "templates", TEMPLATE_FILE);
+  const path = join(status.path, "templates", KNOWLEDGE_FILE);
   try {
     return await readFile(path, "utf-8");
   } catch {
     return null;
   }
-}
-
-/**
- * Write a new partner-knowledge.md under knowledge/partners/<slug>/.
- * Creates the directory if missing. Refuses to overwrite an existing
- * file — caller should check first via hiveMindPartnerExists.
- */
-export async function writeHiveMindPartnerKnowledge(
-  slug: string,
-  content: string,
-): Promise<{ path: string; created: boolean }> {
-  const path = await hiveMindPartnerPath(slug);
-  if (!path) {
-    throw new Error(
-      "Hive Mind path is not configured. Set paths.hive_mind in config.",
-    );
-  }
-  // Refuse to overwrite. The reconcile flow gates on hiveMindPartnerExists
-  // already, but check again here defensively in case state changed
-  // between preview and apply.
-  try {
-    await stat(path);
-    throw new Error(
-      `Refusing to overwrite existing ${path}. Edit the file directly if you want to update it.`,
-    );
-  } catch (err) {
-    // ENOENT is the happy path — file doesn't exist, proceed with write.
-    if (
-      err instanceof Error &&
-      "code" in err &&
-      (err as NodeJS.ErrnoException).code !== "ENOENT"
-    ) {
-      throw err;
-    }
-  }
-
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, content, "utf-8");
-  return { path, created: true };
 }
 
 // --- internals ---

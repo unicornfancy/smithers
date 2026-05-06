@@ -5,6 +5,8 @@ import {
   parseProjectTasks,
   splitTasks,
   type FollowUp,
+  type FollowUpRow,
+  type HiveMindFollowUpsData,
 } from "@smithers/vault";
 
 export type LinkedFollowUpEntry = FollowUp & { has_activity: boolean };
@@ -15,6 +17,10 @@ import { NeedsDecisionPanel } from "@/components/needs-decision-panel";
 import { ZendeskThreadsPanel } from "@/components/zendesk-threads-panel";
 import { PageShell } from "@/components/page-shell";
 import { WorkbenchHeader } from "@/components/workbench-header";
+import { ProjectStatusCard } from "@/components/project-status-card";
+import { HiveMindDraftsSection } from "@/components/hive-mind-drafts-section";
+import { PartnerCard } from "@/components/partner-card";
+import { ProjectBriefSection } from "@/components/project-brief-section";
 import {
   CallNotesPanel,
   DraftsForProjectPanel,
@@ -22,7 +28,7 @@ import {
   OpenItemsPanel,
   PartnerInfoPanel,
   PersonalNotesPanel,
-  ProjectBriefPanel,
+  ProjectLogPanel,
 } from "@/components/workbench-panels";
 import { ForYouTodayPanel } from "@/components/for-you-today-panel";
 import { getAgentRuntimeStatus } from "@/lib/server/agents";
@@ -70,6 +76,15 @@ export default async function ProjectWorkbenchPage({
 
   // Pull project-scoped data in parallel.
   const mcp = await getMcpClient();
+  const hmPartnerSlug = detail.hive_mind_partner_slug ?? detail.slug;
+  const hmProjectSlug = detail.hive_mind_project_slug ?? detail.slug;
+  const hmPartnerKnowledgePath = vault.options.hiveMindPath
+    ? `file://${vault.options.hiveMindPath}/knowledge/partners/${hmPartnerSlug}/partner-knowledge.md`
+    : null;
+  const hmBriefPath = vault.options.hiveMindPath
+    ? `file://${vault.options.hiveMindPath}/knowledge/partners/${hmPartnerSlug}/${hmProjectSlug}/briefs/project-brief.md`
+    : null;
+  const hmIsConfigured = Boolean(detail.hive_mind_partner_slug);
   const [
     allDrafts,
     allFollowUps,
@@ -78,6 +93,16 @@ export default async function ProjectWorkbenchPage({
     recordingsResult,
     stalls,
     agentStatus,
+    linearProject,
+    linearPhaseIssues,
+    linearUpdates,
+    projectNotes,
+    hiveMindPartner,
+    callTranscripts,
+    hiveMindDrafts,
+    hiveMindZendesk,
+    hiveMindFollowUps,
+    hiveMindBrief,
   ] = await Promise.all([
       vault.listDrafts().catch(() => []),
       vault
@@ -112,7 +137,32 @@ export default async function ProjectWorkbenchPage({
         },
       })),
       getAgentRuntimeStatus(),
+      detail.linear_project_id
+        ? mcp.linear.getProject(detail.linear_project_id).catch(() => null)
+        : Promise.resolve(null),
+      detail.linear_project_id
+        ? mcp.linear.getProjectIssues(detail.linear_project_id).catch(() => [])
+        : Promise.resolve([]),
+      detail.linear_project_id
+        ? mcp.linear.getProjectUpdates(detail.linear_project_id).catch(() => [])
+        : Promise.resolve([]),
+      vault.getHiveMindNotes(hmPartnerSlug, hmProjectSlug).catch(() => null),
+      vault.getHiveMindPartner(hmPartnerSlug).catch(() => null),
+      vault.getHiveMindCallTranscripts(hmPartnerSlug, hmProjectSlug).catch(() => []),
+      vault.getHiveMindDrafts(hmPartnerSlug, hmProjectSlug).catch(() => []),
+      vault.getHiveMindZendesk(hmPartnerSlug, hmProjectSlug).catch(() => null),
+      vault.getHiveMindFollowUps(hmPartnerSlug, hmProjectSlug).catch(() => null),
+      vault.getHiveMindBrief(hmPartnerSlug, hmProjectSlug).catch(() => null),
     ]);
+
+  // Find the active phase (first started issue) and fetch its subtasks.
+  const activePhaseIssue =
+    linearPhaseIssues.find((i) => i.state.type === "started") ?? null;
+  const activePhaseSubtasks = activePhaseIssue
+    ? await mcp.linear
+        .getSubtasks(activePhaseIssue.identifier)
+        .catch(() => [])
+    : [];
 
   const partnerProfile =
     partnerResult && partnerResult.ok
@@ -135,6 +185,18 @@ export default async function ProjectWorkbenchPage({
     updated_at: ref.updated_at ?? null,
     url: `https://automattic.zendesk.com/agent/tickets/${ref.id}`,
   }));
+
+  // Prefer Hive-Mind zendesk.md as the ticket source when connected.
+  const effectiveZendeskTickets = hiveMindZendesk
+    ? hiveMindZendesk.tickets.map((t) => ({
+        id: String(t.ticket_id),
+        subject: t.subject || null,
+        status: t.status || null,
+        priority: null as string | null,
+        updated_at: null as string | null,
+        url: t.url,
+      }))
+    : zendeskTickets;
 
   // Eager-fetch recent comments only for *active* tickets — closed
   // ones go into a folded disclosure that the user usually won't open,
@@ -212,6 +274,28 @@ export default async function ProjectWorkbenchPage({
     active: filterFollowUpsForProject(allFollowUps.active, detail),
     resolved: filterFollowUpsForProject(allFollowUps.resolved, detail),
   };
+
+  // Prefer Hive-Mind follow-ups.md as the data source when connected.
+  const detailName = detail.name;
+  function hmFollowUpToVault(row: FollowUpRow): FollowUp {
+    const st = row.source_type as "zendesk" | "github" | "slack" | undefined;
+    return {
+      follow_up_id: row.id,
+      project: detailName,
+      task: row.task,
+      sent: row.sent_date || "",
+      follow_up_by: row.follow_by || undefined,
+      status: row.status.toLowerCase().includes("resolved") ? "resolved" : "waiting",
+      source_type: st || undefined,
+      source_ref: row.source_ref || undefined,
+    };
+  }
+  const effectiveFollowUps = hiveMindFollowUps
+    ? {
+        active: hiveMindFollowUps.active.map(hmFollowUpToVault),
+        resolved: hiveMindFollowUps.resolved.map(hmFollowUpToVault),
+      }
+    : projectFollowUps;
 
   // Build a map from source_ref → follow-up + whether the source shows activity
   // that arrived after the follow-up was sent (= response detected).
@@ -307,7 +391,21 @@ export default async function ProjectWorkbenchPage({
           projectName={detail.name}
         />
 
-        <ProjectBriefPanel project={detail} body={detail.body} />
+        {linearProject ? (
+          <ProjectStatusCard
+            linearProject={linearProject}
+            linearPhaseIssues={linearPhaseIssues}
+            activePhaseSubtasks={activePhaseSubtasks}
+          />
+        ) : null}
+
+        <ProjectBriefSection brief={hiveMindBrief} editPath={hmBriefPath} />
+
+        <ProjectLogPanel
+          project={detail}
+          projectNotes={projectNotes}
+          linearUpdates={linearUpdates}
+        />
 
         <div className="grid gap-3 lg:grid-cols-2">
           <OpenItemsPanel
@@ -321,18 +419,21 @@ export default async function ProjectWorkbenchPage({
             drafts={projectDrafts}
             projectName={detail.name}
           />
+          {hiveMindDrafts.length > 0 ? (
+            <HiveMindDraftsSection drafts={hiveMindDrafts} />
+          ) : null}
         </div>
 
         <ZendeskThreadsPanel
           projectSlug={detail.slug}
-          tickets={zendeskTickets}
+          tickets={effectiveZendeskTickets}
           refreshHints={[
             partnerProfile?.display_name ?? "",
             detail.partner ? detail.partner.replace(/-/g, " ") : "",
             detail.name,
           ].filter(Boolean)}
           savedSearchTerms={detail.zendesk_search_terms ?? []}
-          followUps={projectFollowUps}
+          followUps={effectiveFollowUps}
           recentActivityByTicketId={recentActivityByTicketId}
           defaultSearchQuery={
             partnerProfile?.display_name ?? detail.partner ?? detail.name
@@ -347,6 +448,7 @@ export default async function ProjectWorkbenchPage({
           projectName={detail.name}
           recordings={projectRecordings}
           savedNotesByRecordingId={savedCallNotesByRecordingId}
+          callTranscripts={callTranscripts}
         />
 
         {isPartner ? (
@@ -354,6 +456,12 @@ export default async function ProjectWorkbenchPage({
         ) : null}
 
         <PersonalNotesPanel notes={detail.notes} />
+
+        <PartnerCard
+          partner={hiveMindPartner}
+          editPath={hmPartnerKnowledgePath}
+          hmIsConfigured={hmIsConfigured}
+        />
       </PageShell>
     </>
   );

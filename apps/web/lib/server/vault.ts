@@ -17,6 +17,7 @@ export async function getVault(): Promise<Vault> {
   const config = await loadConfig();
   cached = createVault({
     vaultPath: config.paths.vault,
+    hiveMindPath: config.paths.hive_mind,
     internalEmailDomains: config.identity.internal_email_domains,
   });
   return cached;

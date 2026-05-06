@@ -17,6 +17,8 @@ export interface McpClientOptions {
   mockFathom?: boolean;
   /** Override the default for Hive Mind only. */
   mockHiveMind?: boolean;
+  /** Override the default for Linear only. */
+  mockLinear?: boolean;
   /**
    * Email domains treated as internal — used to classify activity actors.
    * Defaults to ["automattic.com"].
@@ -43,6 +45,7 @@ export interface ResolvedMcpClientOptions {
   mockContextA8C: boolean;
   mockFathom: boolean;
   mockHiveMind: boolean;
+  mockLinear: boolean;
   internalEmailDomains: string[];
   ttl: DefaultTtls;
 }
@@ -61,11 +64,13 @@ export function resolveMcpClientOptions(
   const mockContextA8C = opts.mockContextA8C ?? defaultMock;
   const mockFathom = opts.mockFathom ?? defaultMock;
   const mockHiveMind = opts.mockHiveMind ?? defaultMock;
+  const mockLinear = opts.mockLinear ?? defaultMock;
   return {
     mock: mockContextA8C,
     mockContextA8C,
     mockFathom,
     mockHiveMind,
+    mockLinear,
     internalEmailDomains:
       opts.internalEmailDomains?.length
         ? opts.internalEmailDomains

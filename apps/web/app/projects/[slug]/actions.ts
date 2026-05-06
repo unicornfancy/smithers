@@ -29,6 +29,7 @@ import type { ChatMessage, UpdateProjectFrontmatterPatch, UpdateFollowUpPatch } 
 import {
   filterFollowUpsForProject,
   parseProjectTasks,
+  slugify,
   splitTasks,
 } from "@smithers/vault";
 
@@ -171,6 +172,32 @@ export async function attachZendeskTicketAction(
   const result = await vault.addProjectZendeskTicket(slug, arg);
 
   revalidatePath(`/projects/${slug}`);
+
+  // Dual-write: sync zendesk.md in Hive Mind when connected.
+  const project = await vault.readProject(slug).catch(() => null);
+  if (project?.hive_mind_partner_slug) {
+    const hmPartner = project.hive_mind_partner_slug;
+    const hmProject = project.hive_mind_project_slug ?? project.slug;
+    try {
+      const allTickets = result.zendesk_tickets;
+      const content = serializeHMZendesk({
+        search_terms: project.zendesk_search_terms ?? [],
+        last_refreshed: new Date().toISOString().slice(0, 10),
+        tickets: allTickets.map((t) => ({
+          ticket_id: parseInt(t.id, 10),
+          subject: t.subject ?? "",
+          status: t.status ?? "",
+          url: `https://automattic.zendesk.com/agent/tickets/${t.id}`,
+        })),
+      });
+      const mcp = await getMcpClient();
+      await mcp.hiveMind.writeProjectFile(hmPartner, hmProject, "zendesk.md", content);
+      await mcp.hiveMind.commit(`zendesk: sync ticket list for ${hmPartner}/${hmProject}`);
+    } catch {
+      // HM sync failure is non-fatal.
+    }
+  }
+
   return { added: result.added, total: result.zendesk_tickets.length };
 }
 
@@ -555,8 +582,46 @@ export async function analyzeCallAction(
       style,
       additionalInstructions: opts?.additionalInstructions,
     });
-    // Persist to Call Notes/ so subsequent Process clicks hit the cache.
-    // Coerce optional fields to defaults the vault shape expects.
+    // Write to Hive Mind call-transcripts/ as the primary record.
+    const hmPartnerSlug = project.hive_mind_partner_slug ?? project.partner ?? project.slug;
+    const hmProjectSlug = project.hive_mind_project_slug ?? project.slug;
+    const today = new Date().toISOString().slice(0, 10);
+    const callDate = opts?.recorded_at
+      ? opts.recorded_at.slice(0, 10)
+      : today;
+    const callTitle = opts?.recording_title ?? "Call";
+    const filename = `${callDate}-${slugify(callTitle)}.md`;
+
+    const hmFileContent = buildCallTranscriptFile({
+      title: callTitle,
+      partnerSlug: hmPartnerSlug,
+      projectSlug: hmProjectSlug,
+      date: callDate,
+      recordingUrl: url ?? null,
+      transcriptionService: "fathom",
+      updated: today,
+      transcript: transcript ?? "",
+      analysis: result.output,
+    });
+
+    let hmPath: string | undefined;
+    try {
+      const hiveMindClient = (await getMcpClient()).hiveMind;
+      await hiveMindClient.writeProjectFile(
+        hmPartnerSlug,
+        hmProjectSlug,
+        `call-transcripts/${filename}`,
+        hmFileContent,
+      );
+      await hiveMindClient.commit(
+        `feat(call-transcripts): add ${callDate} call for ${hmPartnerSlug}/${hmProjectSlug}`,
+      );
+      hmPath = `knowledge/partners/${hmPartnerSlug}/${hmProjectSlug}/call-transcripts/${filename}`;
+    } catch {
+      // Hive Mind write failure is non-fatal — local vault cache still written below.
+    }
+
+    // Also persist to local Call Notes/ for the cache-hit path on re-analyze.
     const saved = await vault
       .saveCallNotes({
         project_slug: slug,
@@ -593,7 +658,7 @@ export async function analyzeCallAction(
       data: result.output,
       cached: false,
       analyzed_at: saved?.analyzed_at ?? new Date().toISOString(),
-      notes_path: saved?.relative_path,
+      notes_path: hmPath ?? saved?.relative_path,
       transcript,
     };
   } catch (err) {
@@ -974,6 +1039,20 @@ export async function resolveFollowUpAction(
   const result = await vault.resolveFollowUp(followUpId, note);
 
   revalidatePath(`/projects/${slug}`);
+
+  // Dual-write: sync follow-ups.md in Hive Mind when connected.
+  const proj = await vault.readProject(slug).catch(() => null);
+  if (proj?.hive_mind_partner_slug) {
+    const hmPartner = proj.hive_mind_partner_slug;
+    const hmProject = proj.hive_mind_project_slug ?? proj.slug;
+    try {
+      const mcp = await getMcpClient();
+      await syncFollowUpsToHiveMind(vault, mcp, slug, proj.name, hmPartner, hmProject);
+    } catch {
+      // Non-fatal.
+    }
+  }
+
   return { changed: result.changed };
 }
 
@@ -1026,6 +1105,20 @@ export async function createLinkedFollowUpAction(
     const vault = await getVault();
     const result = await vault.appendFollowUp(input);
     revalidatePath(`/projects/${projectSlug}`);
+
+    // Dual-write: sync follow-ups.md in Hive Mind when connected.
+    const proj = await vault.readProject(projectSlug).catch(() => null);
+    if (proj?.hive_mind_partner_slug) {
+      const hmPartner = proj.hive_mind_partner_slug;
+      const hmProject = proj.hive_mind_project_slug ?? proj.slug;
+      try {
+        const mcp = await getMcpClient();
+        await syncFollowUpsToHiveMind(vault, mcp, projectSlug, proj.name, hmPartner, hmProject);
+      } catch {
+        // Non-fatal.
+      }
+    }
+
     return { ok: true, follow_up_id: result.follow_up_id };
   } catch (err) {
     return {
@@ -1175,4 +1268,174 @@ export async function saveChatToCallNotesAction(
       message: err instanceof Error ? err.message : "Couldn't save chat",
     };
   }
+}
+
+/**
+ * Append a dated note to the Hive Mind project notes file. Requires the
+ * project to have `hive_mind_partner_slug` set; returns `not-configured`
+ * when it doesn't so the UI can show a setup CTA instead of an error.
+ */
+export async function addProjectLogNoteAction(
+  slug: string,
+  heading: string,
+  body: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!slug) throw new Error("slug is required");
+  const trimmedHeading = heading.trim();
+  const trimmedBody = body.trim();
+  if (!trimmedHeading) throw new Error("heading is required");
+  if (!trimmedBody) throw new Error("body is required");
+
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) return { ok: false, reason: "Project not found" };
+
+  if (!project.hive_mind_partner_slug) {
+    return { ok: false, reason: "not-configured" };
+  }
+
+  const hmPartnerSlug = project.hive_mind_partner_slug;
+  const hmProjectSlug = project.hive_mind_project_slug ?? project.slug;
+  const todayISO = new Date().toISOString().slice(0, 10);
+
+  const mcp = await getMcpClient();
+  try {
+    await mcp.hiveMind.addProjectNote(
+      hmPartnerSlug,
+      hmProjectSlug,
+      todayISO,
+      trimmedHeading,
+      trimmedBody,
+    );
+    await mcp.hiveMind.commit(
+      `notes: add project log entry for ${hmPartnerSlug}/${hmProjectSlug}`,
+    );
+    revalidatePath(`/projects/${slug}`);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "Failed to add note",
+    };
+  }
+}
+
+// --- internals ---
+
+function serializeHMZendesk(args: {
+  search_terms: string[];
+  last_refreshed: string;
+  tickets: { ticket_id: number; subject: string; status: string; url: string }[];
+}): string {
+  const terms = args.search_terms.length
+    ? args.search_terms.map((t) => `  - "${t}"`).join("\n")
+    : "";
+  const fm = [
+    "---",
+    `search_terms:`,
+    terms || "  []",
+    `last_refreshed: ${args.last_refreshed}`,
+    "---",
+  ].join("\n");
+  const header = "| ticket_id | subject | status | url |";
+  const sep = "| :-- | :-- | :-- | :-- |";
+  const rows = args.tickets.map(
+    (t) => `| ${t.ticket_id} | ${t.subject} | ${t.status} | ${t.url} |`,
+  );
+  return [fm, "", header, sep, ...rows, ""].join("\n");
+}
+
+async function syncFollowUpsToHiveMind(
+  vault: Awaited<ReturnType<typeof getVault>>,
+  mcp: Awaited<ReturnType<typeof getMcpClient>>,
+  projectSlug: string,
+  projectName: string,
+  hmPartner: string,
+  hmProject: string,
+): Promise<void> {
+  const allFollowUps = await vault.listFollowUps().catch(() => ({ active: [], resolved: [] }));
+  const projectActive = filterFollowUpsForProject(allFollowUps.active, { name: projectName, slug: projectSlug, partner: undefined });
+  const projectResolved = filterFollowUpsForProject(allFollowUps.resolved, { name: projectName, slug: projectSlug, partner: undefined });
+
+  const header = "| id | task | sent_to | sent_date | follow_by | source_type | source_ref | status |";
+  const sep = "| :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |";
+  const toRow = (f: import("@smithers/vault").FollowUp, status: string) =>
+    `| ${f.follow_up_id} | ${f.task.replace(/\|/g, "\\|")} | ${projectName} | ${f.sent ?? ""} | ${f.follow_up_by ?? ""} | ${f.source_type ?? ""} | ${f.source_ref ?? ""} | ${status} |`;
+
+  const rows = [
+    ...projectActive.map((f) => toRow(f, "active")),
+    ...projectResolved.map((f) => toRow(f, "resolved")),
+  ];
+
+  const content = [header, sep, ...rows, ""].join("\n");
+  await mcp.hiveMind.writeProjectFile(hmPartner, hmProject, "follow-ups.md", content);
+  await mcp.hiveMind.commit(`follow-ups: sync for ${hmPartner}/${hmProject}`);
+}
+
+function buildCallTranscriptFile(args: {
+  title: string;
+  partnerSlug: string;
+  projectSlug: string;
+  date: string;
+  recordingUrl: string | null;
+  transcriptionService: string;
+  updated: string;
+  transcript: string;
+  analysis: AnalyzeCallTranscriptOutput;
+}): string {
+  const recordingUrlYaml = args.recordingUrl
+    ? `"${args.recordingUrl}"`
+    : "null";
+
+  const actionItemsBlock = args.analysis.action_items.length
+    ? args.analysis.action_items
+        .map((a) => `- ${a.text}${a.owner ? ` (${a.owner})` : ""}`)
+        .join("\n")
+    : "_None identified._";
+
+  const decisionsBlock = args.analysis.decisions.length
+    ? args.analysis.decisions
+        .map((d) => `- ${d.text}${d.context ? ` — ${d.context}` : ""}`)
+        .join("\n")
+    : "_None identified._";
+
+  const keyQuotesBlock = args.analysis.key_quotes.length
+    ? args.analysis.key_quotes
+        .map((q) => `> "${q.text}" — ${q.speaker}`)
+        .join("\n\n")
+    : "_None captured._";
+
+  return `---
+title: "${args.title.replace(/"/g, '\\"')}"
+partner: "${args.partnerSlug}"
+project: "${args.projectSlug}"
+date: ${args.date}
+attendees: []
+recording_url: ${recordingUrlYaml}
+transcription_service: ${args.transcriptionService}
+updated: ${args.updated}
+---
+
+## Transcript
+
+${args.transcript.trim()}
+
+## Analysis
+
+### Summary
+
+${args.analysis.summary}
+
+### To-Dos
+
+${actionItemsBlock}
+
+### Decisions
+
+${decisionsBlock}
+
+### Key Quotes
+
+${keyQuotesBlock}
+`;
 }

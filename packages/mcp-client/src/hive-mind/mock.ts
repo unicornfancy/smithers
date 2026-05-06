@@ -11,6 +11,7 @@ import { runIsolated } from "../isolation";
 import type { PartnerProfile, SourceResult } from "../types";
 import type {
   HiveMindClient,
+  HiveMindProjectNotes,
   KnowledgeSearchHit,
   KnowledgeSearchQuery,
   PartnerLookupQuery,
@@ -124,5 +125,51 @@ export class MockHiveMindTransport implements HiveMindClient {
         },
       },
     );
+  }
+
+  async writeProjectFile(
+    _partner: string,
+    _project: string,
+    _filename: string,
+    _content: string,
+  ): Promise<void> {
+    // Mock: no-op — real transport writes to the Hive Mind MCP server.
+  }
+
+  async writePartnerFile(
+    _partner: string,
+    _filename: string,
+    _content: string,
+  ): Promise<void> {
+    // Mock: no-op.
+  }
+
+  async commit(message: string): Promise<{ sha: string; message: string }> {
+    return { sha: "mock-sha", message };
+  }
+
+  async updateProjectInfo(
+    _partner: string,
+    _project: string,
+    _fields: Record<string, unknown>,
+  ): Promise<void> {
+    // Mock: no-op.
+  }
+
+  async addProjectNote(
+    _partner: string,
+    _project: string,
+    _date: string,
+    _heading: string,
+    _body: string,
+  ): Promise<void> {
+    // Mock: no-op.
+  }
+
+  async getHiveMindNotes(
+    _partner: string,
+    _project: string,
+  ): Promise<HiveMindProjectNotes | null> {
+    return null;
   }
 }
