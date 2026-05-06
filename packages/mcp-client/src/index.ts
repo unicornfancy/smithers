@@ -106,7 +106,6 @@ export {
 } from "./context-a8c/zendesk-refs";
 export type {
   HiveMindClient,
-  HiveMindProjectNotes,
   PartnerLookupQuery,
   KnowledgeSearchQuery,
   KnowledgeSearchHit,

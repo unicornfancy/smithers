@@ -11,7 +11,6 @@ import { runIsolated } from "../isolation";
 import type { PartnerProfile, SourceResult } from "../types";
 import type {
   HiveMindClient,
-  HiveMindProjectNotes,
   KnowledgeSearchHit,
   KnowledgeSearchQuery,
   PartnerLookupQuery,
@@ -164,12 +163,5 @@ export class MockHiveMindTransport implements HiveMindClient {
     _body: string,
   ): Promise<void> {
     // Mock: no-op.
-  }
-
-  async getHiveMindNotes(
-    _partner: string,
-    _project: string,
-  ): Promise<HiveMindProjectNotes | null> {
-    return null;
   }
 }

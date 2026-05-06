@@ -2,10 +2,6 @@
 
 import type { PartnerProfile, SourceResult } from "../types";
 
-export interface HiveMindProjectNotes {
-  body: string;
-}
-
 export interface PartnerLookupQuery {
   /** Partner slug as stored in info.md frontmatter `partner:`. */
   partner_slug: string;
@@ -65,9 +61,4 @@ export interface HiveMindClient {
     heading: string,
     body: string,
   ): Promise<void>;
-
-  getHiveMindNotes(
-    partner: string,
-    project: string,
-  ): Promise<HiveMindProjectNotes | null>;
 }

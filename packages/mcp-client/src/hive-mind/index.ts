@@ -20,7 +20,6 @@ export function createHiveMindClient(
 
 export type { HiveMindClient } from "./types";
 export type {
-  HiveMindProjectNotes,
   KnowledgeSearchHit,
   KnowledgeSearchQuery,
   PartnerLookupQuery,

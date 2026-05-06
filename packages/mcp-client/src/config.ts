@@ -24,6 +24,13 @@ export interface McpClientOptions {
    * Defaults to ["automattic.com"].
    */
   internalEmailDomains?: string[];
+  /**
+   * Absolute path to the built Hive Mind MCP server entry point
+   * (`<hive-mind-repo>/mcp/server/dist/index.js`). When set, the real
+   * transport spawns `node <path>` instead of trying to invoke a
+   * published package. Required for real Hive Mind mode.
+   */
+  hiveMindServerPath?: string;
   /** Default TTLs per call category. Each method may override. */
   ttl?: Partial<DefaultTtls>;
 }
@@ -47,6 +54,7 @@ export interface ResolvedMcpClientOptions {
   mockHiveMind: boolean;
   mockLinear: boolean;
   internalEmailDomains: string[];
+  hiveMindServerPath: string | null;
   ttl: DefaultTtls;
 }
 
@@ -75,6 +83,7 @@ export function resolveMcpClientOptions(
       opts.internalEmailDomains?.length
         ? opts.internalEmailDomains
         : ["automattic.com"],
+    hiveMindServerPath: opts.hiveMindServerPath ?? null,
     ttl: {
       activity: { ...DEFAULT_TTLS.activity, ...(opts.ttl?.activity ?? {}) },
       pings: { ...DEFAULT_TTLS.pings, ...(opts.ttl?.pings ?? {}) },

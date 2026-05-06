@@ -1,8 +1,7 @@
 /**
- * Real Hive Mind transport — talks to the team's Hive Mind MCP server
- * via stdio. The server binary isn't published yet; this transport is
- * wired up now so the interface is correct and the switch to real mode
- * is a one-line config change.
+ * Real Hive Mind transport — spawns the team's Hive Mind MCP server
+ * (built at `<hive-mind-repo>/mcp/server/dist/index.js`) over stdio
+ * and routes tool calls through it.
  *
  * Tool naming convention: tool names are kebab-case and called directly
  * (no provider-router hop like context-a8c uses).
@@ -16,7 +15,6 @@ import { StdioMcpClient } from "../stdio-mcp";
 import type { PartnerProfile, SourceResult } from "../types";
 import type {
   HiveMindClient,
-  HiveMindProjectNotes,
   KnowledgeSearchHit,
   KnowledgeSearchQuery,
   PartnerLookupQuery,
@@ -35,10 +33,15 @@ export class RealHiveMindTransport implements HiveMindClient {
     private readonly cache: SwrCache,
     private readonly health: HealthRegistry,
   ) {
+    if (!opts.hiveMindServerPath) {
+      throw new Error(
+        "RealHiveMindTransport requires hiveMindServerPath. Either set it in McpClientOptions or pass mockHiveMind: true.",
+      );
+    }
     this.mcp = new StdioMcpClient({
       label: "hive-mind",
-      command: "npx",
-      args: ["-y", "@automattic/mcp-hive-mind"],
+      command: "node",
+      args: [opts.hiveMindServerPath],
     });
   }
 
@@ -145,19 +148,5 @@ export class RealHiveMindTransport implements HiveMindClient {
       heading,
       body,
     });
-  }
-
-  async getHiveMindNotes(
-    partner: string,
-    project: string,
-  ): Promise<HiveMindProjectNotes | null> {
-    const result = await this.mcp
-      .callJsonTool<{ content: string }>("get-project-notes", {
-        partner,
-        project,
-      })
-      .catch(() => null);
-    if (!result?.content) return null;
-    return { body: result.content };
   }
 }
