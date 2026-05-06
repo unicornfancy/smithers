@@ -36,23 +36,21 @@ _Updated 2026-05-06_
 
 ## In flight
 
-- **Migration to Hive-Mind format** — Decisions captured 2026-05-06. 2 forward (Neighborhood Nip, Shareable: vault → HM via Connect dialog), 9 reverse imports queued in /projects/onboard. Pocket NYC + body-dao already linked. Ready to execute when you want.
-- **`/style-guide` editor + auto-learn loop** — designed in PLAN.md; not yet built.
+- **Migration to Hive-Mind format** — Decisions captured 2026-05-06. 2 forward (Neighborhood Nip, Shareable: vault → HM via Connect dialog), 9 reverse imports queued in /projects/onboard (TAM only imports the projects they're actively working on, not all of them). Pocket NYC + body-dao already linked. Ready to execute when you want.
 
 ## Open TODOs
 
 In rough priority order:
 
-1. **Run the migration** — Neighborhood Nip + Shareable Connect; Import the 8 remaining reverse imports from /projects/onboard.
-2. **Build `/style-guide` editor + `/api/learn-from-archive` route** — design locked in PLAN.md.
-3. **`/setup` wizard** — independent phase, designed in PLAN.md. New-TAM first-run config + OAuth + HM build check.
-4. **`/today` polish** — day-specific banners, AFK state, weekend/no-data states.
-5. **`/agendas/[project]` editor** — 23-line stub.
-6. **`/weekly-updates/[YYYY-WN]` editor** — stub.
-7. **Multi-source context for AI drafts** — design discussion needed; queued in PLAN.md.
-8. **Slack thread context for partner projects** — design discussion needed; queued in PLAN.md.
-9. **More AI affordances** — Summarize Zendesk thread, Verify @handles, Find related context.
-10. **Bell icon + unresolved-issues count** — vault-watcher events.
+1. **Run the migration** — Neighborhood Nip + Shareable Connect; Import any HM projects you're actively working on (only what you're working on, not all of them) from /projects/onboard.
+2. **`/setup` wizard** — independent phase, designed in PLAN.md. New-TAM first-run config + OAuth + HM build check.
+3. **`/today` polish** — day-specific banners, AFK state, weekend/no-data states.
+4. **`/agendas/[project]` editor** — 23-line stub.
+5. **`/weekly-updates/[YYYY-WN]` editor** — stub.
+6. **Multi-source context for AI drafts** — design discussion needed; queued in PLAN.md.
+7. **Slack thread context for partner projects** — design discussion needed; queued in PLAN.md.
+8. **More AI affordances** — Summarize Zendesk thread, Verify @handles, Find related context.
+9. **Bell icon + unresolved-issues count** — vault-watcher events.
 
 ## Recent decisions (with the why)
 
