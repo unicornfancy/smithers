@@ -109,11 +109,16 @@ export type {
   PartnerLookupQuery,
   KnowledgeSearchQuery,
   KnowledgeSearchHit,
+  HiveMindPartnerSummary,
+  HiveMindProjectSummary,
+  CreatePartnerArgs,
+  CreateProjectArgs,
 } from "./hive-mind/index";
 export type { FathomClient, RecordingsQuery } from "./fathom/index";
 export type {
   LinearClient,
   LinearProject,
+  LinearProjectSummary,
   LinearIssue,
   LinearIssueDetail,
   LinearProjectUpdate,

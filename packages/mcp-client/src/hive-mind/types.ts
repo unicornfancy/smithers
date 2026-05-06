@@ -24,6 +24,43 @@ export interface KnowledgeSearchHit {
   is_mock?: boolean;
 }
 
+/** Lightweight partner row used by the onboarding picker. */
+export interface HiveMindPartnerSummary {
+  slug: string;
+  title: string;
+  owner: string;
+  nda: boolean;
+}
+
+/** Lightweight project row used by the onboarding picker. */
+export interface HiveMindProjectSummary {
+  partnerSlug: string;
+  projectSlug: string;
+  title: string;
+  status: string;
+  priority: string;
+  owner: string;
+}
+
+export interface CreatePartnerArgs {
+  slug: string;
+  title: string;
+  description: string;
+  owner: string;
+  nda?: boolean;
+}
+
+export interface CreateProjectArgs {
+  partner: string;
+  project: string;
+  title: string;
+  description: string;
+  status?: string;
+  priority?: string;
+  owner?: string;
+  platform?: string;
+}
+
 export interface HiveMindClient {
   getPartner(
     query: PartnerLookupQuery,
@@ -61,4 +98,16 @@ export interface HiveMindClient {
     heading: string,
     body: string,
   ): Promise<void>;
+
+  /** All partners in the Hive Mind repo; powers the onboarding picker. */
+  listPartners(): Promise<HiveMindPartnerSummary[]>;
+
+  /** Projects in the Hive Mind repo, optionally scoped to one partner. */
+  listProjects(partner?: string): Promise<HiveMindProjectSummary[]>;
+
+  /** Scaffold a new partner folder. Slug must match ^[a-z0-9]+(-[a-z0-9]+)*$. */
+  createPartner(args: CreatePartnerArgs): Promise<void>;
+
+  /** Scaffold a new project under an existing partner. Slug regex applies. */
+  createProject(args: CreateProjectArgs): Promise<void>;
 }

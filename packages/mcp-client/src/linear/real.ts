@@ -7,8 +7,11 @@ import type {
   LinearIssue,
   LinearIssueDetail,
   LinearProject,
+  LinearProjectSummary,
   LinearProjectUpdate,
 } from "./types";
+
+const DEFAULT_PROJECT_STATES = ["backlog", "started"];
 
 const LINEAR_API_URL = "https://api.linear.app/graphql";
 
@@ -84,6 +87,22 @@ interface RawSubtasksResponse {
   issue?: {
     children: { nodes: RawIssueNode[] };
   } | null;
+}
+
+interface RawProjectSummaryNode {
+  id: string;
+  slugId: string;
+  name: string;
+  description: string | null;
+  state: string;
+  progress: number;
+  lead: { name: string } | null;
+  members: { nodes: Array<{ name: string }> };
+}
+
+interface RawMyProjectsResponse {
+  viewer?: { id: string };
+  projects?: { nodes: RawProjectSummaryNode[] };
 }
 
 // ---------------------------------------------------------------------------
@@ -236,5 +255,57 @@ export class RealLinearTransport implements LinearClient {
       { issueId },
     );
     return data?.issue?.children?.nodes ?? [];
+  }
+
+  async listMyProjects(args?: {
+    states?: string[];
+  }): Promise<LinearProjectSummary[]> {
+    const states = args?.states ?? DEFAULT_PROJECT_STATES;
+    // Linear has no `viewer.projects` — query the root `projects` field
+    // filtered by `members.id` matching the viewer's id, in one round-trip.
+    // Empty state list = no filter (UI uses this for "all states").
+    const stateFilter =
+      states.length > 0 ? `, state: { in: $states }` : "";
+    const data = await this.gql<RawMyProjectsResponse>(
+      `query ListMyProjects($viewerId: ID!, $states: [String!]) {
+        viewer { id }
+        projects(
+          filter: { members: { id: { eq: $viewerId } }${stateFilter} }
+          first: 100
+        ) {
+          nodes {
+            id slugId name description state progress
+            lead { name }
+            members { nodes { name } }
+          }
+        }
+      }`,
+      // Linear evaluates the variable shape ahead of $viewerId being
+      // available, so we send the viewer-id query separately first.
+      { viewerId: await this.viewerId(), states },
+    );
+    const nodes = data?.projects?.nodes ?? [];
+    return nodes.map((n) => ({
+      id: n.id,
+      slugId: n.slugId,
+      name: n.name,
+      description: n.description,
+      state: n.state,
+      progress: n.progress,
+      lead: n.lead,
+      members: n.members.nodes,
+    }));
+  }
+
+  /** Cache the viewer id since it's stable per session. */
+  private cachedViewerId: string | null = null;
+  private async viewerId(): Promise<string> {
+    if (this.cachedViewerId) return this.cachedViewerId;
+    const data = await this.gql<{ viewer?: { id: string } }>(
+      `query { viewer { id } }`,
+      {},
+    );
+    this.cachedViewerId = data?.viewer?.id ?? "";
+    return this.cachedViewerId;
   }
 }

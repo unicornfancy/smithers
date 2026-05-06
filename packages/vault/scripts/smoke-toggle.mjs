@@ -11,6 +11,7 @@ import {
   appendDecisionsToProject,
   appendFollowUp,
   appendProjectTask,
+  createProjectScratchpad,
   createVault,
   deleteProjectTask,
   editProjectTaskText,
@@ -993,6 +994,35 @@ if (hiveMindPath) {
 } else {
   console.log("[hive-mind] skipping live tests — configure paths.hive_mind in config.local.yaml to enable");
 }
+
+// --- createProjectScratchpad: seed new file, idempotent on re-run ---
+const sp1 = await createProjectScratchpad(opts, {
+  name: "Scratch Project",
+  slug: "scratch-project",
+  partner: "example-partner",
+  hive_mind_partner_slug: "example-partner",
+  linear_project_id: "lin_123",
+});
+if (!sp1.created) throw new Error("expected created=true on first scratchpad");
+const spRaw = readFileSync(sp1.absolute_path, "utf8");
+if (!spRaw.includes("name: Scratch Project")) throw new Error("expected name in YAML:\n" + spRaw);
+if (!spRaw.includes("slug: scratch-project")) throw new Error("expected slug in YAML");
+if (!spRaw.includes("partner: example-partner")) throw new Error("expected partner in YAML");
+if (!spRaw.includes("linear_project_id: lin_123")) throw new Error("expected linear_project_id in YAML");
+if (spRaw.includes("hive_mind_project_slug")) throw new Error("expected omitted optional key absent");
+if (!spRaw.includes("## Open Items")) throw new Error("expected Open Items heading");
+if (!spRaw.includes("- [ ] ")) throw new Error("expected blank checkbox seed");
+
+// Re-run is a no-op: file preserved, created=false
+writeFileSync(sp1.absolute_path, spRaw + "\nuser edit\n");
+const sp2 = await createProjectScratchpad(opts, {
+  name: "Scratch Project",
+  slug: "scratch-project",
+});
+if (sp2.created) throw new Error("expected created=false when file already exists");
+const spRaw2 = readFileSync(sp1.absolute_path, "utf8");
+if (!spRaw2.includes("user edit")) throw new Error("expected existing file preserved");
+console.log("[scratchpad] OK — seeds frontmatter + Open Items, idempotent on existing file");
 
 console.log(`[smoke] cleaning up ${root}`);
 rmSync(root, { recursive: true, force: true });

@@ -63,6 +63,7 @@ import {
   addProjectZendeskTicket,
   appendDecisionsToProject,
   createProject,
+  createProjectScratchpad,
   ensureProjectId,
   listProjects,
   readProject,
@@ -75,6 +76,8 @@ import {
   type AppendDecisionsResult,
   type CreateProjectInput,
   type CreateProjectResult,
+  type CreateProjectScratchpadInput,
+  type CreateProjectScratchpadResult,
   type RefreshZendeskMetadataResult,
   type SetPrimaryZendeskTicketResult,
   type SetProjectZendeskSearchTermsResult,
@@ -133,6 +136,8 @@ export type {
   AppendDecisionsResult,
   CreateProjectInput,
   CreateProjectResult,
+  CreateProjectScratchpadInput,
+  CreateProjectScratchpadResult,
   RefreshZendeskMetadataResult,
   SetPrimaryZendeskTicketResult,
   SetProjectZendeskSearchTermsResult,
@@ -188,6 +193,7 @@ export {
   appendProjectTask,
   applyDailySectionEdit,
   createProject,
+  createProjectScratchpad,
   deleteProjectTask,
   editProjectTaskText,
   dailyNotePath,
@@ -237,6 +243,9 @@ export interface Vault {
   createProject: (
     input: CreateProjectInput,
   ) => ReturnType<typeof createProject>;
+  createProjectScratchpad: (
+    input: CreateProjectScratchpadInput,
+  ) => ReturnType<typeof createProjectScratchpad>;
   listDrafts: () => ReturnType<typeof listDrafts>;
   readDraft: (id: string) => ReturnType<typeof readDraft>;
   listFollowUps: () => ReturnType<typeof listFollowUps>;
@@ -375,6 +384,7 @@ export function createVault(options: VaultOptions): Vault {
     readProject: (slug) => readProject(resolved, slug),
     readProjectDetail: (slug) => readProjectDetail(resolved, slug),
     createProject: (input) => createProject(resolved, input),
+    createProjectScratchpad: (input) => createProjectScratchpad(resolved, input),
     listDrafts: () => listDrafts(resolved),
     readDraft: (id) => readDraft(resolved, id),
     listFollowUps: () => listFollowUps(resolved),

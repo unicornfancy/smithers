@@ -405,6 +405,82 @@ export async function createProject(
   };
 }
 
+export interface CreateProjectScratchpadInput {
+  name: string;
+  slug: string;
+  /** Defaults to "partner" when `partner` is set, "personal" otherwise. */
+  kind?: ProjectKind;
+  partner?: string;
+  hive_mind_partner_slug?: string;
+  hive_mind_project_slug?: string;
+  linear_project_id?: string;
+}
+
+export interface CreateProjectScratchpadResult {
+  absolute_path: string;
+  relative_path: string;
+  /** False when a file already existed at the target path and was preserved. */
+  created: boolean;
+}
+
+/**
+ * Seed a new `Projects/<Name>.md` file with minimal frontmatter and an empty
+ * "## Open Items" checkbox so the user has something to type into immediately.
+ * Idempotent: if a file already exists at the target path, it is preserved
+ * untouched and `created: false` is returned. Used by the onboarding flow
+ * when importing from Hive Mind / Linear.
+ */
+export async function createProjectScratchpad(
+  opts: ResolvedVaultOptions,
+  input: CreateProjectScratchpadInput,
+): Promise<CreateProjectScratchpadResult> {
+  const trimmedName = input.name.trim();
+  if (!trimmedName) {
+    throw new Error("Project name is required");
+  }
+  const trimmedSlug = input.slug.trim();
+  if (!trimmedSlug) {
+    throw new Error("Project slug is required");
+  }
+
+  const paths = vaultPaths(opts);
+  const fileName = `${sanitizeFileName(trimmedName)}.md`;
+  const absolutePath = join(paths.projects, fileName);
+  const relativePath = relative(opts.vaultPath, absolutePath);
+
+  const existing = await tryReadFile(absolutePath);
+  if (existing !== null) {
+    return { absolute_path: absolutePath, relative_path: relativePath, created: false };
+  }
+
+  const partner = nonEmpty(input.partner);
+  const kind: ProjectKind = input.kind ?? (partner ? "partner" : "personal");
+
+  // serializeMarkdown strips undefined entries, so unset optional fields
+  // never reach the YAML — that gives us "omit when empty" for free.
+  const frontmatter: Record<string, unknown> = {
+    name: trimmedName,
+    slug: trimmedSlug,
+    kind,
+    partner,
+    hive_mind_partner_slug: nonEmpty(input.hive_mind_partner_slug),
+    hive_mind_project_slug: nonEmpty(input.hive_mind_project_slug),
+    linear_project_id: nonEmpty(input.linear_project_id),
+    created_at: new Date().toISOString(),
+  };
+
+  const body = `\n# ${trimmedName}\n\n## Open Items\n\n- [ ] \n`;
+  await writeFileAtomic(absolutePath, serializeMarkdown(frontmatter, body));
+
+  return { absolute_path: absolutePath, relative_path: relativePath, created: true };
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
 export interface AddProjectZendeskTicketResult {
   zendesk_tickets: ZendeskTicketRef[];
   /** True when the ticket was newly added; false when it was a no-op duplicate. */
@@ -661,6 +737,8 @@ export interface UpdateProjectFrontmatterPatch {
   production_url?: string;
   linear_project_id?: string;
   linear_project_slug?: string;
+  hive_mind_partner_slug?: string;
+  hive_mind_project_slug?: string;
   p2_url?: string;
   primary_slack_channel?: string;
   team_slack_channel?: string;

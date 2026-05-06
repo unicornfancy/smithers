@@ -10,7 +10,11 @@ import type { HealthRegistry } from "../health";
 import { runIsolated } from "../isolation";
 import type { PartnerProfile, SourceResult } from "../types";
 import type {
+  CreatePartnerArgs,
+  CreateProjectArgs,
   HiveMindClient,
+  HiveMindPartnerSummary,
+  HiveMindProjectSummary,
   KnowledgeSearchHit,
   KnowledgeSearchQuery,
   PartnerLookupQuery,
@@ -162,6 +166,27 @@ export class MockHiveMindTransport implements HiveMindClient {
     _heading: string,
     _body: string,
   ): Promise<void> {
+    // Mock: no-op.
+  }
+
+  async listPartners(): Promise<HiveMindPartnerSummary[]> {
+    return Object.values(SEED_PARTNERS).map((p) => ({
+      slug: p.partner_slug,
+      title: p.display_name,
+      owner: "katie.mccanna@a8c.com",
+      nda: p.nda,
+    }));
+  }
+
+  async listProjects(_partner?: string): Promise<HiveMindProjectSummary[]> {
+    return [];
+  }
+
+  async createPartner(_args: CreatePartnerArgs): Promise<void> {
+    // Mock: no-op.
+  }
+
+  async createProject(_args: CreateProjectArgs): Promise<void> {
     // Mock: no-op.
   }
 }

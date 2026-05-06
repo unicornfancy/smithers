@@ -42,9 +42,14 @@ export default async function ProjectsPage() {
             : "Vault not configured yet"
         }
         actions={
-          <Button size="sm" asChild>
-            <Link href="/projects/new">+ New project</Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/projects/onboard">Onboarding</Link>
+            </Button>
+            <Button size="sm" asChild>
+              <Link href="/projects/new">+ New project</Link>
+            </Button>
+          </div>
         }
       />
       <PageShell>

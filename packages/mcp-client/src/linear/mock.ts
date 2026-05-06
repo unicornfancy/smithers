@@ -6,6 +6,7 @@ import type {
   LinearIssue,
   LinearIssueDetail,
   LinearProject,
+  LinearProjectSummary,
   LinearProjectUpdate,
 } from "./types";
 
@@ -139,6 +140,39 @@ const MOCK_SUBTASKS: LinearIssue[] = [
   },
 ];
 
+const MOCK_MY_PROJECTS: LinearProjectSummary[] = [
+  {
+    id: "48fe0eb7-6c45-435f-be92-3faa87a21418",
+    slugId: "8ca0b5d6870e",
+    name: "The Pocket NYC Phase 2",
+    description: "Phase 2 design and dev for The Pocket NYC events site.",
+    state: "started",
+    progress: 0.03,
+    lead: { name: "Katie McCanna" },
+    members: [{ name: "Katie McCanna" }, { name: "Anders Norén" }],
+  },
+  {
+    id: "c1f2a3b4-5d6e-7f80-a1b2-c3d4e5f6a7b8",
+    slugId: "climatefirst-relaunch",
+    name: "ClimateFirst Foundation Relaunch",
+    description: "Site rebuild and donor-comms refresh for ClimateFirst.",
+    state: "backlog",
+    progress: 0,
+    lead: { name: "Katie McCanna" },
+    members: [{ name: "Katie McCanna" }, { name: "Morgan Reed" }],
+  },
+  {
+    id: "d2e3f4a5-6b7c-8d90-b1c2-d3e4f5a6b7c8",
+    slugId: "annual-newsletter-2026",
+    name: "Annual Newsletter 2026",
+    description: "Year-end editorial roundup for the annual newsletter cohort.",
+    state: "backlog",
+    progress: 0,
+    lead: { name: "Katie McCanna" },
+    members: [{ name: "Katie McCanna" }],
+  },
+];
+
 export class MockLinearTransport implements LinearClient {
   async getProject(projectId: string): Promise<LinearProject | null> {
     if (projectId === MOCK_PROJECT.id) return MOCK_PROJECT;
@@ -161,5 +195,13 @@ export class MockLinearTransport implements LinearClient {
   async getSubtasks(issueId: string): Promise<LinearIssue[]> {
     if (issueId === "DSG51-436") return MOCK_SUBTASKS;
     return [];
+  }
+
+  async listMyProjects(args?: {
+    states?: string[];
+  }): Promise<LinearProjectSummary[]> {
+    if (!args?.states) return MOCK_MY_PROJECTS;
+    const stateSet = new Set(args.states.map((s) => s.toLowerCase()));
+    return MOCK_MY_PROJECTS.filter((p) => stateSet.has(p.state.toLowerCase()));
   }
 }

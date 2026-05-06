@@ -17,6 +17,7 @@ export function createLinearClient(
 export type {
   LinearClient,
   LinearProject,
+  LinearProjectSummary,
   LinearIssue,
   LinearIssueDetail,
   LinearProjectUpdate,

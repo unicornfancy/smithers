@@ -48,10 +48,26 @@ export interface LinearIssueDetail {
   updatedAt: string;
 }
 
+/** Lightweight project shape used by the onboarding picker. */
+export interface LinearProjectSummary {
+  id: string;
+  slugId: string;
+  name: string;
+  description: string | null;
+  state: string;
+  progress: number;
+  lead: { name: string } | null;
+  members: Array<{ name: string }>;
+}
+
 export interface LinearClient {
   getProject(projectId: string): Promise<LinearProject | null>;
   getProjectIssues(projectId: string): Promise<LinearIssue[]>;
   getProjectUpdates(projectId: string): Promise<LinearProjectUpdate[]>;
   getIssue(identifier: string): Promise<LinearIssueDetail | null>;
   getSubtasks(issueId: string): Promise<LinearIssue[]>;
+  /** Projects where the viewer is lead or a member; defaults to active states. */
+  listMyProjects(args?: {
+    states?: string[];
+  }): Promise<LinearProjectSummary[]>;
 }

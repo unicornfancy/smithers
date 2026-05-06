@@ -15,6 +15,8 @@ import { toast } from "sonner";
 import type { LinearProjectMetadata } from "@smithers/mcp-client";
 import type { Project, ProjectKind, ProjectStatus } from "@smithers/vault";
 
+import { parseLinearProjectUrl } from "@/lib/linear-url";
+
 import {
   fetchLinearProjectMetadataAction,
   updateProjectMetadataAction,
@@ -291,6 +293,22 @@ export function ProjectMetadataModal({ project }: Props) {
                 disabled={pending}
               />
             </Field>
+            <Field
+              label="Linear project URL"
+              hint="Paste the full URL — id and slug are filled in below automatically"
+            >
+              <Input
+                value=""
+                placeholder="https://linear.app/<workspace>/project/<slug>"
+                onChange={(v) => {
+                  const parsed = parseLinearProjectUrl(v);
+                  if (!parsed) return;
+                  if (parsed.id) update("linear_project_id", parsed.id);
+                  update("linear_project_slug", parsed.slug);
+                }}
+                disabled={pending}
+              />
+            </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Linear project id">
                 <Input
@@ -436,17 +454,20 @@ function Input({
   onChange,
   disabled,
   type,
+  placeholder,
 }: {
   value: string;
   onChange: (v: string) => void;
   disabled?: boolean;
   type?: string;
+  placeholder?: string;
 }) {
   return (
     <input
       type={type ?? "text"}
       value={value}
       disabled={disabled}
+      placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
         "border-input bg-background focus-visible:ring-ring",
