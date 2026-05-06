@@ -238,10 +238,11 @@ export default async function ProjectWorkbenchPage({
   const projectRecordings = allRecordings
     .filter((r) =>
       recordingMatchesProject(
-        r.title,
+        r,
         detail.name,
         detail.partner,
         partnerProfile?.display_name,
+        detail.fathom_search_terms,
       ),
     )
     .slice(0, 8);
@@ -468,27 +469,29 @@ export default async function ProjectWorkbenchPage({
 }
 
 /**
- * Cheap title-match for routing Fathom recordings to a project. Splits
- * each candidate string into normalized tokens and looks for any token
- * (≥3 chars) appearing in the recording title. This catches:
- *   - "ClimateFirst Foundation Phase 2" matching titles with
- *     "ClimateFirst" or "Foundation" alone
- *   - Partner slugs like "the-pocket-nyc" matching "Pocket NYC"
- *   - The partner's display name matching its abbreviation
+ * Cheap match for routing Fathom recordings to a project. Splits the
+ * project/partner/search-term strings into ≥3-char tokens and checks
+ * whether any token appears anywhere in the recording's title or
+ * attendees string. The attendees string is the smoking gun for calls
+ * the partner scheduled via a calendar link, where the title is
+ * generic ("Katie McCanna's meeting") but an attendee email exposes
+ * the partner's domain (e.g. `grant@thepocketnyc.com` → contains
+ * `pocket` → matches the-pocket-nyc).
  *
- * False-positive prone for short common tokens; the ≥3 chars filter
- * + dropping noise words keeps it usable.
+ * False-positive prone for short common tokens; the ≥3 chars filter +
+ * dropping noise words keeps it usable.
  */
 function recordingMatchesProject(
-  title: string | undefined,
+  recording: { title?: string; attendees?: string },
   projectName: string,
   partnerSlug: string | undefined,
   partnerName: string | undefined,
+  fathomSearchTerms: string[] | undefined,
 ): boolean {
-  if (!title) return false;
-  const haystack = title.toLowerCase();
+  if (!recording.title && !recording.attendees) return false;
+  const haystack = `${recording.title ?? ""} ${recording.attendees ?? ""}`.toLowerCase();
   const tokens = new Set<string>();
-  for (const s of [projectName, partnerSlug, partnerName]) {
+  for (const s of [projectName, partnerSlug, partnerName, ...(fathomSearchTerms ?? [])]) {
     if (!s) continue;
     for (const t of s.toLowerCase().split(/[\s\-_/.]+/)) {
       if (t.length >= 3 && !STOP_TOKENS.has(t)) tokens.add(t);

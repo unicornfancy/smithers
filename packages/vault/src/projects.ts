@@ -213,6 +213,7 @@ async function projectFromFile(
     linear_project_slug: fm.linear_project_slug,
     zendesk_tickets: normalizeZendeskTickets(fm.zendesk_tickets),
     zendesk_search_terms: normalizeStringArray(fm.zendesk_search_terms),
+    fathom_search_terms: normalizeStringArray(fm.fathom_search_terms),
     p2_url: fm.p2_url,
     primary_slack_channel: fm.primary_slack_channel,
     team_slack_channel: fm.team_slack_channel,
@@ -892,6 +893,54 @@ export async function setProjectZendeskSearchTerms(
   }
   await writeFileAtomic(path, serializeMarkdown(merged, content));
   return { zendesk_search_terms: cleaned, changed: true };
+}
+
+export interface SetProjectFathomSearchTermsResult {
+  fathom_search_terms: string[];
+  changed: boolean;
+}
+
+/** Mirror of setProjectZendeskSearchTerms for fathom_search_terms. */
+export async function setProjectFathomSearchTerms(
+  opts: ResolvedVaultOptions,
+  slug: string,
+  terms: string[],
+): Promise<SetProjectFathomSearchTermsResult> {
+  const cleaned = terms
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .filter((t, i, arr) => arr.indexOf(t) === i);
+
+  const project = await readProject(opts, slug);
+  if (!project) {
+    throw new Error(`Project "${slug}" not found`);
+  }
+  if (project.source.kind === "hive-mind") {
+    throw new Error(
+      `Project "${slug}" lives in Hive Mind; settings edits go through the shared-notes flow`,
+    );
+  }
+  const path = project.source.absolute_path;
+  const raw = await tryReadFile(path);
+  if (raw === null) {
+    throw new Error(`Project file disappeared at ${path}`);
+  }
+  const { data, content } = parseMarkdown(raw);
+  const existing = normalizeStringArray(data["fathom_search_terms"]) ?? [];
+  if (
+    existing.length === cleaned.length &&
+    existing.every((t, i) => t === cleaned[i])
+  ) {
+    return { fathom_search_terms: existing, changed: false };
+  }
+  const merged = { ...data };
+  if (cleaned.length === 0) {
+    delete merged["fathom_search_terms"];
+  } else {
+    merged["fathom_search_terms"] = cleaned;
+  }
+  await writeFileAtomic(path, serializeMarkdown(merged, content));
+  return { fathom_search_terms: cleaned, changed: true };
 }
 
 export interface RefreshZendeskMetadataResult {

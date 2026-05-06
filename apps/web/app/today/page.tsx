@@ -17,6 +17,10 @@ import { EmptyState, VaultMissingNotice } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
 import { PingsToAction } from "@/components/pings-to-action";
 import { RealisticShapeCard } from "@/components/realistic-shape-card";
+import {
+  RecentCallsCard,
+  type RecentCallRow,
+} from "@/components/recent-calls-card";
 import { StallsCard } from "@/components/stalls-card";
 import { TopThreeCard } from "@/components/top-three-card";
 import { Button } from "@/components/ui/button";
@@ -90,12 +94,30 @@ export default async function TodayPage() {
     .map((p) => p.github_repo)
     .filter((r): r is string => Boolean(r));
 
-  const [pingsResult, githubPings] = await Promise.all([
+  const [pingsResult, githubPings, recordingsResult] = await Promise.all([
     mcp.contextA8C.listPings({ limit: 10 }),
     mcp.contextA8C.listGithubMentionPings(githubRepos, "unicornfancy").catch(
       () => [] as Ping[],
     ),
+    mcp.fathom.listRecordings({ limit: 20 }),
   ]);
+
+  const recentRecordings = recordingsResult.ok
+    ? recordingsResult.data
+    : (recordingsResult.cachedData ?? []);
+  const recentCallRows: RecentCallRow[] = recentRecordings.map((rec) => ({
+    recording: rec,
+    matchedProjects: projects
+      .filter(
+        (p) =>
+          (p.kind === "partner" || p.kind === "team") &&
+          recentCallMatches(rec, p),
+      )
+      .map((p) => ({ slug: p.slug, name: p.name })),
+  }));
+  const unmatchedRecentCalls = recentCallRows.filter(
+    (r) => r.matchedProjects.length === 0,
+  ).length;
 
   // Merge GitHub mention pings into the main SourceResult so the
   // existing PingsToAction component and filterPingsResult helper
@@ -288,6 +310,11 @@ export default async function TodayPage() {
 
         <PingsToAction result={filteredPingsResult} />
 
+        <RecentCallsCard
+          rows={recentCallRows}
+          unmatchedCount={unmatchedRecentCalls}
+        />
+
         <RealisticShapeCard
           apiKeyConfigured={agentStatus.configured}
           cached={cachedShape?.output}
@@ -296,6 +323,48 @@ export default async function TodayPage() {
     </>
   );
 }
+
+/**
+ * Same shape as the workbench / /calls match logic — kept inline for the
+ * /today fan-out. Splits project name + partner slug + curated
+ * fathom_search_terms into ≥3-char tokens, checks against title +
+ * attendees haystack.
+ */
+function recentCallMatches(
+  recording: { title?: string; attendees?: string },
+  project: { name: string; partner?: string; fathom_search_terms?: string[] },
+): boolean {
+  if (!recording.title && !recording.attendees) return false;
+  const haystack = `${recording.title ?? ""} ${recording.attendees ?? ""}`.toLowerCase();
+  const tokens = new Set<string>();
+  for (const s of [
+    project.name,
+    project.partner,
+    ...(project.fathom_search_terms ?? []),
+  ]) {
+    if (!s) continue;
+    for (const t of s.toLowerCase().split(/[\s\-_/.]+/)) {
+      if (t.length >= 3 && !RECENT_CALL_STOP_TOKENS.has(t)) tokens.add(t);
+    }
+  }
+  for (const t of tokens) {
+    if (haystack.includes(t)) return true;
+  }
+  return false;
+}
+
+const RECENT_CALL_STOP_TOKENS = new Set([
+  "the",
+  "and",
+  "for",
+  "phase",
+  "project",
+  "foundation",
+  "inc",
+  "llc",
+  "corp",
+  "team",
+]);
 
 function StatCard({
   icon,

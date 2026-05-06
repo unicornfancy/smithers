@@ -85,6 +85,38 @@ Open questions: file shape (`slack-threads.md` in Hive-Mind?), MCP probe for thr
 
 ---
 
+## Phase J: Fathom matching + `/calls` page
+
+**Decided 2026-05-06.** Investigated and ready to build.
+
+### Why
+Recordings that don't include the project name in the meeting title silently drop out of the project workbench's Recent Calls list. Confirmed by probe: a 2026-05-05 call titled `"Automattic Special Projects - Katie McCanna (Martin Porter)"` was missed for the-pocket-nyc, but the trailing attendees segment of Fathom's `list_meetings` response includes `grant@thepocketnyc.com` — data the current parser at [packages/mcp-client/src/fathom/real.ts:158-166](packages/mcp-client/src/fathom/real.ts#L158-L166) explicitly throws away.
+
+Same surface should also support the team-call workflow: when a recording isn't tied to any partner project (e.g. Katie note-taking on an internal team call), Smithers should still let her run the analyze-call agent and save notes — just without a project link.
+
+### Scope (5 slices, build as 2 batches)
+
+**Slice A — close the title-only-match gap:**
+- **J1.** Preserve attendees on `CallRecordingRef` (string field; raw comma-separated as Fathom emits).
+- **J2.** Include attendees in the `recordingMatchesProject` haystack. `haystack.includes("pocket")` matches `thepocketnyc.com` since "pocket" is a substring.
+
+**Slice B — visibility + manual match + team-call notes:**
+- **J3.** `fathom_search_terms?: string[]` on project frontmatter. User-curated escape hatch (mirrors `zendesk_search_terms`). Treated as additional haystack tokens.
+- **J4.** `/calls` page. Full recording list, two sections:
+  - **Matched**: collapsed by default, grouped by project, link to the project workbench
+  - **Unmatched**: primary surface. Per-row "Match to project" affordance opens a project picker → appends the chosen partner name to that project's `fathom_search_terms` so future calls auto-match. Per-row "Process without project" affordance runs the analyze-call agent and saves notes to `Call Notes/` without a project link — covers the team-call note-taking case.
+- **J5.** `/today` "Recent calls" panel (small): top ~5 recordings with unmatched ones flagged; click → `/calls`.
+
+### Files (anticipated)
+- `packages/mcp-client/src/types.ts` — extend `CallRecordingRef` (J1)
+- `packages/mcp-client/src/fathom/real.ts` + `mock.ts` — parser change (J1)
+- `apps/web/app/projects/[slug]/page.tsx` — `recordingMatchesProject` (J2)
+- `packages/vault/src/types.ts` + `projects.ts` — `fathom_search_terms` field + patch support (J3)
+- `apps/web/app/calls/page.tsx` + `actions.ts` (new) — full list (J4)
+- `apps/web/app/today/page.tsx` — recent-calls panel (J5)
+
+---
+
 ## Other deferred items
 
 - **v1.5 Linear ↔ Hive Mind ↔ Smithers sync** — deeper field standardization. Deferred until user signals priority.

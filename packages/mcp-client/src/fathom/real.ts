@@ -155,25 +155,34 @@ export function parseFathomListMeetings(text: string): CallRecordingRef[] {
     const dateStr = segments[1]!;
     let recordingId: string | undefined;
     let url: string | undefined;
+    const trailing: string[] = [];
     for (let i = 2; i < segments.length; i++) {
       const seg = segments[i]!;
       if (seg.startsWith("id:")) {
         recordingId = seg.slice(3).trim();
       } else if (seg.startsWith("url:")) {
         url = seg.slice(4).trim();
+      } else if (seg.startsWith("recorded by")) {
+        // Skip — covered by recorded_at + the user's own meetings.
+      } else {
+        // Anything else is the attendees string Fathom appends after the
+        // recorded-by field. Preserve verbatim so partner-domain matching
+        // can spot e.g. "grant@thepocketnyc.com" in calendar-link meetings.
+        trailing.push(seg);
       }
-      // recorded-by + attendees aren't on CallRecordingRef in v1; ignored.
     }
     if (!recordingId) continue;
     const recordedAt = parseFathomDate(dateStr);
     if (!recordedAt) continue;
 
+    const attendees = trailing.join(", ").trim();
     out.push({
       recording_id: recordingId,
       recorded_at: recordedAt,
       duration_seconds: 0, // list_meetings doesn't expose duration; fetch on demand later.
       title,
       source_url: url,
+      attendees: attendees || undefined,
       is_mock: false,
     });
   }

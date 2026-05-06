@@ -69,6 +69,7 @@ import {
   readProject,
   refreshProjectZendeskMetadata,
   setPrimaryZendeskTicket,
+  setProjectFathomSearchTerms,
   setProjectZendeskSearchTerms,
   updateProjectFrontmatter,
   type AddProjectZendeskTicketResult,
@@ -218,6 +219,7 @@ export {
   snoozeFollowUp,
   updateFollowUp,
   setPrimaryZendeskTicket,
+  setProjectFathomSearchTerms,
   setProjectZendeskSearchTerms,
   splitTasks,
   updateProjectFrontmatter,
@@ -297,6 +299,10 @@ export interface Vault {
     slug: string,
     terms: string[],
   ) => ReturnType<typeof setProjectZendeskSearchTerms>;
+  setProjectFathomSearchTerms: (
+    slug: string,
+    terms: string[],
+  ) => ReturnType<typeof setProjectFathomSearchTerms>;
   updateProjectFrontmatter: (
     slug: string,
     patch: Parameters<typeof updateProjectFrontmatter>[2],
@@ -414,6 +420,8 @@ export function createVault(options: VaultOptions): Vault {
       refreshProjectZendeskMetadata(resolved, slug, summaries),
     setProjectZendeskSearchTerms: (slug, terms) =>
       setProjectZendeskSearchTerms(resolved, slug, terms),
+    setProjectFathomSearchTerms: (slug, terms) =>
+      setProjectFathomSearchTerms(resolved, slug, terms),
     updateProjectFrontmatter: (slug, patch) =>
       updateProjectFrontmatter(resolved, slug, patch),
     resolveFollowUp: (followUpId, note) =>

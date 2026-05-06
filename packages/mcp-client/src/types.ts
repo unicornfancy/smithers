@@ -188,5 +188,13 @@ export interface CallRecordingRef {
   duration_seconds: number;
   title?: string;
   source_url?: string;
+  /**
+   * Raw attendees string as the provider emits it (Fathom returns a comma-
+   * separated list of names + emails). Used as additional haystack content
+   * for project matching when the title alone is generic (e.g. partner
+   * scheduled the meeting via the user's calendar link, so the title is
+   * "User McCanna's meeting" but an attendee email is the smoking gun).
+   */
+  attendees?: string;
   is_mock?: boolean;
 }

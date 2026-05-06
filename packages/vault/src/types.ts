@@ -65,6 +65,14 @@ export interface ProjectFrontmatter {
    * Zendesk's search index when the bare partner slug doesn't.
    */
   zendesk_search_terms?: string[];
+  /**
+   * Free-form text terms used by the Recent Calls match logic — names,
+   * email addresses, or partial domains that should route a Fathom
+   * recording to this project even when the meeting title is generic.
+   * The cheap heuristic checks against title + attendees by default;
+   * these terms are an escape hatch when those don't suffice.
+   */
+  fathom_search_terms?: string[];
   p2_url?: string;
 
   primary_slack_channel?: string;
@@ -114,6 +122,8 @@ export interface Project {
   zendesk_tickets?: ZendeskTicketRef[];
   /** See ProjectFrontmatter.zendesk_search_terms — same shape, always an array here. */
   zendesk_search_terms?: string[];
+  /** See ProjectFrontmatter.fathom_search_terms — same shape, always an array here. */
+  fathom_search_terms?: string[];
   p2_url?: string;
   primary_slack_channel?: string;
   team_slack_channel?: string;
