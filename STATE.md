@@ -1,75 +1,84 @@
 # STATE.md — Smithers (snapshot)
 
-_Updated 2026-05-04_
+_Updated 2026-05-06_
 
-## Just completed
+## Just completed (2026-05-06 — Hive-Mind writes live + project onboarding)
 
-- **Drafts trio (8a92e71, b66aa77, 9fadc43)** — `/drafts/[id]` in-app editor (textarea + live Markdown preview, auto-save 1.5s, Cmd/Ctrl-S, archived = read-only) + "Save as draft" button on every `AiDraftDialog` that snapshots the AI's first pass to `original_body` in frontmatter + Archive button on the editor + `learn-style-from-archives` agent surfacing on `/drafts`.
-  - Caveat: only tested with Chrome on dev server. Auto-save tested with bare-id (`local:Drafts/...`) drafts — UUID-id drafts not exercised yet but should round-trip via the same code.
-  - Caveat: style-guide write path is **not built** — agent returns markdown, user pastes manually.
-- **Call transcript pipeline (e2e4c87, 195ecfd, 2439141)** — Process button on every Recent Call row → fetch transcript → `analyze-call-transcript` agent → multi-section dialog (summary, action items with owner, follow-ups with rationale + due, decisions, key quotes). Per-section accept paths write into Open Items / `Follow-ups.md` / project body. "From this call" toolbar drafts a P2 post or recap message. Auto-saves analysis to `Call Notes/<date> - <title>.md`; re-running Process loads from disk.
-  - Caveat: comments-derived "Recent activity" disclosure under each Zendesk row stays empty because the upstream `comments` tool returns "Tool not found". Code path is correct; data isn't reachable.
-  - Caveat: `analyze-call-transcript` only verified on the seeded mock transcript. Live Fathom transcript fetch was broken until `143c9d2` (recording_id type coercion); not yet visually confirmed end-to-end against a real call.
-- **AI affordances on workbench (5c04c87, f888ced, 4436e41)** — `For You Today` panel runs `suggest-next-step` on demand; `Draft nudge` button on each active follow-up; `Draft reply` button on each active Zendesk row.
-  - Caveat: Zendesk reply context is subject-only because `comments` is broken; agent leans on subject + style guide and tends to draft clarifying-question replies when it lacks specifics.
-- **Call transcript chat + regenerate instructions (this session)** — "Chat about this call" multi-turn panel added to Process Call dialog (transcript as context, save conversation to Call Notes file as `## Chat` section). "Additional instructions for this run" textarea added near Re-analyze button for one-off prompt overrides.
-  - Caveat: `chatAboutCallAction` uses the Anthropic SDK directly in actions.ts (not a structured agent) — transcript is passed as full context on every turn.
-  - Caveat: not yet visually tested end-to-end against a live call.
-- **Task priority + due date + GitHub issue creation (this session)** — Inline bracket notation `[high]`/`[medium]`/`[low]` and `[YYYY-MM-DD]` at end of task lines. Parser strips markers from display text and task_id hash for stable ids. Priority badge (rose/amber/slate) and due date label (amber warning if past) on task rows. GitHub icon button on open tasks (when `github_repo` set) opens pre-filled new-issue tab. `analyze-call-transcript` agent now suggests priority + due_date per action item; Process Call dialog shows editable pre-fills before accepting.
-- **Convert between To-dos and Follow-ups + edit follow-ups inline (this session)** — "Convert to follow-up" button on open task rows (dialog: sent-to, sent date, follow-by date → removes task, adds follow-up). "Convert to to-do" button on active follow-up rows (immediate: resolves follow-up, appends task checkbox). Edit button on every active row of `/follow-ups` page with inline form (task text, sent-to, dates, status).
-  - Note: `updateFollowUp` looks up rows by content-derived id. Editing task text changes the id for subsequent lookups — documented in the helper.
-- **GitHub Issues in activity feed + mention pings (this session)** — GitHub issues (open/closed) added to project workbench Live Activity feed via ContextA8C `github/issues` with REST API fallback. GitHub mention pings for `unicornfancy` surfaced on `/today` Pings panel by querying open issues where user is mentioned. Both degrade gracefully when GITHUB_TOKEN absent.
-- **Linked follow-ups: Watch for reply (this session)** — Follow-ups now carry `source_type` + `source_ref` linking them to a Zendesk ticket or GitHub issue. "Watch for reply" button on Zendesk and GitHub rows opens a dialog (pre-filled task, 7/14/21/30/custom day picker). Linked follow-ups display inline on their source row with days-remaining pill. When activity is detected (GitHub issue updated, Zendesk ticket pending/solved) an amber "Response detected — resolve?" prompt appears on the row. `Follow-ups.md` self-migrates to add the new columns on first write. Removed task→follow-up convert flow (superseded by Watch for reply).
+- **Hive-Mind MCP wired live (450a119)** — `RealHiveMindTransport` now spawns the local `<paths.hive_mind>/mcp/server/dist/index.js` server (was trying a non-existent npm package). New `hiveMindServerPath` MCP client option, gated by `mcps.hive_mind.enabled` + dist-file presence. Drive-by: dropped unreachable `getHiveMindNotes` MCP method.
+- **Save Draft → Hive-Mind drafts/ (5fb09af)** — `saveAsDraftAction` dual-writes the AI-generated draft to `drafts/<YYYY-MM-DD>-<slug>.md` in the project's HM folder when `hive_mind_partner_slug` is set. Vault remains the editable source.
+- **End-to-end smoke against The Pocket NYC Phase 2** — Add note, attach Zendesk, Process Call, Save Draft all verified live. 4 commits landed on `Team51-Hive-Mind` trunk during the smoke. Process Call write path no longer in the "not visually tested" bucket.
+- **Project onboarding surface (`/projects/onboard`, bcd2d7c)** — Unified table joins Linear my-projects + Hive-Mind partners/projects + vault scratchpads. Per-row action derived from gap pattern (Open / Import / Connect / Set up). Multi-select + batch Import for the 9 reverse imports. Set Up dialog turns a Linear project into HM partner+project + vault scratchpad in one shot, with partner-slug heuristic from Linear name. Connect dialog handles vault projects without HM, auto-suggesting the partner slug from frontmatter. Repair button heals scratchpads imported by an earlier version that didn't stamp `kind: partner`. Auto-links `linear_project_id` on import when an HM project name-matches a Linear project — saves a Linear-URL paste per import.
+- **Linear URL paste field on the metadata modal** — `parseLinearProjectUrl` (in `apps/web/lib/linear-url.ts` to keep the client bundle off the mcp-client barrel) auto-fills `linear_project_id` + `linear_project_slug` when you paste any Linear URL.
+- **MCP client extensions** — Linear `listMyProjects()` (queries `projects(filter: members.id eq viewerId)` — Linear has no `viewer.projects` field). Hive-Mind `listPartners()`, `listProjects()`, `createPartner()`, `createProject()` with markdown-table parsers since the server returns text.
+- **Vault `createProjectScratchpad` helper** — atomic write of a new project file with frontmatter pre-filled (`name`, `slug`, `kind`, `partner`, `hive_mind_*_slug`, `linear_project_id`, `created_at`) plus `## Open Items` body. Idempotent — preserves existing files. Smoke case added.
+- **Webpack config: `serverExternalPackages: ["@modelcontextprotocol/sdk"]`** — the SDK uses node-only APIs (`node:crypto`, `child_process`); without this flag, `transpilePackages: ["@smithers/mcp-client"]` was making webpack try to bundle the SDK for client routes.
+
+## Previously (2026-05-05 — Hive-Mind integration, end-to-end)
+
+- **Hive-Mind as primary store (architectural decision)** — Team51-Hive-Mind (`/Users/katherinemccanna/Team51-Hive-Mind`) is now the canonical store for partner project data. Enables TAM handoff, team draft review, and support archive. Local vault becomes personal-only (weekly updates, style guide). MCP write tools are the write path so other TAM tools can interoperate.
+
+- **Phase 1 complete: Hive-Mind schema extended** — Four new optional file types with templates, frontmatter schemas, and header comment blocks: `zendesk.md`, `follow-ups.md`, `call-transcripts/<date>-<slug>.md`, `drafts/<date>-<slug>.md`. `briefs/project-brief.md` added (with `google_doc_url` frontmatter for partner-shared Google Doc). `/setup-integrations` skill scaffolds these in any project folder. CI validates new file types when present. CONTRIBUTING.md and knowledge/README.md updated.
+  - Call notes renamed to `call-transcripts/` throughout — template has `## Transcript` + `## Analysis` sections, `recording_url` + `transcription_service` fields (service-agnostic: Fathom, Granola, Gemini, etc.)
+
+- **Phase 2 complete: Hive-Mind MCP write tools** — 7 new tools added to Hive-Mind MCP server: `write-project-file`, `write-partner-file`, `update-project-info`, `add-project-note`, `commit` (with push), `create-project`, `create-partner`. PR open: `feat/hive-mind-integration` → `main`.
+
+- **Phase 3 complete: Smithers vault Hive-Mind read helpers** — `packages/vault/src/hive-mind.ts` with 5 helpers: `getHiveMindPartner`, `getHiveMindProject`, `getHiveMindNotes`, `getHiveMindCallTranscripts`, `getHiveMindDrafts`. All wired through `index.ts` (3 places each). `hiveMindPath` config option added. `hive_mind_partner_slug` / `hive_mind_project_slug` slug override fields on project vault types.
+
+- **Hive-Mind MCP client in Smithers** — `packages/mcp-client/src/hive-mind/real.ts` extended with write methods: `writeProjectFile`, `writePartnerFile`, `commit`, `updateProjectInfo`, `addProjectNote`. Mock mirrored. Direct filesystem write helpers (`writeHiveMindCallTranscript`, `commitHiveMindFile`, `writeHiveMindPartnerKnowledge`) removed from `hive-mind-fs.ts` — replaced by MCP client calls.
+
+- **Process Call write path updated** — Now writes call transcripts to Hive-Mind `call-transcripts/` via MCP client (`writeProjectFile` + `commit`) rather than local vault. File format: raw transcript in `## Transcript`, Smithers analysis in `## Analysis`.
+
+- **Direct Linear MCP client** — `packages/mcp-client/src/linear/{real,mock}.ts`. 5 methods: `getProject`, `getProjectIssues`, `getProjectUpdates`, `getIssue`, `getSubtasks`. Degrades gracefully when `LINEAR_API_KEY` absent. `LINEAR_API_KEY` set in `.env.local`.
+
+- **Phase 4 complete: Smithers workbench** — Project Status card (Linear: state, health, progress, phases, active sub-tasks), Project Log (merged notes.md + Linear updates feed, manual Add note), Partner card (read-only, file:// edit link), Zendesk panel (from zendesk.md with local vault fallback), Follow-ups (from follow-ups.md with fallback), Call Transcripts integrated with Fathom panel, Drafts list, Project Brief link (MD + Google Docs button).
+
+- **Hive-Mind MCP PR merged** — `feat/hive-mind-integration` → `trunk` on GitHub. Local clone needs `git checkout trunk && git pull`.
 
 ## In flight
 
-- **Style-guide write path** — `learn-style-from-archives` produces a markdown block; no helper yet to append it into `style-guide.md`. User opted to leave style-guide untouched for now.
-- **Background job scheduling** — plan calls for launchd plists + node-cron in-process for briefing / ping monitor / Fathom sync / Hive Mind sync. None built. Manual rerun buttons exist for some.
-- **Save-as-draft for legacy paths** — only AI dialogs offer "Save as draft". Hand-authoring a draft from the workbench (no AI involved) goes through Obsidian.
+- **Migration to Hive-Mind format** — Decisions captured 2026-05-06. 2 forward (Neighborhood Nip, Shareable: vault → HM via Connect dialog), 9 reverse imports queued in /projects/onboard. Pocket NYC + body-dao already linked. Ready to execute when you want.
+- **`/style-guide` editor + auto-learn loop** — designed in PLAN.md; not yet built.
 
 ## Open TODOs
 
-In rough priority order based on user signal this week:
+In rough priority order:
 
-1. **More AI affordances** — punch-list candidates: Summarize Zendesk thread, Verify @handles before posting, Find related context.
-2. **Project metadata modal: Linear sync probe** — `getLinearProjectMetadata` calls `tool: "project"`. Not yet verified live; if upstream uses a different name, modal sidebar shows "couldn't load Linear data". Same iteration pattern as Zendesk.
-3. **`/today` polish** — day-specific banners (Mon Weekly Update, Fri reflection), AFK state, weekend / new-user / no-data states. Dashboard you see every morning; high-frequency value.
-4. ~~**Edit existing follow-ups inline**~~ — shipped this session.
-5. **Wire GITHUB_TOKEN** — add to `.env.local` to enable GitHub Issues in activity feed and mention pings on /today.
-5. **`/agendas/[project]` editor** — currently a 23-line stub.
-6. **`/style-guide` editor** — stub. Pair with style-guide write path so `learn-style-from-archives` can append directly.
-7. **`/weekly-updates/[YYYY-WN]` editor** — two-column markdown + sources sidebar; stub.
-8. **Project metadata: change-kind wizard** — Team/Personal → Partner copy-to-Hive-Mind; Partner → Team/Personal Hive Mind PR. Preserves `project_id`.
-9. **Bell icon + unresolved-issues count** in app header — vault-watcher Class A/B/C events.
-10. **`[View source]` / Open as markdown** escape-hatch button on every page.
-11. **v1.5 Linear ↔ Hive Mind ↔ Smithers sync** — deeper field standardization. Captured in agent memory; out of scope until user signals.
+1. **Run the migration** — Neighborhood Nip + Shareable Connect; Import the 8 remaining reverse imports from /projects/onboard.
+2. **Build `/style-guide` editor + `/api/learn-from-archive` route** — design locked in PLAN.md.
+3. **`/setup` wizard** — independent phase, designed in PLAN.md. New-TAM first-run config + OAuth + HM build check.
+4. **`/today` polish** — day-specific banners, AFK state, weekend/no-data states.
+5. **`/agendas/[project]` editor** — 23-line stub.
+6. **`/weekly-updates/[YYYY-WN]` editor** — stub.
+7. **Multi-source context for AI drafts** — design discussion needed; queued in PLAN.md.
+8. **Slack thread context for partner projects** — design discussion needed; queued in PLAN.md.
+9. **More AI affordances** — Summarize Zendesk thread, Verify @handles, Find related context.
+10. **Bell icon + unresolved-issues count** — vault-watcher events.
 
 ## Recent decisions (with the why)
 
-- **Persist Zendesk subject + status in frontmatter at attach time** — upstream MCP only exposes `search`; `ticket`/`tickets`/`get_ticket`/`comments` all return "Tool not found". The `id:<n>` search filter is unreliable (returns 0 results or wrong tickets). Workaround: capture rich data when the user attaches via the search modal, render the panel from frontmatter, never per-render upstream lookup.
-- **Merged Follow-ups card into Zendesk Threads** — Katie said all her follow-ups tie to threads in practice. Hard merge with an "Unattributed" bucket at the bottom for follow-ups whose task text doesn't mention `#<id>`.
-- **`zendesk_search_terms` is user-curated, not derived** — partner display name and deslug-with-spaces aren't enough to surface every attached ticket via search. Settings dialog persists user-typed terms (typically partner contact emails) which Refresh fans out.
-- **base64url for draft URLs** — Next `[id]` doesn't accept slashes even URL-encoded; legacy `local:Drafts/...` ids contain slashes. `apps/web/lib/draft-id-url.ts` is the codec.
-- **DraftEditor is a textarea, not CodeMirror** — Katie accepted the lighter scope. Swap later if syntax highlighting becomes load-bearing.
-- **Don't auto-write to `style-guide.md` after learn-style** — keep the user in the loop; silent appends without review feel wrong.
-- **One agent per file, no shared "agent base class"** — system prompt + JSON schema + validate fn co-located. Easier to read, harder to overgeneralize.
-- **Stay on ContextA8C as the single MCP front door** for now — direct Linear MCP would be richer but adds a parallel client. v1.5 territory.
-- **`maxItems` is forbidden in agent schemas** — Anthropic's structured-output validator rejects it. Use prompt + post-validation `.slice(0, N)`.
-- **Change-project-kind: Partner → Team/Personal unlinks, doesn't delete** — the Hive Mind copy stays in place; Smithers just stops treating the local project as partner-kind. Reversible.
-
-## Open questions
-
-- The `learn-style-from-archives` button is on `/drafts`. Should it also live on a future `/style-guide` page? ?
-- For Linear sync (v1.5): canonical source-of-truth split. Pull-from-Linear (Linear authoritative for state/target_date), push-to-Linear (Smithers authoritative for partner-status), or bidirectional with conflict resolution? Decision deferred until the slice starts.
-- The "From this call" P2-update + recap-message drafts always re-fetch the transcript even when the call analysis was loaded from saved notes. Should the cached file also stash the transcript so the side-drafts skip the round-trip? ?
+- **Vault scratchpad is permanent for every project, not transitional** (2026-05-06) — `## Open Items` (tasks) lives in vault forever; HM tracks team-shareable knowledge only. Every imported HM project gets a vault file, not just the 2 that pre-existed.
+- **Onboarding surface joins Linear ↔ HM ↔ vault by slugId, then by name** (2026-05-06) — vault stores Linear's slugId as `linear_project_id` (what users paste from URLs); the GraphQL `id` is a separate UUID. Joins compare both. HM-only rows that name-match a Linear project merge automatically.
+- **Auto-link `linear_project_id` on import** (2026-05-06) — saves the manual URL paste step per import. Persists the link in vault frontmatter rather than just at render time.
+- **Hand-migrate, don't script** (2026-05-06) — 2 forward + 9 reverse = 11 projects total. Below the script-it threshold.
+- **Hive-Mind is primary store for partner projects** — enables handoff, team draft review, support archive, multi-tool compatibility. Local vault becomes personal-only.
+- **MCP write tools, not direct filesystem** — other TAMs may build their own Smithers variants; MCP is the stable interface they can rely on.
+- **call-notes/ → call-transcripts/** — raw transcript is the stored artifact; Smithers-generated analysis is appended as `## Analysis`. `recording_url` + `transcription_service` are service-agnostic (Fathom, Granola, Gemini, other).
+- **Project Log replaces "Project Brief" body section** — reads from `notes.md` in Hive-Mind. Auto-writes: Linear status changes, call summaries, decisions from transcripts. Manual "Add note" button. No Zendesk status change entries (noise). No migration needed from current vault project bodies (testing content only).
+- **Partner knowledge: read-only sidebar card** — Zoho is source of truth; partner-knowledge.md is a curated summary. "Edit in Hive-Mind" link opens the file directly. No edit modal for now.
+- **Project Brief is a separate document** — lives in `briefs/project-brief.md` in the Hive-Mind project folder. Workbench shows a link to the MD + "Open in Google Docs" button from `google_doc_url` frontmatter. Generated by `/create-brief` skill, not inline.
+- **Direct Linear MCP needed for sub-tasks** — ContextA8C cannot filter issues by parent (silently drops `parent_id`/`parent` params, falls back to org-wide query). No children/sub_issues field on individual issue records. Sub-tasks of active phase issues are load-bearing for design milestone tracking.
+- **deadlines.md retained as manual fallback** — Linear is primary source for project phases/status/dates. deadlines.md stays in schema for projects without a Linear project.
+- **Linear project updates merged into Project Log** — posted every ~2 weeks on all projects; merged into the chronological notes.md feed alongside manual entries and call decisions.
 
 ## Known issues / works-but-feels-wrong
 
-- **ContextA8C `comments` tool not found** — Live Activity Zendesk-comments path returns 0 events; Threads panel "Recent activity" disclosures are always empty. Silent degradation; UI doesn't say "comments unavailable upstream". Will resolve when the upstream MCP exposes the right tool name.
-- **`gray-matter` round-trip rewrites YAML** — re-saving frontmatter via `serializeMarkdown` can re-emit values with different quoting/ordering. Not a correctness bug, but `git diff` shows noise on idempotent re-saves.
-- **`router.refresh()` after server actions has a brief flash of stale data** — visible when attaching a Zendesk ticket from the modal; works but not fully smooth.
-- **`Add N to Open Items` / `Add N to Follow-ups.md`** in the Process Call dialog don't disable when N=0. Click does nothing + toast says "no items selected"; should disable instead. ?
-- **Anthropic session expiry** — periodic `MCP error -32603: Invalid or expired session` from ContextA8C. Caught and degraded per-call, but visible in dev server logs and intermittently surfaces empty states until re-auth.
-- **No "saving" indicator on the in-app draft editor** beyond a small text status. Easy to miss. ?
-- **Hive Mind partner profile** — `partnerProfile?.display_name` is often null in our test data, so `defaultSearchQuery` falls back to the partner slug (`the-pocket-nyc`), which is a poor Zendesk search term. The deslug-with-spaces hint is the workaround but the auto-fallback chain could be smarter. ?
-- **`/today` not exercised this week** — every workbench-side change might have stale assumptions about vault data shapes (especially `zendesk_tickets` going from `string[]` → `ZendeskTicketRef[]`). Worth a smoke pass after the next session opens.
+- **Fathom MCP 406 on first call** — `mcp-remote` to `api.fathom.ai/mcp` returns "Failed to open SSE stream: Not Acceptable" on initial tools/call; retry succeeds. Process Call doesn't auto-analyze on dialog open as a result — user has to click "Re-analyze". Issue is upstream (mcp-remote / Fathom remote), not Smithers code.
+- **Fathom missed a recent recording** — call from 2026-05-05 didn't show up in the recordings list. Possibly Fathom indexing lag, possibly filtering bug in Smithers. Needs investigation.
+- **The Pocket NYC partner-knowledge.md is empty** — PartnerCard renders blank until filled in. Content task, not a code task.
+- **ContextA8C `comments` tool not found** — Zendesk "Recent activity" disclosures always empty. Silent degradation.
+- **`gray-matter` round-trip rewrites YAML** — idempotent re-saves produce git diff noise.
+- **`router.refresh()` flash of stale data** — visible on Zendesk ticket attach.
+- **`Add N to Open Items` / `Add N to Follow-ups.md`** don't disable at N=0.
+- **Anthropic session expiry** — periodic MCP error -32603, caught and degraded.
+- **No "saving" indicator** on in-app draft editor beyond small text status.
+- **`/today` not smoke-tested** — vault data shape changes (zendesk_tickets) may have stale assumptions.
