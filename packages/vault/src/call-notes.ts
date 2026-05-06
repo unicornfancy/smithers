@@ -65,6 +65,7 @@ export interface SavedCallNote {
   relative_path: string;
   /** Recording id from frontmatter — the canonical lookup key. */
   recording_id: string;
+  /** Empty string for team/orphan calls that don't belong to a project. */
   project_slug: string;
   /** ISO timestamp when the call was recorded. */
   recorded_at: string;
@@ -77,7 +78,8 @@ export interface SavedCallNote {
 }
 
 export interface SaveCallNotesInput {
-  project_slug: string;
+  /** Omit (or empty string) for team/orphan calls without a project. */
+  project_slug?: string;
   recording: {
     recording_id: string;
     title?: string | null;
@@ -122,14 +124,17 @@ export async function saveCallNotes(
 
   const analyzedAt = new Date().toISOString();
 
+  const projectSlug = input.project_slug ?? "";
   const frontmatter: Record<string, unknown> = {
     recording_id: recordingId,
-    project_slug: input.project_slug,
     recorded_at: recordedAt,
     title,
     analyzed_at: analyzedAt,
     analysis: input.analysis,
   };
+  if (projectSlug) {
+    frontmatter["project_slug"] = projectSlug;
+  }
   if (input.recording.url) {
     frontmatter["fathom_url"] = input.recording.url;
   }
@@ -141,7 +146,7 @@ export async function saveCallNotes(
     absolute_path: targetPath,
     relative_path: relative(opts.vaultPath, targetPath),
     recording_id: recordingId,
-    project_slug: input.project_slug,
+    project_slug: projectSlug,
     recorded_at: recordedAt,
     title,
     fathom_url: input.recording.url ?? undefined,
@@ -183,11 +188,13 @@ function parseSavedFrontmatter(
   vaultPath: string,
 ): SavedCallNote | null {
   const recording_id = typeof data["recording_id"] === "string" ? data["recording_id"] : null;
-  const project_slug = typeof data["project_slug"] === "string" ? data["project_slug"] : null;
+  // project_slug is optional now — team-call notes (no project association)
+  // omit it from frontmatter. Default to empty string when absent.
+  const project_slug = typeof data["project_slug"] === "string" ? data["project_slug"] : "";
   const recorded_at = typeof data["recorded_at"] === "string" ? data["recorded_at"] : null;
   const title = typeof data["title"] === "string" ? data["title"] : null;
   const analyzed_at = typeof data["analyzed_at"] === "string" ? data["analyzed_at"] : null;
-  if (!recording_id || !project_slug || !recorded_at || !title || !analyzed_at) {
+  if (!recording_id || !recorded_at || !title || !analyzed_at) {
     return null;
   }
   const fathom_url = typeof data["fathom_url"] === "string" ? data["fathom_url"] : undefined;

@@ -1,12 +1,15 @@
 "use client";
 
-import { ArrowRight, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowRight, ExternalLink, Loader2, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { addFathomSearchTermAction } from "@/app/calls/actions";
+import {
+  addFathomSearchTermAction,
+  analyzeTeamCallAction,
+} from "@/app/calls/actions";
 import type { CallRow } from "@/app/calls/page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +29,38 @@ interface Props {
 
 export function CallsTable({ matched, unmatched, projectPicker }: Props) {
   const [pickerRow, setPickerRow] = useState<CallRow | null>(null);
+  const [processing, startProcessing] = useTransition();
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const router = useRouter();
+
+  function processTeamCall(row: CallRow) {
+    if (processing) return;
+    setProcessingId(row.recording.recording_id);
+    startProcessing(async () => {
+      try {
+        const result = await analyzeTeamCallAction({
+          recordingId: row.recording.recording_id,
+          url: row.recording.source_url,
+          recordingTitle: row.recording.title,
+          recordedAt: row.recording.recorded_at,
+        });
+        if (!result.ok) {
+          toast.error(result.message ?? result.reason);
+          return;
+        }
+        toast.success(
+          result.cached
+            ? `Already processed · saved to ${result.relative_path}`
+            : `Processed · saved to ${result.relative_path}`,
+        );
+        router.refresh();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Process failed");
+      } finally {
+        setProcessingId(null);
+      }
+    });
+  }
 
   return (
     <div className="space-y-8">
@@ -36,10 +71,16 @@ export function CallsTable({ matched, unmatched, projectPicker }: Props) {
           </h2>
           <p className="text-muted-foreground mb-3 text-sm">
             These recordings didn&apos;t match any project. Match one to a project
-            to teach Smithers the partner&apos;s contact name or domain — future
-            calls will route automatically.
+            to teach Smithers the partner&apos;s contact name or domain (future
+            calls will route automatically), or Process directly for team
+            calls without a project.
           </p>
-          <RecordingList rows={unmatched} onMatch={setPickerRow} />
+          <RecordingList
+            rows={unmatched}
+            onMatch={setPickerRow}
+            onProcess={processTeamCall}
+            processingId={processing ? processingId : null}
+          />
         </section>
       ) : null}
 
@@ -64,9 +105,13 @@ export function CallsTable({ matched, unmatched, projectPicker }: Props) {
 function RecordingList({
   rows,
   onMatch,
+  onProcess,
+  processingId,
 }: {
   rows: CallRow[];
   onMatch?: (row: CallRow) => void;
+  onProcess?: (row: CallRow) => void;
+  processingId?: string | null;
 }) {
   return (
     <div className="overflow-hidden rounded-md border">
@@ -130,6 +175,25 @@ function RecordingList({
                       >
                         Fathom <ExternalLink className="size-3" />
                       </a>
+                    </Button>
+                  ) : null}
+                  {onProcess ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1.5 px-2 text-xs"
+                      onClick={() => onProcess(row)}
+                      disabled={
+                        processingId === row.recording.recording_id ||
+                        Boolean(processingId)
+                      }
+                    >
+                      {processingId === row.recording.recording_id ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="size-3" />
+                      )}
+                      Process
                     </Button>
                   ) : null}
                   {onMatch ? (

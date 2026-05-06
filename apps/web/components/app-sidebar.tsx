@@ -10,6 +10,7 @@ import {
   Inbox,
   ListChecks,
   Newspaper,
+  PhoneCall,
   Settings,
   Sparkles,
   PenLine,
@@ -26,6 +27,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   { href: "/today", label: "Today", icon: Calendar },
   { href: "/projects", label: "Projects", icon: FolderKanban },
+  { href: "/calls", label: "Calls", icon: PhoneCall },
   { href: "/drafts", label: "Drafts", icon: PenLine },
   { href: "/agendas", label: "Agendas", icon: ListChecks },
   { href: "/follow-ups", label: "Follow-ups", icon: Inbox },

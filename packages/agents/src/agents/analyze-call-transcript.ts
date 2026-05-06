@@ -10,7 +10,13 @@ import type {
 export interface AnalyzeCallTranscriptInput {
   /** Full transcript text — speaker turns + timestamps as Fathom emits them. */
   transcript: string;
-  project: Project;
+  /**
+   * Optional — present for partner/team-call analysis where Smithers knows
+   * the project. Absent for orphan recordings (e.g. internal Automattic
+   * meetings the user is note-taking on); the agent then summarizes the
+   * transcript without project-side context.
+   */
+  project?: Project;
   /** Recording ref shown to the model so it can name the call in outputs. */
   call: {
     recording_id: string;
@@ -193,12 +199,14 @@ function renderUserPrompt(input: AnalyzeCallTranscriptInput): string {
   const { project, call, transcript, style } = input;
   const lines: string[] = [];
 
-  lines.push("# Project");
-  lines.push(`- Name: ${project.name}`);
-  lines.push(`- Kind: ${project.kind}`);
-  if (project.partner) lines.push(`- Partner: ${project.partner}`);
+  if (project) {
+    lines.push("# Project");
+    lines.push(`- Name: ${project.name}`);
+    lines.push(`- Kind: ${project.kind}`);
+    if (project.partner) lines.push(`- Partner: ${project.partner}`);
+    lines.push("");
+  }
 
-  lines.push("");
   lines.push("# Call");
   if (call.title) lines.push(`- Title: ${call.title}`);
   if (call.recorded_at) {
