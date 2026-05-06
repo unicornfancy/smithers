@@ -6,8 +6,10 @@ import {
   learnStyleFromArchives,
   type LearnStyleFromArchivesOutput,
 } from "@smithers/agents";
+import { slugify } from "@smithers/vault";
 
 import { getAgentRuntime } from "@/lib/server/agents";
+import { getMcpClient } from "@/lib/server/mcp";
 import { getVault } from "@/lib/server/vault";
 
 /**
@@ -108,6 +110,12 @@ export async function learnStyleFromArchivesAction(): Promise<
  * Save AI-generated content as a new draft file in `Drafts/`. The
  * agent's first pass is snapshotted into frontmatter (`original_body`)
  * so archive-time diffs can teach the style guide later.
+ *
+ * When the draft belongs to a Hive-Mind-connected project (parent
+ * project has `hive_mind_partner_slug`), also dual-writes a copy to
+ * the project's `drafts/` folder in Hive-Mind so the team can see and
+ * review it. Vault remains the editable source for the live draft;
+ * Hive-Mind gets the snapshot at save time.
  */
 export async function saveAsDraftAction(input: {
   project_slug?: string;
@@ -126,8 +134,65 @@ export async function saveAsDraftAction(input: {
   if (input.project_slug) {
     revalidatePath(`/projects/${input.project_slug}`);
   }
+
+  if (input.project_slug) {
+    const project = await vault.readProject(input.project_slug).catch(() => null);
+    if (project?.hive_mind_partner_slug) {
+      const hmPartner = project.hive_mind_partner_slug;
+      const hmProject = project.hive_mind_project_slug ?? project.slug;
+      const today = new Date().toISOString().slice(0, 10);
+      const filename = `drafts/${today}-${slugify(input.title)}.md`;
+      const content = buildHmDraftFile({
+        title: input.title,
+        partnerSlug: hmPartner,
+        projectSlug: hmProject,
+        date: today,
+        type: input.channel || "partner-email",
+        sourceAgent: input.source_agent,
+        subject: input.subject,
+        body: input.body,
+      });
+      try {
+        const mcp = await getMcpClient();
+        await mcp.hiveMind.writeProjectFile(hmPartner, hmProject, filename, content);
+        await mcp.hiveMind.commit(
+          `drafts: add ${input.title} for ${hmPartner}/${hmProject}`,
+        );
+      } catch {
+        // HM sync failure is non-fatal; vault copy is the editable source.
+      }
+    }
+  }
+
   return {
     draft_id: result.draft_id,
     relative_path: result.relative_path,
   };
+}
+
+function buildHmDraftFile(args: {
+  title: string;
+  partnerSlug: string;
+  projectSlug: string;
+  date: string;
+  type: string;
+  sourceAgent?: string;
+  subject?: string;
+  body: string;
+}): string {
+  const fmLines = [
+    "---",
+    `title: ${JSON.stringify(args.title)}`,
+    `partner: ${args.partnerSlug}`,
+    `project: ${args.projectSlug}`,
+    `date: ${args.date}`,
+    `type: ${args.type}`,
+    "status: draft",
+    `updated: ${args.date}`,
+  ];
+  if (args.sourceAgent) fmLines.push(`source_agent: ${args.sourceAgent}`);
+  fmLines.push("---");
+  const subjectSection = `## Subject\n\n${args.subject ?? ""}\n`;
+  const bodySection = `## Body\n\n${args.body.trim()}\n`;
+  return [fmLines.join("\n"), "", subjectSection, bodySection].join("\n");
 }
