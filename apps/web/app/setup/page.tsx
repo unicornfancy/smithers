@@ -1,24 +1,22 @@
 import { AppHeader } from "@/components/app-header";
-import { PageShell, PlaceholderCard } from "@/components/page-shell";
+import { PageShell } from "@/components/page-shell";
+import { SetupWizard } from "@/components/setup-wizard";
 
-export const metadata = {
-  title: "Setup · Smithers",
-};
+import { getSetupStatusAction } from "./actions";
 
-export default function SetupPage() {
+export const dynamic = "force-dynamic";
+export const metadata = { title: "Setup · Smithers" };
+
+export default async function SetupPage() {
+  const status = await getSetupStatusAction();
   return (
     <>
-      <AppHeader title="First-run setup" subtitle="8-step onboarding wizard" />
+      <AppHeader
+        title="Setup"
+        subtitle="Configure Smithers for your environment"
+      />
       <PageShell>
-        <PlaceholderCard
-          title="Welcome"
-          description="A short tour and privacy summary. Then: Identity → Vault path → Hive Mind path (skippable) → Transcription provider → Live data MCP detection → Initial test sync → Done."
-          todo={[
-            "Auto-detect Obsidian vaults (~/Library/Application Support/obsidian/obsidian.json)",
-            "Or any markdown folder",
-            "Or 'Create new vault from templates' (no Obsidian required)",
-          ]}
-        />
+        <SetupWizard initialStatus={status} />
       </PageShell>
     </>
   );
