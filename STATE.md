@@ -66,7 +66,7 @@ In rough priority order:
 
 1. **Run the migration** — Neighborhood Nip + Shareable Connect; Import any HM projects you're actively working on (only what you're working on, not all of them) from /projects/onboard.
 2. **`/setup` wizard** — independent phase, designed in PLAN.md. New-TAM first-run config + OAuth + HM build check.
-3. **`/today` polish** — day-specific banners, AFK state, weekend/no-data states.
+3. **`/today` view focus** — design discussion needed; queued in PLAN.md. Polish items (day-specific banners, AFK / weekend / no-data states) plus open questions about opinionated section visibility, "what changed since you last opened this," calendar integration surface, For-You-Today confidence.
 4. **`/agendas/[project]` editor** — 23-line stub.
 5. **`/weekly-updates/[YYYY-WN]` editor** — stub.
 6. **Multi-source context for AI drafts** — design discussion needed; queued in PLAN.md.
