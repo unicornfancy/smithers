@@ -2,16 +2,38 @@
 
 _Updated 2026-05-06_
 
-## Just completed (2026-05-06 — Hive-Mind writes live + project onboarding)
+## Just completed (2026-05-06 — Hive-Mind writes, onboarding, calls, team-call notes)
+
+### Hive-Mind writes live + Save Draft dual-write
 
 - **Hive-Mind MCP wired live (450a119)** — `RealHiveMindTransport` now spawns the local `<paths.hive_mind>/mcp/server/dist/index.js` server (was trying a non-existent npm package). New `hiveMindServerPath` MCP client option, gated by `mcps.hive_mind.enabled` + dist-file presence. Drive-by: dropped unreachable `getHiveMindNotes` MCP method.
 - **Save Draft → Hive-Mind drafts/ (5fb09af)** — `saveAsDraftAction` dual-writes the AI-generated draft to `drafts/<YYYY-MM-DD>-<slug>.md` in the project's HM folder when `hive_mind_partner_slug` is set. Vault remains the editable source.
 - **End-to-end smoke against The Pocket NYC Phase 2** — Add note, attach Zendesk, Process Call, Save Draft all verified live. 4 commits landed on `Team51-Hive-Mind` trunk during the smoke. Process Call write path no longer in the "not visually tested" bucket.
-- **Project onboarding surface (`/projects/onboard`, bcd2d7c)** — Unified table joins Linear my-projects + Hive-Mind partners/projects + vault scratchpads. Per-row action derived from gap pattern (Open / Import / Connect / Set up). Multi-select + batch Import for the 9 reverse imports. Set Up dialog turns a Linear project into HM partner+project + vault scratchpad in one shot, with partner-slug heuristic from Linear name. Connect dialog handles vault projects without HM, auto-suggesting the partner slug from frontmatter. Repair button heals scratchpads imported by an earlier version that didn't stamp `kind: partner`. Auto-links `linear_project_id` on import when an HM project name-matches a Linear project — saves a Linear-URL paste per import.
+
+### Project onboarding surface
+
+- **`/projects/onboard` route (bcd2d7c)** — Unified table joins Linear my-projects + Hive-Mind partners/projects + vault scratchpads. Per-row action derived from gap pattern (Open / Import / Connect / Set up). Multi-select + batch Import for reverse imports. Set Up dialog turns a Linear project into HM partner+project + vault scratchpad in one shot, with partner-slug heuristic from Linear name. Connect dialog handles vault projects without HM, auto-suggesting the partner slug from frontmatter. Repair button heals scratchpads imported by an earlier version that didn't stamp `kind: partner`. Auto-links `linear_project_id` on import when an HM project name-matches a Linear project — saves a Linear-URL paste per import.
 - **Linear URL paste field on the metadata modal** — `parseLinearProjectUrl` (in `apps/web/lib/linear-url.ts` to keep the client bundle off the mcp-client barrel) auto-fills `linear_project_id` + `linear_project_slug` when you paste any Linear URL.
 - **MCP client extensions** — Linear `listMyProjects()` (queries `projects(filter: members.id eq viewerId)` — Linear has no `viewer.projects` field). Hive-Mind `listPartners()`, `listProjects()`, `createPartner()`, `createProject()` with markdown-table parsers since the server returns text.
 - **Vault `createProjectScratchpad` helper** — atomic write of a new project file with frontmatter pre-filled (`name`, `slug`, `kind`, `partner`, `hive_mind_*_slug`, `linear_project_id`, `created_at`) plus `## Open Items` body. Idempotent — preserves existing files. Smoke case added.
 - **Webpack config: `serverExternalPackages: ["@modelcontextprotocol/sdk"]`** — the SDK uses node-only APIs (`node:crypto`, `child_process`); without this flag, `transpilePackages: ["@smithers/mcp-client"]` was making webpack try to bundle the SDK for client routes.
+
+### Phase J: Fathom matching + /calls page
+
+- **Attendee-based recording match (0671064)** — Recordings whose meeting title doesn't include the project name (because the partner scheduled via the user's calendar link) were silently dropping. Probe of Fathom's `list_meetings` confirmed the trailing attendees segment exposes the partner's email domain. Fix: preserve `attendees` on `CallRecordingRef`, include it in the match haystack — `"thepocketnyc.com"` substring-matches `"pocket"` so the call lands automatically. Same logic also drives the new `/calls` route and `/today` Recent Calls panel.
+- **`/calls` page** — full recording list split into Matched (linkable to project workbenches) and Unmatched (primary surface). Per-row "Match to project" picker writes the chosen partner identifier into `fathom_search_terms` — initial value heuristically pulled from the recording's attendee email domain.
+- **`fathom_search_terms[]` on project frontmatter** — user-curated escape hatch when the heuristic isn't enough. Mirrors `zendesk_search_terms`; `setProjectFathomSearchTerms` helper wired through the vault factory.
+- **`/today` Recent Calls panel** — top 5 recordings with unmatched count badge, link to `/calls`.
+- **Probe script** — `packages/mcp-client/scripts/probe-fathom-list.mjs` dumps raw `list_meetings` output. Useful for future Fathom diagnostics.
+
+### Team-call note-taking + nav
+
+- **Process call without project (1c5c29f)** — `analyze-call-transcript` agent's `project` field is now optional; user prompt drops the `# Project` block when absent. `saveCallNotes` `project_slug` is optional; orphan calls land in `Call Notes/` without a `project_slug` field. New `analyzeTeamCallAction` + "Process" button on `/calls` unmatched rows runs the agent + saves notes for internal/team meetings the user is just note-taking on. Cache hit on `recording_id` returns the existing notes without re-running.
+- **Calls in sidebar nav** — between Projects and Drafts.
+
+### Doc cleanup
+
+- **STATE.md fix (f2ff94c)** — confirmed `/style-guide` editor + auto-learn loop already shipped in 32e9e56 (pre-session); removed the bogus "not yet built" entry that an earlier doc refresh introduced.
 
 ## Previously (2026-05-05 — Hive-Mind integration, end-to-end)
 
@@ -54,6 +76,10 @@ In rough priority order:
 
 ## Recent decisions (with the why)
 
+- **TAMs only import the HM projects they're actively working on** (2026-05-06) — Hive-Mind is shared across the whole team; vault scratchpads are the personal subset the user wants Smithers to track. The /projects/onboard surface lists everything but doesn't pressure users to bulk-import.
+- **Match Fathom recordings via attendees, not just title** (2026-05-06) — partner-scheduled calls (calendar link) get generic titles; the attendees segment exposes the partner's email domain. Substring matching against the haystack catches the common case without per-project config.
+- **Team-call processing relaxes call-notes project_slug** (2026-05-06) — orphan recordings (internal Automattic meetings the user is note-taking on) save to vault `Call Notes/` without a `project_slug` field. The analyze-call agent's `project` input is also optional now.
+- **`/calls` for orphan recordings, `/today` for the day's snapshot** (2026-05-06) — `/calls` is the full list with Matched + Unmatched sections + match-to-project + team-call processing. `/today` carries a 5-row card linking to `/calls`.
 - **Vault scratchpad is permanent for every project, not transitional** (2026-05-06) — `## Open Items` (tasks) lives in vault forever; HM tracks team-shareable knowledge only. Every imported HM project gets a vault file, not just the 2 that pre-existed.
 - **Onboarding surface joins Linear ↔ HM ↔ vault by slugId, then by name** (2026-05-06) — vault stores Linear's slugId as `linear_project_id` (what users paste from URLs); the GraphQL `id` is a separate UUID. Joins compare both. HM-only rows that name-match a Linear project merge automatically.
 - **Auto-link `linear_project_id` on import** (2026-05-06) — saves the manual URL paste step per import. Persists the link in vault frontmatter rather than just at render time.
@@ -71,8 +97,8 @@ In rough priority order:
 ## Known issues / works-but-feels-wrong
 
 - **Fathom MCP 406 on first call** — `mcp-remote` to `api.fathom.ai/mcp` returns "Failed to open SSE stream: Not Acceptable" on initial tools/call; retry succeeds. Process Call doesn't auto-analyze on dialog open as a result — user has to click "Re-analyze". Issue is upstream (mcp-remote / Fathom remote), not Smithers code.
-- **Fathom missed a recent recording** — call from 2026-05-05 didn't show up in the recordings list. Possibly Fathom indexing lag, possibly filtering bug in Smithers. Needs investigation.
 - **The Pocket NYC partner-knowledge.md is empty** — PartnerCard renders blank until filled in. Content task, not a code task.
+- **Auto-learn-from-archive has no in-flight indicator** — fire-and-forget; the success toast pops when the agent returns. Plan called for a small "learning…" pill near the archive button. Polish item, deferred.
 - **ContextA8C `comments` tool not found** — Zendesk "Recent activity" disclosures always empty. Silent degradation.
 - **`gray-matter` round-trip rewrites YAML** — idempotent re-saves produce git diff noise.
 - **`router.refresh()` flash of stale data** — visible on Zendesk ticket attach.
