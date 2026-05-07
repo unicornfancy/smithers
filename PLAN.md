@@ -27,37 +27,51 @@ Scope: launchd plists + node-cron in-process for recurring jobs: briefing, ping 
 
 ---
 
-## `/setup` wizard
+## Phase H: Multi-source context for AI drafts (incl. Slack threads)
 
-**Decided 2026-05-06.** Independent of all other phases — can run in any session.
+**Decided 2026-05-07.** Scope locked; ready to build.
 
-First-run experience for new TAMs picking up Smithers (the project-handoff workflow). Configures:
-- `config.local.yaml` paths (vault, hive_mind, my_voice)
-- API keys in `apps/web/.env.local` (ANTHROPIC_API_KEY, LINEAR_API_KEY)
-- MCP enable flags + first-run OAuth (ContextA8C, Fathom)
-- Hive-Mind server build check (`<paths.hive_mind>/mcp/server/dist/index.js`)
+### What it is
+Every draft agent (`draft-zendesk-reply`, `compose-followup-nudge`, `compose-call-recap`, `draft-p2-update`, etc.) currently reads one context source. Phase H adds a curation step before the agent runs where the user can attach extra context items — Slack threads, Slack messages, GitHub PR/issue comments, other Zendesk tickets, recent call transcripts on the same project.
 
-Visitors with missing essential config get redirected to `/setup` automatically.
+Slack-threads as a separate phase folds in here: a Slack thread is just one of the attachable types. Same for individual Slack messages (treated as a sub-type — single-message ref vs full-thread ref).
 
----
+### Flow
+1. User clicks a draft affordance.
+2. Dialog opens with three stacked sections:
+   - **Suggestions** — Smithers scans the last ~7 days of project activity (call transcripts, ContextA8C activity feed for Slack/GitHub/Zendesk) and surfaces 3–5 candidates as togglable rows. **Not auto-attached** — user explicitly opts each in.
+   - **Manual attach** — URL paste field that resolves to a Slack thread / Slack message / GitHub issue or PR comment / other Zendesk ticket. Plus a picker for "this project's existing call transcripts."
+   - **Pinned context** — items the project has pinned permanently (loaded from frontmatter). Pre-checked but the user can opt-out for this draft.
+3. **"Generate" is disabled until the user has explicitly confirmed the context set** (either by attaching ≥1 item, or by clicking a "No extra context" checkbox). Prevents silent runs against stale defaults.
+4. Agent runs with primary source + the curated `extra_context: ContextItem[]`.
 
-## Multi-source context for AI drafts
+### Source types (v1)
+- `slack-thread` — full thread by Slack permalink
+- `slack-message` — single message by Slack permalink
+- `github-issue-comment` — comment or PR review by URL
+- `call-transcript` — pick from project's existing transcripts
+- `zendesk-ticket` — by ticket id (excluding the one being replied to, when applicable)
 
-**Deferred — needs design discussion.**
+Each `ContextItem` carries `{ type, ref, label, body }` after resolution. Body is the fetched text fed to the agent; ref + label survive on disk if pinned.
 
-When generating a draft (e.g. Zendesk reply), pull in context from another source — for example a recent GitHub comment on the same partner project, or notes from yesterday's call. Each agent currently reads one context source only.
+### Pinning
+- Stored on the project in **Hive-Mind**: new optional file type `pinned-context.md` in the project folder. Team-shareable; survives TAM handoff. Schema mirrors zendesk.md / follow-ups.md (frontmatter + a markdown table of pinned items). New schema entry needs to land in the Hive-Mind repo first (templates/, CONTRIBUTING.md, CI validation when present).
+- Workbench grows a small "Pinned context" affordance — add/remove. Mirrors the existing zendesk-tickets / fathom_search_terms patterns: paste URL → resolve → save → MCP `write-project-file` + `commit`.
 
-Open questions: how to surface the picker (modal at draft time? per-affordance settings?), how the agent merges sources, what counts as "related context" (manual selection vs. heuristic by partner/timeframe).
+### Suggestion engine
+- Reads ContextA8C activity feed (already used by `/today`'s Pings panel) filtered to the project — last 7 days, max 5.
+- For call transcripts, query `getHiveMindCallTranscripts` for the project.
+- Lightweight ranking: recency weighted, plus skip items the user has already attached/pinned.
 
----
-
-## Slack thread context for partner projects
-
-**Deferred — needs design discussion.**
-
-Attach specific Slack threads (not whole channels) as context for projects, so AI agents can reference them. Smithers reads channels via ContextA8C activity feed today but doesn't pin threads.
-
-Open questions: file shape (`slack-threads.md` in Hive-Mind?), MCP probe for thread fetch, UI for attaching threads to a project.
+### Slices
+- **H0 — Hive-Mind `pinned-context.md` schema.** Add to `Team51-Hive-Mind`: template, CONTRIBUTING.md entry, CI validation, `/setup-integrations` skill scaffold. Lands as a separate Hive-Mind PR before Smithers slices depend on it.
+- **H1 — `ContextItem` type + URL resolver server action** (Slack thread/message first, then GitHub, then Zendesk). One server action that takes a URL and returns a resolved `ContextItem` or an error.
+- **H2 — Pinned context read + write helpers**. Vault helper to read `pinned-context.md` from Hive-Mind (mirrors `getHiveMindZendesk`). Server action to add/remove items via `writeProjectFile` + `commit`.
+- **H3 — Draft context picker component**. Reusable client component used by the existing `AiDraftDialog`. Renders Suggestions + Manual + Pinned sections; gates the Generate button.
+- **H4 — Agent input schema extension**. Each draft agent input grows `extra_context?: ContextItem[]`; user prompts append a `# Additional context` block per item.
+- **H5 — Suggestion engine** — server-side recency lookup against ContextA8C + Hive-Mind transcripts.
+- **H6 — Workbench "Pinned context" affordance** — small card to manage pins outside of a draft.
+- **H7 — Roll out across all draft affordances**. After H3 lands on one or two, generalize.
 
 ---
 
