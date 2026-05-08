@@ -27,32 +27,66 @@ Scope: launchd plists + node-cron in-process for recurring jobs: briefing, ping 
 
 ---
 
-## `/today` view focus
+## `/today` v2
 
-**Deferred — needs design discussion.**
+**Decided 2026-05-08.** Scope locked; ready to build in staged slices.
 
-The dashboard the user opens every morning. Currently shows: stat cards (projects / drafts / follow-ups / daily notes), For-You-Today (LLM-curated top-3), Stalls, Pings to Action, Recent Calls (just added), Realistic Shape. Functional but not yet shaped around the actual rhythm of the day.
+### Page model: 3-tier hierarchy
+The page reorganizes around the three roles it plays for the user — triage / awareness / flex. Section visibility maps to a tier; each tier renders with its own visual weight.
 
-### Polish items already on the radar
-- **Day-specific banners** — Monday: Weekly Update prep. Friday: end-of-week reflection. Ad-hoc banners for known events (e.g. partner kickoff coming up).
-- **AFK / weekend / new-user / no-data states** — currently a fairly empty page when there's nothing to show; needs better non-empty paths for weekends, first-launch, and days with no signal.
-- **High-frequency value** — this is the page the user lives in; small UX wins compound.
+```
+HOT (top, prominent)
+  - Top pings by importance score
+  - "Moving fast" horizontal strip — top 5 projects by 7-day activity
+ACTIVE (mid, default-expanded)
+  - Stalls, all other pings, recent calls
+  - LLM-curated top-3 (only when confidence ≥ threshold)
+BACKGROUND (collapsed by default)
+  - Stat cards, drafts in flight, realistic-shape
+```
 
-### Open design questions
-- Should Today be opinionated about which sections appear when (e.g. hide Pings on weekends, surface Drafts in flight on Monday morning)?
-- Does it need a "what changed since you last opened this" affordance? Today is always-fresh; it doesn't currently differentiate "new since yesterday" from "still here from yesterday."
-- Is the right surface for the "what's on my calendar today" hook (out-of-band integration with Calendar MCP) the Today page itself or a separate `/agenda`?
-- For the LLM-curated For-You-Today — confidence has been low historically. Worth investigating whether it's because the agent doesn't have enough signal, or because the signal is noisy.
+### Importance signal — hybrid scoring
+Each ping gets a numeric score; top-N go to HOT.
+- **+ priority project bonus** — ping is from a project with `priority: high` in Hive-Mind `info.md` (or vault project frontmatter when HM not linked). User tags the project once.
+- **+ partner-contact bonus** — ping author email/handle appears in the project's `partner-knowledge.md` team contacts. Distinguishes external partner voices from internal noise.
+- **+ LLM bonus (gated)** — `composeTopThree` agent's pick, only when confidence ≥ threshold. (Requires adding `confidence` to the agent's output schema.) Falls through to rules-only when confidence is low — addresses the long-running gripe that the LLM picks haven't been reliable.
+- **+ small staleness tiebreaker** — items waiting > 5 days nudge upward, doesn't dominate.
 
-Probably needs an actual day or two of "what would make my morning better?" observation before shaping. Filed here so the Open TODOs list reflects that this is a real focus area, not a one-line polish item.
+### Velocity signal — "Moving fast" strip
+- For each partner project, count activity events from `mcp.contextA8C.listProjectActivity` in the last 7 days (Slack messages, GitHub commits/PRs/issue comments, Linear updates, Zendesk comments). Sum across sources.
+- Sort projects descending by event count; top 5 in a horizontal strip with name + count + click-through to workbench.
+
+### Flex — staged rollout (NOT v1 in one shot)
+User wants maximum flexibility, but shipping all of it together is too much surface to keep clean. Staged:
+- **Stage 1**: section ordering + collapse (folds in the separate "Collapsible + reorderable sections" plan item)
+- **Stage 2**: filter chips at top of the page — "Show only Slack/Zendesk/GitHub/Linear/P2" multi-select; "Pinned projects" toggle scopes the Hot strip
+- **Stage 3**: Modes — Focus / Scan / Catchup, each storing its own section visibility + density. User toggles between via a small mode-switcher in the header.
+- **Stage 4**: Per-day-of-week defaults — Monday auto-loads a "Weekly Update prep" mode, Friday loads "End-of-week reflection." Customizable per user.
+
+### Persistence
+- localStorage per-browser for v1 (no sync). Promote to disk in `paths.data/today-prefs.json` once we want cross-machine sync.
+- Pinned projects (a `priority: high` flag) stored on project frontmatter — already shared across the app, not /today-only.
+
+### Slices (build order)
+- **T1** — backend signals: importance score + velocity event count helpers. Add `priority` field reader to vault project parser; add HM `info.md` priority lookup. Add a `getProjectActivityCounts(7d)` helper. No UI yet.
+- **T2** — frontend: 3-tier layout with HOT (top pings + Moving fast strip), ACTIVE (existing cards in current order), BACKGROUND (collapsed-by-default cards). No flex yet.
+- **T3** — Stage 1 of flex: section ordering + collapse persistence (localStorage). Drag handles via @dnd-kit OR up/down arrows in an "Edit layout" mode.
+- **T4** — Stage 2 of flex: filter chips + pinned projects.
+- **T5** — Stage 3 of flex: Focus/Scan/Catchup mode switcher.
+- **T6** — Stage 4 of flex: per-day-of-week defaults with editable presets.
+- **T7** — Add `confidence` to `composeTopThree` agent output; gate LLM picks behind threshold.
+
+### Open follow-ups (not blocking)
+- Calendar MCP integration ("what's on your schedule today") — separate plan item if/when we add it.
+- "What changed since you last opened this" affordance — postponed; not in v2 scope.
 
 ---
 
-## Collapsible + reorderable sections on `/today` and project pages
+## Collapsible + reorderable sections on project pages
 
-**Deferred — needs design discussion.**
+**Deferred — needs design discussion.** (`/today` side handled by `/today` v2 above; this entry covers `/projects/[slug]`.)
 
-Both `/today` and `/projects/[slug]` carry many sections (For-You-Today, Stalls, Pings, Recent Calls, Project Status, Project Log, Partner, Zendesk, Follow-ups, Call Transcripts, Drafts, Open Items, etc.). Today they render in a fixed order with no per-user customization. Goal: let the user collapse sections they're ignoring and reorder the ones they care about.
+Project workbenches carry many sections (Project Status, Project Log, Partner, Zendesk, Follow-ups, Call Transcripts, Drafts, Open Items, Pinned Context, Live Activity, etc.). They render in a fixed order with no per-user customization. Goal: let the user collapse sections they're ignoring and reorder the ones they care about. Same persistence layer + drag-and-drop primitive as `/today` Stage 1 — once that lands, this is mostly UI plumbing.
 
 ### Open questions
 - **Persistence target.** localStorage (per-browser, no sync, simplest) vs a new file under `paths.data/` (per-user, syncs if the data dir is in the vault) vs vault frontmatter on a `_layout.md`. Probably localStorage for v1; promote to disk if it ever needs to survive a fresh checkout.
