@@ -102,14 +102,19 @@ import {
   getHiveMindFollowUps,
   getHiveMindNotes,
   getHiveMindPartner,
+  getHiveMindPinnedContext,
   getHiveMindProject,
   getHiveMindZendesk,
+  serializeHiveMindPinnedContext,
   type FollowUpRow,
   type HiveMindBrief,
   type HiveMindCallTranscript,
   type HiveMindDraft,
   type HiveMindFollowUpsData,
   type HiveMindPartner,
+  type HiveMindPinnedContextData,
+  type HiveMindPinnedContextRow,
+  type HiveMindPinnedContextType,
   type HiveMindProject,
   type HiveMindZendeskData,
 } from "./hive-mind";
@@ -175,6 +180,9 @@ export type {
   HiveMindDraft,
   HiveMindFollowUpsData,
   HiveMindPartner,
+  HiveMindPinnedContextData,
+  HiveMindPinnedContextRow,
+  HiveMindPinnedContextType,
   HiveMindProject,
   HiveMindZendeskData,
 } from "./hive-mind";
@@ -187,8 +195,10 @@ export {
   getHiveMindFollowUps,
   getHiveMindNotes,
   getHiveMindPartner,
+  getHiveMindPinnedContext,
   getHiveMindProject,
   getHiveMindZendesk,
+  serializeHiveMindPinnedContext,
   appendDecisionsToProject,
   appendFollowUp,
   appendProjectTask,
@@ -370,6 +380,10 @@ export interface Vault {
     partnerSlug: string,
     projectSlug: string,
   ) => ReturnType<typeof getHiveMindZendesk>;
+  getHiveMindPinnedContext: (
+    partnerSlug: string,
+    projectSlug: string,
+  ) => ReturnType<typeof getHiveMindPinnedContext>;
   getHiveMindFollowUps: (
     partnerSlug: string,
     projectSlug: string,
@@ -456,6 +470,8 @@ export function createVault(options: VaultOptions): Vault {
       getHiveMindDrafts(resolved, partnerSlug, projectSlug),
     getHiveMindZendesk: (partnerSlug, projectSlug) =>
       getHiveMindZendesk(resolved, partnerSlug, projectSlug),
+    getHiveMindPinnedContext: (partnerSlug, projectSlug) =>
+      getHiveMindPinnedContext(resolved, partnerSlug, projectSlug),
     getHiveMindFollowUps: (partnerSlug, projectSlug) =>
       getHiveMindFollowUps(resolved, partnerSlug, projectSlug),
     getHiveMindBrief: (partnerSlug, projectSlug) =>

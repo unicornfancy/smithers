@@ -268,6 +268,137 @@ export async function getHiveMindZendesk(
   return { search_terms: searchTerms, tickets, last_refreshed: lastRefreshed };
 }
 
+// ---- Pinned context ----
+
+export type HiveMindPinnedContextType =
+  | "slack-thread"
+  | "slack-message"
+  | "github-issue-comment"
+  | "call-transcript"
+  | "zendesk-ticket"
+  | "linear-issue"
+  | "linear-project";
+
+export interface HiveMindPinnedContextRow {
+  type: HiveMindPinnedContextType;
+  ref: string;
+  label: string;
+  added: string;
+}
+
+export interface HiveMindPinnedContextData {
+  rows: HiveMindPinnedContextRow[];
+  updated: string | null;
+}
+
+const PINNED_CONTEXT_TYPES: ReadonlySet<HiveMindPinnedContextType> = new Set([
+  "slack-thread",
+  "slack-message",
+  "github-issue-comment",
+  "call-transcript",
+  "zendesk-ticket",
+  "linear-issue",
+  "linear-project",
+]);
+
+/**
+ * Read pinned-context.md for a given partner/project. Returns null if
+ * the file is absent or Hive-Mind is not configured. Rows whose `type`
+ * isn't a known value are dropped silently — the CI validation in the
+ * Hive-Mind repo gates this at write time, so reaching the runtime with
+ * a bad type means someone hand-edited a file outside the validated path.
+ *
+ * Format (from Hive-Mind schema):
+ *   ---
+ *   title: "..."
+ *   partner: <slug>
+ *   project: <slug>
+ *   updated: YYYY-MM-DD
+ *   ---
+ *   | type | ref | label | added |
+ *   | :-- | :-- | :-- | :-- |
+ *   | ... | ... | ... | ... |
+ */
+export async function getHiveMindPinnedContext(
+  opts: ResolvedVaultOptions,
+  partnerSlug: string,
+  projectSlug: string,
+): Promise<HiveMindPinnedContextData | null> {
+  const base = hiveMindPartnersDir(opts);
+  if (!base) return null;
+
+  const filePath = join(base, partnerSlug, projectSlug, "pinned-context.md");
+  const raw = await tryReadFile(filePath);
+  if (!raw) return null;
+
+  const { data, content } = parseMarkdown(raw);
+  const updated = asString(data.updated) ?? null;
+
+  const rows: HiveMindPinnedContextRow[] = [];
+  let inComment = false;
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    // Skip multi-line HTML comments — the template uses them to fence
+    // an example row that should not be parsed as data.
+    if (inComment) {
+      if (line.includes("-->")) inComment = false;
+      continue;
+    }
+    if (line.startsWith("<!--") && !line.includes("-->")) {
+      inComment = true;
+      continue;
+    }
+    if (line.startsWith("<!--") && line.includes("-->")) continue;
+    if (!line.startsWith("|")) continue;
+    if (/^\|[\s\-:|]+\|?$/.test(line)) continue; // separator row
+    const cells = line
+      .split("|")
+      .slice(1, -1)
+      .map((c) => c.trim());
+    if (cells.length < 4) continue;
+    const type = cells[0] ?? "";
+    if (!PINNED_CONTEXT_TYPES.has(type as HiveMindPinnedContextType)) continue;
+    rows.push({
+      type: type as HiveMindPinnedContextType,
+      ref: cells[1] ?? "",
+      label: cells[2] ?? "",
+      added: cells[3] ?? "",
+    });
+  }
+
+  return { rows, updated };
+}
+
+/**
+ * Render a pinned-context.md file body from a row array. Used by the
+ * Smithers write path before pushing to Hive-Mind via the MCP
+ * `write-project-file` tool.
+ */
+export function serializeHiveMindPinnedContext(args: {
+  partnerSlug: string;
+  projectSlug: string;
+  projectTitle: string;
+  rows: HiveMindPinnedContextRow[];
+  updated: string;
+}): string {
+  const fm = [
+    "---",
+    `title: ${JSON.stringify(`${args.projectTitle} — Pinned Context`)}`,
+    `partner: ${args.partnerSlug}`,
+    `project: ${args.projectSlug}`,
+    `updated: ${args.updated}`,
+    "---",
+  ].join("\n");
+  const header = "| type | ref | label | added |";
+  const sep = "| :-- | :-- | :-- | :-- |";
+  const dataRows = args.rows.map((r) => {
+    const label = r.label.replace(/\|/g, "\\|");
+    const ref = r.ref.replace(/\|/g, "\\|");
+    return `| ${r.type} | ${ref} | ${label} | ${r.added} |`;
+  });
+  return [fm, "", "## Pinned Items", "", header, sep, ...dataRows, ""].join("\n");
+}
+
 // ---- Follow-ups ----
 
 export interface FollowUpRow {

@@ -26,7 +26,7 @@ import type {
   CallActionItem,
   CallFollowUp,
 } from "@smithers/agents";
-import type { CallRecordingRef } from "@smithers/mcp-client";
+import type { CallRecordingRef, ContextItem } from "@smithers/mcp-client";
 
 import type {
   ComposeCallRecapOutput,
@@ -46,6 +46,7 @@ import {
 } from "@/app/projects/[slug]/actions";
 import { cn } from "@/lib/utils";
 import { AiDraftDialog } from "@/components/ai-draft-dialog";
+import { DraftContextPickerDialog } from "@/components/draft-context-picker-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -125,16 +126,23 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
 
-  // Side-drafts: P2 post + recap message. Each opens its own
-  // AiDraftDialog with the agent output.
+  // Side-drafts: P2 post + recap message. Each goes through the Phase H
+  // context picker before generation, then opens its own AiDraftDialog
+  // with the agent output.
   const [p2Pending, startP2] = React.useTransition();
   const [p2Data, setP2Data] = React.useState<DraftP2UpdateOutput | null>(null);
   const [p2Open, setP2Open] = React.useState(false);
+  const [p2PickerOpen, setP2PickerOpen] = React.useState(false);
+  const [p2LastContext, setP2LastContext] = React.useState<ContextItem[]>([]);
   const [recapPending, startRecap] = React.useTransition();
   const [recapData, setRecapData] = React.useState<ComposeCallRecapOutput | null>(
     null,
   );
   const [recapOpen, setRecapOpen] = React.useState(false);
+  const [recapPickerOpen, setRecapPickerOpen] = React.useState(false);
+  const [recapLastContext, setRecapLastContext] = React.useState<ContextItem[]>(
+    [],
+  );
 
   function reset() {
     setData(null);
@@ -342,15 +350,23 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
   }
 
   function generateP2() {
+    setP2PickerOpen(true);
+  }
+
+  function actuallyGenerateP2(items: ContextItem[]) {
+    if (p2Pending) return;
+    setP2LastContext(items);
     startP2(async () => {
       try {
         const r = await draftP2UpdateFromCallAction(
           projectSlug,
           recording.recording_id,
           recording.source_url,
+          items,
         );
         if (r.ok) {
           setP2Data(r.data);
+          setP2PickerOpen(false);
           setP2Open(true);
         } else if (r.reason === "not-configured") {
           toast.error(
@@ -367,16 +383,48 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
     });
   }
 
+  async function regenerateP2() {
+    if (p2Pending) return;
+    await new Promise<void>((resolve) =>
+      startP2(async () => {
+        try {
+          const r = await draftP2UpdateFromCallAction(
+            projectSlug,
+            recording.recording_id,
+            recording.source_url,
+            p2LastContext,
+          );
+          if (r.ok) setP2Data(r.data);
+          else toast.error(r.message ?? "Couldn't regenerate P2 update");
+        } catch (err) {
+          toast.error(
+            err instanceof Error ? err.message : "Couldn't regenerate",
+          );
+        } finally {
+          resolve();
+        }
+      }),
+    );
+  }
+
   function generateRecap() {
+    setRecapPickerOpen(true);
+  }
+
+  function actuallyGenerateRecap(items: ContextItem[]) {
+    if (recapPending) return;
+    setRecapLastContext(items);
     startRecap(async () => {
       try {
         const r = await composeCallRecapAction(
           projectSlug,
           recording.recording_id,
           recording.source_url,
+          items,
         );
         if (r.ok) {
           setRecapData(r.data);
+          setRecapPickerOpen(false);
           setRecapOpen(true);
         } else if (r.reason === "not-configured") {
           toast.error(
@@ -391,6 +439,30 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
         );
       }
     });
+  }
+
+  async function regenerateRecap() {
+    if (recapPending) return;
+    await new Promise<void>((resolve) =>
+      startRecap(async () => {
+        try {
+          const r = await composeCallRecapAction(
+            projectSlug,
+            recording.recording_id,
+            recording.source_url,
+            recapLastContext,
+          );
+          if (r.ok) setRecapData(r.data);
+          else toast.error(r.message ?? "Couldn't regenerate recap");
+        } catch (err) {
+          toast.error(
+            err instanceof Error ? err.message : "Couldn't regenerate",
+          );
+        } finally {
+          resolve();
+        }
+      }),
+    );
   }
 
   function sendChatMessage() {
@@ -956,6 +1028,15 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
         </DialogContent>
       </Dialog>
 
+      <DraftContextPickerDialog
+        open={p2PickerOpen}
+        onOpenChange={setP2PickerOpen}
+        title={`Draft P2 update from this call`}
+        projectSlug={projectSlug}
+        onGenerate={actuallyGenerateP2}
+        busy={p2Pending}
+      />
+
       <AiDraftDialog
         open={p2Open}
         onOpenChange={setP2Open}
@@ -963,6 +1044,12 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
         meta={p2Data ? "Markdown · paste into the P2 composer" : ""}
         rationale={p2Data?.rationale ?? ""}
         body={p2Data?.body ?? ""}
+        onRegenerate={regenerateP2}
+        onChangeContext={() => {
+          setP2Open(false);
+          setP2PickerOpen(true);
+        }}
+        regenerating={p2Pending}
         saveAsDraft={
           p2Data
             ? {
@@ -973,6 +1060,15 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
               }
             : undefined
         }
+      />
+
+      <DraftContextPickerDialog
+        open={recapPickerOpen}
+        onOpenChange={setRecapPickerOpen}
+        title={`Draft recap message from this call`}
+        projectSlug={projectSlug}
+        onGenerate={actuallyGenerateRecap}
+        busy={recapPending}
       />
 
       <AiDraftDialog
@@ -989,6 +1085,12 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
           recapData?.channel === "email" ? recapData.subject : undefined
         }
         body={recapData?.draft ?? ""}
+        onRegenerate={regenerateRecap}
+        onChangeContext={() => {
+          setRecapOpen(false);
+          setRecapPickerOpen(true);
+        }}
+        regenerating={recapPending}
         saveAsDraft={
           recapData
             ? {

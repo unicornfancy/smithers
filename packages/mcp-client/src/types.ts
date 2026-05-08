@@ -181,6 +181,37 @@ export interface PartnerTeamMember {
   notes?: string;
 }
 
+/**
+ * A resolved piece of "extra context" attached to a draft agent run —
+ * Slack thread, Slack message, GitHub issue/PR comment, call transcript,
+ * or other Zendesk ticket. The user picks zero or more of these in the
+ * draft picker before generation; agents append each one's `body` to
+ * their user prompt as a `# Additional context` block.
+ *
+ * Frontmatter-stable: `type` + `ref` survive on disk when the item is
+ * pinned to a project. `label` is human-readable. `body` is the fetched
+ * text — not persisted on the project pin (re-fetched at use time so
+ * stale Slack threads / comments aren't sent to the agent).
+ */
+export type ContextItemType =
+  | "slack-thread"
+  | "slack-message"
+  | "github-issue-comment"
+  | "call-transcript"
+  | "zendesk-ticket"
+  | "linear-issue"
+  | "linear-project";
+
+export interface ContextItem {
+  type: ContextItemType;
+  /** Stable identifier — URL for slack/github/zendesk types, vault path for call-transcript. */
+  ref: string;
+  /** Short human-readable description shown in the picker UI. */
+  label: string;
+  /** Fetched text content fed to the agent. Empty when fetch failed. */
+  body: string;
+}
+
 /** Reference to a call recording from the configured transcription provider. */
 export interface CallRecordingRef {
   recording_id: string;

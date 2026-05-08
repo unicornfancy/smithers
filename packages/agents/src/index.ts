@@ -98,3 +98,9 @@ export {
   type ChatAboutTranscriptInput,
   type ChatMessage as TranscriptChatMessage,
 } from "./agents/chat-about-transcript";
+
+export {
+  EXTRA_CONTEXT_SYSTEM_PROMPT,
+  renderExtraContextBlock,
+  type DraftExtraContextItem,
+} from "./extra-context";

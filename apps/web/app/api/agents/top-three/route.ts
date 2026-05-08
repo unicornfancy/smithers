@@ -15,6 +15,7 @@ import {
   setCached,
 } from "@/lib/server/llm-cache";
 import { getMcpClient } from "@/lib/server/mcp";
+import { loadStyleReference } from "@/lib/server/style";
 import {
   applyTop3UserActions,
   buildTopThreeCandidates,
@@ -122,7 +123,7 @@ export async function POST(req: Request) {
   // number of pins (unlikely but guards against silent loss).
   const topByScore = candidates.slice(0, TOP_N_TO_LLM);
   const top = ensurePinnedIncluded(topByScore, candidates, pinnedIds);
-  const styleGuide = await vault.readStyleGuide().catch(() => null);
+  const style = (await loadStyleReference()) ?? undefined;
 
   try {
     const result = await composeTopThree(runtime, {
@@ -140,9 +141,7 @@ export async function POST(req: Request) {
       dayOfWeek: dayOfWeek(),
       candidateCount: candidates.length,
       pinnedIds: Array.from(pinnedIds),
-      style: styleGuide?.body
-        ? { label: "Katie's writing style", body: styleGuide.body }
-        : undefined,
+      style,
     });
 
     const payload: CachedPayload = {

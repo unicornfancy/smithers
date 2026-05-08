@@ -9,6 +9,7 @@ import {
 import type { FollowUp } from "@smithers/vault";
 
 import { getAgentRuntime } from "@/lib/server/agents";
+import { loadStyleReference } from "@/lib/server/style";
 import { getVault } from "@/lib/server/vault";
 
 export const dynamic = "force-dynamic";
@@ -87,8 +88,9 @@ export async function POST(req: Request) {
   const project = matchProject(followUp, projects);
 
   // Style guide is optional — pass it when available so drafts sound
-  // like the user.
-  const styleGuide = await vault.readStyleGuide().catch(() => null);
+  // like the user. Pulls from my-voice/ when configured (auto-learn writes
+  // there); falls back to the vault root style guide.
+  const style = (await loadStyleReference()) ?? undefined;
 
   const daysWaiting = computeDaysWaiting(followUp);
 
@@ -97,9 +99,7 @@ export async function POST(req: Request) {
       followUp,
       project,
       daysWaiting,
-      style: styleGuide?.body
-        ? { label: "Katie's writing style", body: styleGuide.body }
-        : undefined,
+      style,
       toneOverride: body.tone_override,
       channelHint: body.channel_hint,
     });

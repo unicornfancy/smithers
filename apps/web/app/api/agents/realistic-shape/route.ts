@@ -16,6 +16,7 @@ import {
 } from "@/lib/server/llm-cache";
 import { getMcpClient } from "@/lib/server/mcp";
 import { detectStalls } from "@/lib/server/stalls";
+import { loadStyleReference } from "@/lib/server/style";
 import {
   buildTopThreeCandidates,
   pickRulesBasedTop3,
@@ -72,7 +73,7 @@ export async function POST(req: Request) {
   const vault = await getVault();
   const mcp = await getMcpClient();
 
-  const [pingsResult, stalls, candidates, followUps, styleGuide] =
+  const [pingsResult, stalls, candidates, followUps, style] =
     await Promise.all([
       mcp.contextA8C.listPings({ limit: 10 }),
       detectStalls({ vault }),
@@ -85,7 +86,7 @@ export async function POST(req: Request) {
           }),
         ),
       vault.listFollowUps().catch(() => ({ active: [], resolved: [] })),
-      vault.readStyleGuide().catch(() => null),
+      loadStyleReference(),
     ]);
 
   const pings = pingsResult.ok
@@ -107,9 +108,7 @@ export async function POST(req: Request) {
       pingCount: pings.length,
       followUpCount: followUps.active.length,
       concentratedProject,
-      style: styleGuide?.body
-        ? { label: "Katie's writing style", body: styleGuide.body }
-        : undefined,
+      style: style ?? undefined,
     });
 
     const payload: CachedPayload = {

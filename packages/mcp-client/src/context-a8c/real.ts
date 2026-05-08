@@ -179,8 +179,23 @@ interface ZendeskComment {
   html_body?: string;
   public?: boolean;
   created_at?: string;
+  /** Older response shape; newer get-ticket-comments tool omits this. */
   author?: ZendeskAuthor;
-  via?: { channel?: string };
+  /** Newer response shape — author identifier without name/email. */
+  author_id?: number | string;
+  /**
+   * Newer response shape — name + email come through here when the
+   * comment was sent via email channel. Web channel comments only have
+   * a `to` block (Katie's outgoing replies), so falls back to nothing
+   * and the mapper uses internal-domain detection on absent email.
+   */
+  via?: {
+    channel?: string;
+    source?: {
+      from?: { address?: string; name?: string };
+      to?: { address?: string; name?: string };
+    };
+  };
 }
 interface ZendeskCommentsResult {
   comments?: ZendeskComment[];
@@ -568,8 +583,8 @@ export class RealContextA8CTransport implements ContextA8CClient {
             "context-a8c-execute-tool",
             {
               provider: "zendesk",
-              tool: "comments",
-              params: { ticket_id: Number(ticketId), per_page: 10 },
+              tool: "get-ticket-comments",
+              params: { ticketId: Number(ticketId), includePrivate: false },
             },
           );
           return mapZendeskCommentsToActivity(
@@ -723,11 +738,8 @@ export class RealContextA8CTransport implements ContextA8CClient {
         "context-a8c-execute-tool",
         {
           provider: "zendesk",
-          tool: "comments",
-          params: {
-            ticket_id: Number(ticketId),
-            per_page: Math.max(1, Math.min(50, opts.limit ?? 10)),
-          },
+          tool: "get-ticket-comments",
+          params: { ticketId: Number(ticketId), includePrivate: false },
         },
       );
       const events = mapZendeskCommentsToActivity(
@@ -925,6 +937,186 @@ export class RealContextA8CTransport implements ContextA8CClient {
 
   private slackChannelMap: Map<string, string> | null = null;
   private slackChannelMapExpiresAt = 0;
+
+  // ---- Phase H: extra-context URL resolvers --------------------------------
+
+  async resolveSlackUrl(url: string): Promise<{
+    type: "slack-thread" | "slack-message";
+    label: string;
+    body: string;
+  } | null> {
+    if (!url || !/^https?:\/\/[^/]*\.slack\.com\//i.test(url)) return null;
+    try {
+      const result = await this.mcp.callJsonTool<SlackGetResult>(
+        "context-a8c-execute-tool",
+        { provider: "slack", tool: "get", params: { url } },
+      );
+      if (!result) return null;
+      // The slack/get tool returns either a single message or a thread
+      // (array of messages). Detect by presence of `messages` vs `text`.
+      const messages = Array.isArray(result.messages)
+        ? result.messages
+        : result.message
+          ? [result.message]
+          : null;
+      if (!messages || messages.length === 0) return null;
+      // Detect a thread by either multiple messages OR a thread_ts marker
+      // on the first message — single-message thread permalinks should
+      // still label as "thread".
+      const isThread =
+        messages.length > 1 || Boolean((messages[0] as { thread_ts?: string })?.thread_ts);
+      // Slack `get` returns `channel` as a plain string (channel name) for
+      // most workspaces. Older shapes or other workspaces may emit an
+      // object — handle both.
+      const channelLabel =
+        typeof result.channel === "string"
+          ? `#${result.channel}`
+          : result.channel?.name
+            ? `#${result.channel.name}`
+            : (result.channel?.id ?? "slack");
+      const head = messages[0]!;
+      const headSnippet = (head.text ?? "").slice(0, 80).replace(/\s+/g, " ");
+      const label = isThread
+        ? `Slack thread in ${channelLabel} — ${headSnippet}`
+        : `Slack message in ${channelLabel} — ${headSnippet}`;
+      const body = messages
+        .map((m) => {
+          const who = m.user_name ?? m.username ?? m.user ?? "unknown";
+          return `${who}: ${m.text ?? ""}`;
+        })
+        .join("\n\n");
+      return {
+        type: isThread ? "slack-thread" : "slack-message",
+        label,
+        body,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async resolveGithubUrl(url: string): Promise<{
+    type: "github-issue-comment";
+    label: string;
+    body: string;
+  } | null> {
+    const parsed = parseGithubIssueUrl(url);
+    if (!parsed) return null;
+    try {
+      // GitHub provider responses wrap the payload in `{ result: ... }` —
+      // an object for `get` and an array for `get_comments`. Unwrap before
+      // reading title/body/user/comments.
+      const headRaw = await this.mcp.callJsonTool<GithubReadEnvelope>(
+        "context-a8c-execute-tool",
+        {
+          provider: "github",
+          tool: parsed.kind === "pull" ? "pull-request" : "issue",
+          params:
+            parsed.kind === "pull"
+              ? { owner: parsed.owner, repo: parsed.repo, pullNumber: parsed.number, method: "get" }
+              : { owner: parsed.owner, repo: parsed.repo, issue_number: parsed.number, method: "get" },
+        },
+      );
+      const head = (headRaw?.result ?? headRaw) as GithubIssueOrPr | null;
+      if (!head) return null;
+      const commentsRaw = await this.mcp
+        .callJsonTool<GithubReadEnvelope>("context-a8c-execute-tool", {
+          provider: "github",
+          tool: parsed.kind === "pull" ? "pull-request" : "issue",
+          params:
+            parsed.kind === "pull"
+              ? { owner: parsed.owner, repo: parsed.repo, pullNumber: parsed.number, method: "get_comments" }
+              : { owner: parsed.owner, repo: parsed.repo, issue_number: parsed.number, method: "get_comments" },
+        })
+        .catch(() => null);
+      const commentItems: GithubComment[] = Array.isArray(commentsRaw?.result)
+        ? commentsRaw!.result
+        : Array.isArray(commentsRaw)
+          ? (commentsRaw as GithubComment[])
+          : [];
+
+      const title = head.title ?? `${parsed.kind === "pull" ? "PR" : "Issue"} #${parsed.number}`;
+      const headBodyText = head.body ?? "";
+      const headAuthor = head.user?.login ?? "unknown";
+      // CodeRabbit / dependabot comments are noisy boilerplate that bloat
+      // the agent prompt without adding signal — drop them.
+      const commentBlocks = commentItems
+        .filter((c) => {
+          const login = c.user?.login ?? "";
+          return !/coderabbit|dependabot|copilot/i.test(login);
+        })
+        .map((c) => {
+          const who = c.user?.login ?? "unknown";
+          return `${who}: ${(c.body ?? "").trim()}`;
+        });
+      const lines = [
+        `# ${title}`,
+        `${headAuthor}: ${headBodyText}`.trim(),
+        ...commentBlocks,
+      ];
+      return {
+        type: "github-issue-comment",
+        label: `${parsed.kind === "pull" ? "PR" : "Issue"} ${parsed.owner}/${parsed.repo}#${parsed.number} — ${title}`,
+        body: lines.join("\n\n"),
+      };
+    } catch {
+      return null;
+    }
+  }
+}
+
+interface SlackGetResult {
+  channel?: string | { id?: string; name?: string };
+  message?: SlackMessage;
+  messages?: SlackMessage[];
+}
+interface SlackMessage {
+  text?: string;
+  user?: string;
+  username?: string;
+  user_name?: string;
+}
+interface GithubIssueOrPr {
+  number?: number;
+  title?: string;
+  body?: string;
+  user?: { login?: string };
+  state?: string;
+  html_url?: string;
+}
+interface GithubComment {
+  id?: number;
+  body?: string;
+  user?: { login?: string };
+  created_at?: string;
+}
+interface GithubReadEnvelope {
+  /** GitHub provider responses wrap the payload here. */
+  result?: GithubIssueOrPr | GithubComment[];
+}
+
+/**
+ * Parse a github.com URL pointing at an issue or pull request, including
+ * direct links to comments (`#issuecomment-<id>`) and review comments.
+ * Returns owner/repo/number/kind so the caller can dispatch to the right
+ * MCP tool.
+ */
+function parseGithubIssueUrl(
+  url: string,
+): { owner: string; repo: string; number: number; kind: "issue" | "pull" } | null {
+  const match = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)\/(issues|pull)\/(\d+)/i.exec(
+    url,
+  );
+  if (!match) return null;
+  const [, owner, repo, kindRaw, numStr] = match;
+  const number = Number.parseInt(numStr!, 10);
+  if (!Number.isFinite(number)) return null;
+  return {
+    owner: owner!,
+    repo: repo!,
+    number,
+    kind: kindRaw === "pull" ? "pull" : "issue",
+  };
 }
 
 function hasLinearRef(refs: ProjectActivityQuery["refs"]): boolean {
@@ -1375,27 +1567,36 @@ function mapZendeskComment(
   internalDomains: readonly string[],
 ): ActivityEvent | null {
   if (!comment.created_at) return null;
-  const body = comment.plain_body ?? comment.body ?? "";
+  const body = decodeHtmlEntities(
+    comment.plain_body ?? comment.body ?? "",
+  );
   if (!body.trim()) return null;
+  // The newer get-ticket-comments tool omits `comment.author` and instead
+  // exposes the sender via `via.source.from.{address,name}` for inbound
+  // (email-channel) comments. Web-channel comments (the user's own
+  // outgoing replies) have no `from` block; treat those as internal.
   const author = comment.author ?? {};
-  // Zendesk's `is_external` flag is sometimes set; prefer it when
-  // present, fall back to internal-domain detection on the email.
+  const fromBlock = comment.via?.source?.from;
+  const name = author.name ?? fromBlock?.name ?? "Zendesk";
+  const email = author.email ?? fromBlock?.address;
   const isExternal =
     typeof author.is_external === "boolean"
       ? author.is_external
-      : isExternalEmail(author.email, internalDomains);
+      : email
+        ? isExternalEmail(email, internalDomains)
+        : false; // web-channel comment with no from-address = internal reply
   return {
     id: `zendesk:${ticketId}:${comment.id ?? comment.created_at}`,
     source: "zendesk",
     kind: "zendesk-comment",
     timestamp: comment.created_at,
     actor: {
-      name: author.name ?? "Zendesk",
-      handle: author.email,
+      name,
+      handle: email,
       is_external: isExternal,
     },
     title: truncateText(body, 100),
-    excerpt: `Ticket #${ticketId}`,
+    excerpt: body,
     url: zendeskTicketUrl(ticketId),
     project_match: {
       project_slug: projectSlug,
@@ -1403,6 +1604,21 @@ function mapZendeskComment(
     },
     is_mock: false,
   };
+}
+
+/**
+ * Decode the HTML entities Zendesk's `plain_body` field embeds (chiefly
+ * &nbsp;) so the rendered text doesn't show literal entity strings.
+ * Covers the common five — anything else passes through unchanged.
+ */
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
 }
 
 function truncateText(s: string, max: number): string {

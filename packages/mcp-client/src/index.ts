@@ -85,6 +85,8 @@ export type {
   PartnerProfile,
   PartnerTeamMember,
   CallRecordingRef,
+  ContextItem,
+  ContextItemType,
 } from "./types";
 export type {
   ContextA8CClient,

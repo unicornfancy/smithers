@@ -137,6 +137,30 @@ export interface ContextA8CClient {
     repos: string[],
     handle: string,
   ): Promise<Ping[]>;
+
+  /**
+   * Resolve a Slack URL (message or thread) into a flattened text block
+   * for use as extra context in a draft agent. Returns null when the
+   * URL doesn't parse or the upstream call fails. The returned `body`
+   * is a plain-text rendering: speaker + message lines separated by
+   * blank lines.
+   */
+  resolveSlackUrl(url: string): Promise<{
+    type: "slack-thread" | "slack-message";
+    label: string;
+    body: string;
+  } | null>;
+
+  /**
+   * Resolve a GitHub issue or pull-request URL into a flattened text
+   * block. Includes the title + body + all comments. Returns null on
+   * parse or fetch failure.
+   */
+  resolveGithubUrl(url: string): Promise<{
+    type: "github-issue-comment";
+    label: string;
+    body: string;
+  } | null>;
 }
 
 export interface LinearProjectMetadata {

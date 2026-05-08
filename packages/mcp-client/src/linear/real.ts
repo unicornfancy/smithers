@@ -224,6 +224,17 @@ export class RealLinearTransport implements LinearClient {
     );
     const issue = data?.issue;
     if (!issue) return null;
+    // Linear quirk: when the supplied identifier doesn't exist, the API
+    // silently returns SOME other issue (looks like fallback/fuzzy match).
+    // Guard against this by confirming the returned identifier matches
+    // what we asked for — case-insensitive because Linear identifiers are
+    // typically uppercase but URLs might lower them.
+    if (
+      identifier.includes("-") &&
+      issue.identifier.toUpperCase() !== identifier.toUpperCase()
+    ) {
+      return null;
+    }
     return {
       identifier: issue.identifier,
       title: issue.title,
@@ -308,4 +319,85 @@ export class RealLinearTransport implements LinearClient {
     this.cachedViewerId = data?.viewer?.id ?? "";
     return this.cachedViewerId;
   }
+
+  async resolveLinearUrl(url: string): Promise<{
+    type: "linear-issue" | "linear-project";
+    label: string;
+    body: string;
+  } | null> {
+    const parsed = parseLinearUrlForContext(url);
+    if (!parsed) return null;
+
+    if (parsed.kind === "issue") {
+      const issue = await this.getIssue(parsed.identifier);
+      if (!issue) return null;
+      const lines: string[] = [`# ${issue.identifier} — ${issue.title}`];
+      lines.push(
+        `state: ${issue.state.name} · assignee: ${issue.assignee?.displayName ?? "unassigned"}`,
+      );
+      if (issue.description?.trim()) lines.push(issue.description.trim());
+      for (const c of issue.comments) {
+        const who = c.user.displayName;
+        lines.push(`${who}: ${c.body.trim()}`);
+      }
+      return {
+        type: "linear-issue",
+        label: `${issue.identifier} — ${issue.title}`,
+        body: lines.join("\n\n"),
+      };
+    }
+
+    // Project resolution.
+    const project = await this.getProject(parsed.idOrSlug);
+    if (!project) return null;
+    const updates = await this.getProjectUpdates(parsed.idOrSlug).catch(
+      () => [] as Awaited<ReturnType<typeof this.getProjectUpdates>>,
+    );
+    const lines: string[] = [`# ${project.name}`];
+    lines.push(
+      `state: ${project.state.name} · health: ${project.health} · progress: ${Math.round(project.progress * 100)}%`,
+    );
+    if (project.targetDate) lines.push(`target: ${project.targetDate}`);
+    for (const u of updates.slice(0, 5)) {
+      lines.push(
+        `${u.user.displayName} (${u.createdAt.slice(0, 10)}, ${u.health}): ${u.body.trim()}`,
+      );
+    }
+    return {
+      type: "linear-project",
+      label: `Linear project — ${project.name}`,
+      body: lines.join("\n\n"),
+    };
+  }
+}
+
+/**
+ * Parse a Linear URL into a structured ref the resolver can dispatch on.
+ * Issue URLs carry an identifier like "T51-42"; project URLs carry a
+ * slug-with-id where the trailing hex segment is what the API accepts as
+ * the project id.
+ */
+function parseLinearUrlForContext(
+  url: string,
+):
+  | { kind: "issue"; identifier: string }
+  | { kind: "project"; idOrSlug: string }
+  | null {
+  const trimmed = url.trim();
+  const issueMatch = /^https?:\/\/linear\.app\/[^/]+\/issue\/([A-Z0-9]+-\d+)/i.exec(
+    trimmed,
+  );
+  if (issueMatch) {
+    return { kind: "issue", identifier: issueMatch[1]!.toUpperCase() };
+  }
+  const projectMatch = /^https?:\/\/linear\.app\/[^/]+\/project\/([^/?#]+)/i.exec(
+    trimmed,
+  );
+  if (projectMatch) {
+    const slug = decodeURIComponent(projectMatch[1]!);
+    // Linear API accepts the trailing short id; pull it off if present.
+    const idMatch = /-([a-f0-9]{8,})$/i.exec(slug);
+    return { kind: "project", idOrSlug: idMatch ? idMatch[1]! : slug };
+  }
+  return null;
 }

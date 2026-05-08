@@ -1,5 +1,10 @@
 import type { Project } from "@smithers/vault";
 
+import {
+  EXTRA_CONTEXT_SYSTEM_PROMPT,
+  renderExtraContextBlock,
+  type DraftExtraContextItem,
+} from "../extra-context";
 import { runAgent } from "../runner";
 import type {
   AgentResult,
@@ -20,6 +25,8 @@ export interface DraftP2UpdateInput {
   };
   /** Optional style guide so the post sounds like the user. */
   style?: StyleReference;
+  /** Phase H: extra context (pinned + ad-hoc) the user attached in the picker. */
+  extra_context?: DraftExtraContextItem[];
 }
 
 export interface DraftP2UpdateOutput {
@@ -53,6 +60,8 @@ Quality rules:
 - Don't fabricate. If the call didn't include a decision, don't manufacture one.
 - Don't include action items the user owns — those go in their own surface, not on a public P2.
 - Don't post-mortem; this is a forward-looking status, not a transcript summary.
+
+${EXTRA_CONTEXT_SYSTEM_PROMPT}
 
 Always return your output as JSON matching the requested schema. No text outside the JSON.`;
 
@@ -96,7 +105,7 @@ export async function draftP2Update(
 }
 
 function renderUserPrompt(input: DraftP2UpdateInput): string {
-  const { project, call, transcript, style } = input;
+  const { project, call, transcript, style, extra_context } = input;
   const lines: string[] = [];
 
   lines.push("# Project");
@@ -121,6 +130,12 @@ function renderUserPrompt(input: DraftP2UpdateInput): string {
   lines.push("");
   lines.push("# Transcript");
   lines.push(transcript.trim());
+
+  const extraBlock = renderExtraContextBlock(extra_context);
+  if (extraBlock) {
+    lines.push("");
+    lines.push(extraBlock);
+  }
 
   lines.push("");
   lines.push(

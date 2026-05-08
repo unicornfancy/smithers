@@ -626,6 +626,26 @@ export class MockContextA8CTransport implements ContextA8CClient {
     );
     return out.slice(0, limit);
   }
+
+  async resolveSlackUrl(
+    _url: string,
+  ): Promise<{
+    type: "slack-thread" | "slack-message";
+    label: string;
+    body: string;
+  } | null> {
+    return null;
+  }
+
+  async resolveGithubUrl(
+    _url: string,
+  ): Promise<{
+    type: "github-issue-comment";
+    label: string;
+    body: string;
+  } | null> {
+    return null;
+  }
 }
 
 function shortHash(rng: () => number): string {

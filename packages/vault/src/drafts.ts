@@ -82,6 +82,10 @@ export interface CreateDraftFromAiInput {
   subject?: string;
   /** Optional channel hint ("email" / "slack" / "zendesk" / "p2"). */
   channel?: string;
+  /** Read-only context block (e.g. latest partner reply) shown above the editor. */
+  context_preview?: string;
+  context_preview_label?: string;
+  context_preview_meta?: string;
 }
 
 export interface CreateDraftFromAiResult {
@@ -126,6 +130,15 @@ export async function createDraftFromAi(
   }
   if (input.subject) frontmatter["subject"] = input.subject;
   if (input.channel) frontmatter["channel"] = input.channel;
+  if (input.context_preview) {
+    frontmatter["context_preview"] = input.context_preview;
+  }
+  if (input.context_preview_label) {
+    frontmatter["context_preview_label"] = input.context_preview_label;
+  }
+  if (input.context_preview_meta) {
+    frontmatter["context_preview_meta"] = input.context_preview_meta;
+  }
 
   // Body kicks off with a friendly H1 so the listing renders a
   // recognizable title; the actual draft text follows.
@@ -382,6 +395,9 @@ async function readDraftFile(
           : undefined,
     body: content,
     modified_at: mtime,
+    context_preview: fm.context_preview,
+    context_preview_label: fm.context_preview_label,
+    context_preview_meta: fm.context_preview_meta,
     created_at: fm.created_at,
     archived_at: fm.archived_at,
     tags: Array.isArray(fm.tags) ? fm.tags : [],

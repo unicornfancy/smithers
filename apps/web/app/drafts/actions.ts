@@ -6,10 +6,12 @@ import {
   learnStyleFromArchives,
   type LearnStyleFromArchivesOutput,
 } from "@smithers/agents";
+import type { ContextItem } from "@smithers/mcp-client";
 import { slugify } from "@smithers/vault";
 
 import { getAgentRuntime } from "@/lib/server/agents";
 import { getMcpClient } from "@/lib/server/mcp";
+import { loadStyleReference } from "@/lib/server/style";
 import { getVault } from "@/lib/server/vault";
 
 /**
@@ -83,7 +85,7 @@ export async function learnStyleFromArchivesAction(): Promise<
     };
   }
 
-  const styleSource = await vault.readStyleGuide().catch(() => null);
+  const style = await loadStyleReference();
   try {
     const result = await learnStyleFromArchives(runtime, {
       samples: samples.map((s) => ({
@@ -94,7 +96,7 @@ export async function learnStyleFromArchivesAction(): Promise<
         original: s.original_body,
         final: s.final_body,
       })),
-      existing_style_guide: styleSource?.body,
+      existing_style_guide: style?.body,
     });
     return { ok: true, data: result.output, sample_count: samples.length };
   } catch (err) {
@@ -125,6 +127,9 @@ export async function saveAsDraftAction(input: {
   source_agent?: string;
   subject?: string;
   channel?: string;
+  context_preview?: string;
+  context_preview_label?: string;
+  context_preview_meta?: string;
 }): Promise<{ draft_id: string; relative_path: string }> {
   if (!input.title.trim()) throw new Error("title is required");
   if (!input.body.trim()) throw new Error("body is required");
@@ -195,4 +200,99 @@ function buildHmDraftFile(args: {
   const subjectSection = `## Subject\n\n${args.subject ?? ""}\n`;
   const bodySection = `## Body\n\n${args.body.trim()}\n`;
   return [fmLines.join("\n"), "", subjectSection, bodySection].join("\n");
+}
+
+/**
+ * Resolve a Slack / GitHub / Zendesk URL into a `ContextItem` the user
+ * can attach to a draft. Used by the draft context picker (Phase H3).
+ *
+ * - Slack URLs (message or thread) → context-a8c slack/get
+ * - GitHub issue / PR URLs → context-a8c github/issue or github/pull-request
+ *   (head + comments, flattened to a text block)
+ * - Zendesk ticket URLs → looked up via the existing search summaries to
+ *   get subject + status; body content is unavailable upstream so the
+ *   resolved item carries metadata only.
+ *
+ * Returns a discriminated result so the UI can show a clean error
+ * instead of crashing on parse / fetch failures.
+ */
+export async function resolveContextUrlAction(
+  url: string,
+): Promise<{ ok: true; item: ContextItem } | { ok: false; reason: string }> {
+  const trimmed = url.trim();
+  if (!trimmed) return { ok: false, reason: "URL is required" };
+
+  const mcp = await getMcpClient();
+
+  if (/^https?:\/\/[^/]*\.slack\.com\//i.test(trimmed)) {
+    const resolved = await mcp.contextA8C.resolveSlackUrl(trimmed);
+    if (!resolved) {
+      return {
+        ok: false,
+        reason: "Couldn't fetch the Slack URL — check that ContextA8C is authenticated and the URL is reachable.",
+      };
+    }
+    return {
+      ok: true,
+      item: { type: resolved.type, ref: trimmed, label: resolved.label, body: resolved.body },
+    };
+  }
+
+  if (/^https?:\/\/(?:www\.)?github\.com\//i.test(trimmed)) {
+    const resolved = await mcp.contextA8C.resolveGithubUrl(trimmed);
+    if (!resolved) {
+      return {
+        ok: false,
+        reason: "Couldn't fetch the GitHub URL. Only issue / PR URLs are supported (e.g. .../issues/42 or .../pull/7).",
+      };
+    }
+    return {
+      ok: true,
+      item: { type: resolved.type, ref: trimmed, label: resolved.label, body: resolved.body },
+    };
+  }
+
+  if (/^https?:\/\/linear\.app\//i.test(trimmed)) {
+    const resolved = await mcp.linear.resolveLinearUrl(trimmed);
+    if (!resolved) {
+      return {
+        ok: false,
+        reason: "Couldn't fetch the Linear URL. Supported: issue URLs (.../issue/<TEAM>-<NUM>) and project URLs (.../project/<slug>).",
+      };
+    }
+    return {
+      ok: true,
+      item: { type: resolved.type, ref: trimmed, label: resolved.label, body: resolved.body },
+    };
+  }
+
+  if (/zendesk\.com\/agent\/tickets\/(\d+)/i.test(trimmed)) {
+    const m = /\/tickets\/(\d+)/.exec(trimmed);
+    const ticketId = m?.[1];
+    if (!ticketId) return { ok: false, reason: "Couldn't parse Zendesk ticket id." };
+    const summaries = await mcp.contextA8C
+      .fetchZendeskTicketSummaries([ticketId])
+      .catch(() => null);
+    const summary = summaries?.find((s) => s.id === ticketId) ?? null;
+    if (!summary) {
+      return { ok: false, reason: "Zendesk ticket not found via search." };
+    }
+    const subject = summary.subject ?? `Ticket #${ticketId}`;
+    const status = summary.status ?? "unknown";
+    return {
+      ok: true,
+      item: {
+        type: "zendesk-ticket",
+        ref: trimmed,
+        label: `Zendesk #${ticketId} — ${subject}`,
+        // Body is metadata-only since upstream doesn't expose comments.
+        body: `Zendesk ticket #${ticketId}\nSubject: ${subject}\nStatus: ${status}`,
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    reason: "Unsupported URL. Paste a Slack message/thread URL, GitHub issue/PR URL, or Zendesk ticket URL.",
+  };
 }

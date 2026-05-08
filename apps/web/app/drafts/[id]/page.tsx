@@ -73,6 +73,21 @@ export default async function DraftEditorPage({
         }
       />
       <PageShell className="max-w-4xl">
+        {draft.context_preview ? (
+          <section className="space-y-1.5">
+            <div className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+              {draft.context_preview_label ?? "Context"}
+              {draft.context_preview_meta ? (
+                <span className="text-muted-foreground/70 ml-2 normal-case">
+                  {draft.context_preview_meta}
+                </span>
+              ) : null}
+            </div>
+            <div className="bg-muted/40 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md border px-3 py-2 text-xs leading-relaxed">
+              {draft.context_preview}
+            </div>
+          </section>
+        ) : null}
         <DraftEditor
           draftId={draft.draft_id}
           initialBody={draft.body}

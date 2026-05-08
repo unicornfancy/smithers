@@ -204,4 +204,14 @@ export class MockLinearTransport implements LinearClient {
     const stateSet = new Set(args.states.map((s) => s.toLowerCase()));
     return MOCK_MY_PROJECTS.filter((p) => stateSet.has(p.state.toLowerCase()));
   }
+
+  async resolveLinearUrl(
+    _url: string,
+  ): Promise<{
+    type: "linear-issue" | "linear-project";
+    label: string;
+    body: string;
+  } | null> {
+    return null;
+  }
 }

@@ -70,4 +70,16 @@ export interface LinearClient {
   listMyProjects(args?: {
     states?: string[];
   }): Promise<LinearProjectSummary[]>;
+  /**
+   * Resolve a Linear URL (issue or project) into a flattened text block
+   * for use as draft-agent context. Returns null when the URL doesn't
+   * parse or the upstream call fails. Supports:
+   *   - https://linear.app/<workspace>/issue/<TEAM>-<NUM>[/<slug>]
+   *   - https://linear.app/<workspace>/project/<slug-with-id>
+   */
+  resolveLinearUrl(url: string): Promise<{
+    type: "linear-issue" | "linear-project";
+    label: string;
+    body: string;
+  } | null>;
 }

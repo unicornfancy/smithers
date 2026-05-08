@@ -159,6 +159,9 @@ export interface DraftFrontmatter {
   archived_at?: string;
   source?: string;
   tags?: string[];
+  context_preview?: string;
+  context_preview_label?: string;
+  context_preview_meta?: string;
 }
 
 export interface Draft {
@@ -176,6 +179,9 @@ export interface Draft {
   archived_path?: string;
   body: string;
   modified_at: string;
+  context_preview?: string;
+  context_preview_label?: string;
+  context_preview_meta?: string;
   created_at?: string;
   archived_at?: string;
   tags: string[];

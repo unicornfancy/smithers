@@ -5,10 +5,12 @@ import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import type { ComposeNudgeOutput } from "@smithers/agents";
+import type { ContextItem } from "@smithers/mcp-client";
 
 import { composeFollowUpNudgeAction } from "@/app/projects/[slug]/actions";
 import { AiDraftDialog } from "@/components/ai-draft-dialog";
 import { Button } from "@/components/ui/button";
+import { DraftContextPickerDialog } from "@/components/draft-context-picker-dialog";
 
 interface Props {
   projectSlug: string;
@@ -18,26 +20,32 @@ interface Props {
 }
 
 /**
- * Inline "Draft nudge" button on each follow-up row. Calls the
- * compose-followup-nudge agent and opens an editable dialog with the
- * generated draft + rationale + Copy button.
+ * Inline "Draft nudge" button on each follow-up row. Phase H flow:
+ *   click → ContextPicker dialog → user clicks Generate →
+ *   compose-followup-nudge runs with curated extra_context →
+ *   AiDraftDialog opens with the generated nudge.
  */
 export function DraftFollowUpNudgeButton({
   projectSlug,
   followUpId,
   label,
 }: Props) {
+  const [pickerOpen, setPickerOpen] = React.useState(false);
+  const [draftOpen, setDraftOpen] = React.useState(false);
   const [pending, startTransition] = React.useTransition();
-  const [open, setOpen] = React.useState(false);
   const [data, setData] = React.useState<ComposeNudgeOutput | null>(null);
+  const [lastContext, setLastContext] = React.useState<ContextItem[]>([]);
 
-  function run() {
+  function runWithContext(items: ContextItem[]) {
+    if (pending) return;
+    setLastContext(items);
     startTransition(async () => {
       try {
-        const r = await composeFollowUpNudgeAction(projectSlug, followUpId);
+        const r = await composeFollowUpNudgeAction(projectSlug, followUpId, items);
         if (r.ok) {
           setData(r.data);
-          setOpen(true);
+          setPickerOpen(false);
+          setDraftOpen(true);
         } else if (r.reason === "not-configured") {
           toast.error(
             "Set ANTHROPIC_API_KEY in .env.local to enable AI drafts",
@@ -53,13 +61,48 @@ export function DraftFollowUpNudgeButton({
     });
   }
 
+  async function regenerate() {
+    if (pending) return;
+    await new Promise<void>((resolve) =>
+      startTransition(async () => {
+        try {
+          const r = await composeFollowUpNudgeAction(
+            projectSlug,
+            followUpId,
+            lastContext,
+          );
+          if (r.ok) {
+            setData(r.data);
+          } else if (r.reason === "not-configured") {
+            toast.error(
+              "Set ANTHROPIC_API_KEY in .env.local to enable AI drafts",
+            );
+          } else {
+            toast.error(r.message ?? "Couldn't regenerate");
+          }
+        } catch (err) {
+          toast.error(
+            err instanceof Error ? err.message : "Couldn't regenerate",
+          );
+        } finally {
+          resolve();
+        }
+      }),
+    );
+  }
+
+  function changeContext() {
+    setDraftOpen(false);
+    setPickerOpen(true);
+  }
+
   return (
     <>
       <Button
         type="button"
         variant="ghost"
         size="sm"
-        onClick={run}
+        onClick={() => setPickerOpen(true)}
         disabled={pending}
         title="Draft a nudge for this follow-up"
         className="h-6 shrink-0 gap-1 px-1.5 text-[11px]"
@@ -71,9 +114,17 @@ export function DraftFollowUpNudgeButton({
         )}
         Draft nudge
       </Button>
+      <DraftContextPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        title={`Draft nudge for: ${truncate(label, 60)}`}
+        projectSlug={projectSlug}
+        onGenerate={runWithContext}
+        busy={pending}
+      />
       <AiDraftDialog
-        open={open}
-        onOpenChange={setOpen}
+        open={draftOpen}
+        onOpenChange={setDraftOpen}
         title={`Drafted nudge for: ${truncate(label, 60)}`}
         meta={
           data
@@ -83,6 +134,9 @@ export function DraftFollowUpNudgeButton({
         rationale={data?.rationale ?? ""}
         subject={data?.channel === "email" ? data.subject : undefined}
         body={data?.draft ?? ""}
+        onRegenerate={regenerate}
+        onChangeContext={changeContext}
+        regenerating={pending}
         saveAsDraft={
           data
             ? {

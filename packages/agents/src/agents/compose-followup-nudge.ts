@@ -1,5 +1,10 @@
 import type { FollowUp, Project } from "@smithers/vault";
 
+import {
+  EXTRA_CONTEXT_SYSTEM_PROMPT,
+  renderExtraContextBlock,
+  type DraftExtraContextItem,
+} from "../extra-context";
 import { runAgent } from "../runner";
 import type {
   AgentResult,
@@ -25,6 +30,8 @@ export interface ComposeNudgeInput {
   toneOverride?: NudgeTone;
   /** Default channel; the model can override based on context. */
   channelHint?: NudgeChannel;
+  /** Phase H: extra context (pinned + ad-hoc) the user attached in the picker. */
+  extra_context?: DraftExtraContextItem[];
 }
 
 export interface ComposeNudgeOutput {
@@ -59,6 +66,8 @@ Tone calibration (default, override only when toneOverride is set):
 Channel selection:
 - Use channelHint if provided.
 - Otherwise: Slack for internal/teammate threads, email for external partners.
+
+${EXTRA_CONTEXT_SYSTEM_PROMPT}
 
 Always return your output as JSON matching the requested schema. Include a one-sentence rationale that explains your tone and length choice.`;
 
@@ -111,8 +120,15 @@ export async function composeFollowUpNudge(
 }
 
 function renderUserPrompt(input: ComposeNudgeInput): string {
-  const { followUp, project, daysWaiting, style, toneOverride, channelHint } =
-    input;
+  const {
+    followUp,
+    project,
+    daysWaiting,
+    style,
+    toneOverride,
+    channelHint,
+    extra_context,
+  } = input;
   const lines: string[] = [];
 
   lines.push("# Follow-up to nudge");
@@ -144,6 +160,12 @@ function renderUserPrompt(input: ComposeNudgeInput): string {
     lines.push("");
     lines.push(`# ${style.label}`);
     lines.push(style.body.trim());
+  }
+
+  const extraBlock = renderExtraContextBlock(extra_context);
+  if (extraBlock) {
+    lines.push("");
+    lines.push(extraBlock);
   }
 
   lines.push("");

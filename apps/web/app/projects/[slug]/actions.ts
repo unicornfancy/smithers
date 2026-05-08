@@ -22,19 +22,27 @@ import {
 } from "@smithers/agents";
 import type {
   CallRecordingRef,
+  ContextItem,
   LinearProjectMetadata,
   ZendeskSearchResult,
 } from "@smithers/mcp-client";
-import type { ChatMessage, UpdateProjectFrontmatterPatch, UpdateFollowUpPatch } from "@smithers/vault";
+import type {
+  ChatMessage,
+  HiveMindPinnedContextRow,
+  UpdateProjectFrontmatterPatch,
+  UpdateFollowUpPatch,
+} from "@smithers/vault";
 import {
   filterFollowUpsForProject,
   parseProjectTasks,
+  serializeHiveMindPinnedContext,
   slugify,
   splitTasks,
 } from "@smithers/vault";
 
 import { getAgentRuntime } from "@/lib/server/agents";
 import { getMcpClient } from "@/lib/server/mcp";
+import { loadStyleReference } from "@/lib/server/style";
 import { getVault } from "@/lib/server/vault";
 
 /**
@@ -325,6 +333,7 @@ export async function fetchLinearProjectMetadataAction(
 export async function composeFollowUpNudgeAction(
   slug: string,
   followUpId: string,
+  extraContext?: ContextItem[],
 ): Promise<
   | { ok: true; data: ComposeNudgeOutput }
   | { ok: false; reason: "not-configured" | "error"; message?: string }
@@ -362,10 +371,7 @@ export async function composeFollowUpNudgeAction(
       )
     : undefined;
 
-  const styleSource = await vault.readStyleGuide().catch(() => null);
-  const style = styleSource
-    ? { label: "User's writing style", body: styleSource.body }
-    : undefined;
+  const style = (await loadStyleReference()) ?? undefined;
 
   try {
     const result = await composeFollowUpNudge(runtime, {
@@ -373,6 +379,7 @@ export async function composeFollowUpNudgeAction(
       project,
       daysWaiting,
       style,
+      extra_context: extraContext,
     });
     return { ok: true, data: result.output };
   } catch (err) {
@@ -396,6 +403,7 @@ export async function draftZendeskReplyAction(
   slug: string,
   ticketId: string,
   intent?: string,
+  extraContext?: ContextItem[],
 ): Promise<
   | { ok: true; data: DraftZendeskReplyOutput }
   | { ok: false; reason: "not-configured" | "error"; message?: string }
@@ -433,10 +441,7 @@ export async function draftZendeskReplyAction(
   const lastPartner = recent.find((e) => e.actor?.is_external === true);
   const lastInternal = recent.find((e) => e.actor?.is_external === false);
 
-  const styleSource = await vault.readStyleGuide().catch(() => null);
-  const style = styleSource
-    ? { label: "User's writing style", body: styleSource.body }
-    : undefined;
+  const style = (await loadStyleReference()) ?? undefined;
 
   try {
     const result = await draftZendeskReply(runtime, {
@@ -450,6 +455,7 @@ export async function draftZendeskReplyAction(
       },
       intent,
       style,
+      extra_context: extraContext,
     });
     return { ok: true, data: result.output };
   } catch (err) {
@@ -569,10 +575,7 @@ export async function analyzeCallAction(
     };
   }
 
-  const styleSource = await vault.readStyleGuide().catch(() => null);
-  const style = styleSource
-    ? { label: "User's writing style", body: styleSource.body }
-    : undefined;
+  const style = (await loadStyleReference()) ?? undefined;
 
   try {
     const result = await analyzeCallTranscript(runtime, {
@@ -706,6 +709,7 @@ export async function draftP2UpdateFromCallAction(
   slug: string,
   recordingId: string,
   url?: string,
+  extraContext?: ContextItem[],
 ): Promise<
   | { ok: true; data: DraftP2UpdateOutput }
   | {
@@ -735,10 +739,7 @@ export async function draftP2UpdateFromCallAction(
       message: "Couldn't fetch the transcript from Fathom.",
     };
   }
-  const styleSource = await vault.readStyleGuide().catch(() => null);
-  const style = styleSource
-    ? { label: "User's writing style", body: styleSource.body }
-    : undefined;
+  const style = (await loadStyleReference()) ?? undefined;
 
   try {
     const result = await draftP2Update(runtime, {
@@ -746,6 +747,7 @@ export async function draftP2UpdateFromCallAction(
       project,
       call: { recording_id: recordingId, url },
       style,
+      extra_context: extraContext,
     });
     return { ok: true, data: result.output };
   } catch (err) {
@@ -766,6 +768,7 @@ export async function composeCallRecapAction(
   slug: string,
   recordingId: string,
   url?: string,
+  extraContext?: ContextItem[],
 ): Promise<
   | { ok: true; data: ComposeCallRecapOutput }
   | {
@@ -795,10 +798,7 @@ export async function composeCallRecapAction(
       message: "Couldn't fetch the transcript from Fathom.",
     };
   }
-  const styleSource = await vault.readStyleGuide().catch(() => null);
-  const style = styleSource
-    ? { label: "User's writing style", body: styleSource.body }
-    : undefined;
+  const style = (await loadStyleReference()) ?? undefined;
 
   try {
     const result = await composeCallRecap(runtime, {
@@ -806,6 +806,7 @@ export async function composeCallRecapAction(
       project,
       call: { recording_id: recordingId, url },
       style,
+      extra_context: extraContext,
     });
     return { ok: true, data: result.output };
   } catch (err) {
@@ -1316,6 +1317,173 @@ export async function addProjectLogNoteAction(
     return {
       ok: false,
       reason: err instanceof Error ? err.message : "Failed to add note",
+    };
+  }
+}
+
+// --- Pinned context (Phase H) ----------------------------------------------
+
+/**
+ * Fetch the latest partner-side message on a Zendesk ticket so the
+ * Draft reply picker can surface it before the user composes their
+ * extra context. Returns null when the ticket has no recent activity
+ * or the upstream call fails. Best-effort — the existing draft action
+ * has the same fetch and falls back to a subject-only prompt when
+ * comments aren't reachable.
+ */
+export async function fetchZendeskLatestPartnerActivityAction(
+  slug: string,
+  ticketId: string,
+): Promise<
+  | { ok: true; excerpt: string; timestamp: string }
+  | { ok: false; reason: string }
+> {
+  if (!slug || !ticketId) {
+    return { ok: false, reason: "slug and ticketId are required" };
+  }
+  const mcp = await getMcpClient();
+  const recent = await mcp.contextA8C
+    .fetchZendeskTicketActivity(ticketId, { projectSlug: slug, limit: 10 })
+    .catch(() => []);
+  const lastPartner = recent.find((e) => e.actor?.is_external === true);
+  if (!lastPartner?.excerpt) {
+    return { ok: false, reason: "No partner activity available." };
+  }
+  return {
+    ok: true,
+    excerpt: lastPartner.excerpt,
+    timestamp: lastPartner.timestamp ?? "",
+  };
+}
+
+/**
+ * Read the project's pinned-context.md rows. Returns an empty array
+ * (not null) when nothing is pinned or Hive-Mind isn't configured —
+ * the picker UI treats both as "no pins yet".
+ */
+export async function listPinnedContextAction(
+  slug: string,
+): Promise<{ rows: HiveMindPinnedContextRow[] }> {
+  if (!slug) return { rows: [] };
+  const vault = await getVault();
+  const project = await vault.readProject(slug).catch(() => null);
+  if (!project?.hive_mind_partner_slug) return { rows: [] };
+  const data = await vault
+    .getHiveMindPinnedContext(
+      project.hive_mind_partner_slug,
+      project.hive_mind_project_slug ?? project.slug,
+    )
+    .catch(() => null);
+  return { rows: data?.rows ?? [] };
+}
+
+/**
+ * Pin a context item to the project's pinned-context.md in Hive-Mind.
+ * Idempotent — duplicates by `ref` are silently skipped. The body of the
+ * resolved item is intentionally NOT persisted; pins only carry the ref
+ * + label + type + added date. The body is re-fetched by the picker /
+ * agent at use time so stale Slack threads / GitHub comments don't get
+ * sent to draft agents.
+ */
+export async function pinContextAction(
+  slug: string,
+  item: Pick<ContextItem, "type" | "ref" | "label">,
+): Promise<{ ok: true; total: number } | { ok: false; reason: string }> {
+  if (!slug) return { ok: false, reason: "slug is required" };
+  if (!item.ref.trim()) return { ok: false, reason: "ref is required" };
+
+  const vault = await getVault();
+  const project = await vault.readProject(slug).catch(() => null);
+  if (!project) return { ok: false, reason: "Project not found" };
+  if (!project.hive_mind_partner_slug) {
+    return { ok: false, reason: "not-configured" };
+  }
+  const hmPartner = project.hive_mind_partner_slug;
+  const hmProject = project.hive_mind_project_slug ?? project.slug;
+
+  const existing = await vault
+    .getHiveMindPinnedContext(hmPartner, hmProject)
+    .catch(() => null);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const existingRows: HiveMindPinnedContextRow[] = existing?.rows ?? [];
+  if (existingRows.some((r) => r.ref === item.ref)) {
+    return { ok: true, total: existingRows.length };
+  }
+  const nextRows: HiveMindPinnedContextRow[] = [
+    ...existingRows,
+    { type: item.type, ref: item.ref, label: item.label, added: today },
+  ];
+
+  const content = serializeHiveMindPinnedContext({
+    partnerSlug: hmPartner,
+    projectSlug: hmProject,
+    projectTitle: project.name,
+    rows: nextRows,
+    updated: today,
+  });
+
+  try {
+    const mcp = await getMcpClient();
+    await mcp.hiveMind.writeProjectFile(hmPartner, hmProject, "pinned-context.md", content);
+    await mcp.hiveMind.commit(`pinned-context: pin ${item.type} for ${hmPartner}/${hmProject}`);
+    revalidatePath(`/projects/${slug}`);
+    return { ok: true, total: nextRows.length };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "Failed to pin",
+    };
+  }
+}
+
+/**
+ * Remove a pinned context item by ref. Returns `not-found` when the ref
+ * doesn't match anything.
+ */
+export async function unpinContextAction(
+  slug: string,
+  ref: string,
+): Promise<{ ok: true; total: number } | { ok: false; reason: string }> {
+  if (!slug) return { ok: false, reason: "slug is required" };
+  if (!ref.trim()) return { ok: false, reason: "ref is required" };
+
+  const vault = await getVault();
+  const project = await vault.readProject(slug).catch(() => null);
+  if (!project) return { ok: false, reason: "Project not found" };
+  if (!project.hive_mind_partner_slug) {
+    return { ok: false, reason: "not-configured" };
+  }
+  const hmPartner = project.hive_mind_partner_slug;
+  const hmProject = project.hive_mind_project_slug ?? project.slug;
+
+  const existing = await vault
+    .getHiveMindPinnedContext(hmPartner, hmProject)
+    .catch(() => null);
+  const existingRows: HiveMindPinnedContextRow[] = existing?.rows ?? [];
+  const nextRows = existingRows.filter((r) => r.ref !== ref);
+  if (nextRows.length === existingRows.length) {
+    return { ok: false, reason: "not-found" };
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const content = serializeHiveMindPinnedContext({
+    partnerSlug: hmPartner,
+    projectSlug: hmProject,
+    projectTitle: project.name,
+    rows: nextRows,
+    updated: today,
+  });
+
+  try {
+    const mcp = await getMcpClient();
+    await mcp.hiveMind.writeProjectFile(hmPartner, hmProject, "pinned-context.md", content);
+    await mcp.hiveMind.commit(`pinned-context: unpin for ${hmPartner}/${hmProject}`);
+    revalidatePath(`/projects/${slug}`);
+    return { ok: true, total: nextRows.length };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "Failed to unpin",
     };
   }
 }

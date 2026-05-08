@@ -9,6 +9,7 @@ import {
 
 import { getAgentRuntime } from "@/lib/server/agents";
 import { getMcpClient } from "@/lib/server/mcp";
+import { loadStyleReference } from "@/lib/server/style";
 import { getVault } from "@/lib/server/vault";
 
 /**
@@ -108,10 +109,7 @@ export async function analyzeTeamCallAction(input: {
     };
   }
 
-  const styleSource = await vault.readStyleGuide().catch(() => null);
-  const style = styleSource
-    ? { label: "User's writing style", body: styleSource.body }
-    : undefined;
+  const style = (await loadStyleReference()) ?? undefined;
 
   try {
     const result = await analyzeCallTranscript(runtime, {

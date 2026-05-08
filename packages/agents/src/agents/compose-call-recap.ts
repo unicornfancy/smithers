@@ -1,5 +1,10 @@
 import type { Project } from "@smithers/vault";
 
+import {
+  EXTRA_CONTEXT_SYSTEM_PROMPT,
+  renderExtraContextBlock,
+  type DraftExtraContextItem,
+} from "../extra-context";
 import { runAgent } from "../runner";
 import type {
   AgentResult,
@@ -21,6 +26,8 @@ export interface ComposeCallRecapInput {
   style?: StyleReference;
   /** Default channel; the model can pick the other based on context. */
   channelHint?: "email" | "slack";
+  /** Phase H: extra context (pinned + ad-hoc) the user attached in the picker. */
+  extra_context?: DraftExtraContextItem[];
 }
 
 export interface ComposeCallRecapOutput {
@@ -56,6 +63,8 @@ Quality rules:
 - Don't fabricate commitments that weren't actually made on the call.
 - If the call ended ambiguously on something, ask one clarifying question rather than glossing over it.
 - Cap at 200 words for email, 100 for slack.
+
+${EXTRA_CONTEXT_SYSTEM_PROMPT}
 
 Always return your output as JSON matching the requested schema. No text outside the JSON.`;
 
@@ -102,7 +111,8 @@ export async function composeCallRecap(
 }
 
 function renderUserPrompt(input: ComposeCallRecapInput): string {
-  const { project, call, transcript, style, channelHint } = input;
+  const { project, call, transcript, style, channelHint, extra_context } =
+    input;
   const lines: string[] = [];
 
   lines.push("# Project");
@@ -128,6 +138,12 @@ function renderUserPrompt(input: ComposeCallRecapInput): string {
   lines.push("");
   lines.push("# Transcript");
   lines.push(transcript.trim());
+
+  const extraBlock = renderExtraContextBlock(extra_context);
+  if (extraBlock) {
+    lines.push("");
+    lines.push(extraBlock);
+  }
 
   lines.push("");
   lines.push(

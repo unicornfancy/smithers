@@ -1,5 +1,10 @@
 import type { Project } from "@smithers/vault";
 
+import {
+  EXTRA_CONTEXT_SYSTEM_PROMPT,
+  renderExtraContextBlock,
+  type DraftExtraContextItem,
+} from "../extra-context";
 import { runAgent } from "../runner";
 import type {
   AgentResult,
@@ -27,6 +32,8 @@ export interface DraftZendeskReplyInput {
   intent?: string;
   /** Style guide for voice. */
   style?: StyleReference;
+  /** Phase H: extra context (pinned + ad-hoc) the user attached in the picker. */
+  extra_context?: DraftExtraContextItem[];
 }
 
 export type ZendeskReplyTone = "warm" | "matter-of-fact" | "concise";
@@ -53,6 +60,8 @@ Tone calibration:
 - warm: rapport-building, default for partner check-ins and easy fixes.
 - matter-of-fact: technical clarifications, status updates, fact-correction.
 - concise: when the partner is impatient, when an issue is recurring, or when they explicitly want a yes/no.
+
+${EXTRA_CONTEXT_SYSTEM_PROMPT}
 
 If you don't have enough context to answer the partner's actual question, draft a clarifying-question reply instead of bluffing. Make the rationale name what's missing ("partner asked X, we don't know Y, asking them for Y").
 
@@ -99,7 +108,7 @@ export async function draftZendeskReply(
 }
 
 function renderUserPrompt(input: DraftZendeskReplyInput): string {
-  const { project, thread, intent, style } = input;
+  const { project, thread, intent, style, extra_context } = input;
   const lines: string[] = [];
 
   lines.push("# Project");
@@ -132,6 +141,12 @@ function renderUserPrompt(input: DraftZendeskReplyInput): string {
     lines.push("");
     lines.push(`# ${style.label}`);
     lines.push(style.body.trim());
+  }
+
+  const extraBlock = renderExtraContextBlock(extra_context);
+  if (extraBlock) {
+    lines.push("");
+    lines.push(extraBlock);
   }
 
   lines.push("");
