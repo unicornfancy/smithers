@@ -48,6 +48,29 @@ Probably needs an actual day or two of "what would make my morning better?" obse
 
 ---
 
+## Collapsible + reorderable sections on `/today` and project pages
+
+**Deferred — needs design discussion.**
+
+Both `/today` and `/projects/[slug]` carry many sections (For-You-Today, Stalls, Pings, Recent Calls, Project Status, Project Log, Partner, Zendesk, Follow-ups, Call Transcripts, Drafts, Open Items, etc.). Today they render in a fixed order with no per-user customization. Goal: let the user collapse sections they're ignoring and reorder the ones they care about.
+
+### Open questions
+- **Persistence target.** localStorage (per-browser, no sync, simplest) vs a new file under `paths.data/` (per-user, syncs if the data dir is in the vault) vs vault frontmatter on a `_layout.md`. Probably localStorage for v1; promote to disk if it ever needs to survive a fresh checkout.
+- **Per-page or per-project order?** `/today` is one ordering for all days. `/projects/[slug]` could be one global ordering OR per-project (some partners have rich Zendesk threads, others don't have any tickets, etc.). Per-page is simpler. Per-project is more flexible.
+- **Default collapse heuristic.** Auto-collapse empty sections (e.g. no zendesk tickets → Zendesk panel collapsed by default)? Or honor explicit user choice and treat empty-section noise as a separate fix?
+- **Drag-and-drop interaction.** A drag handle in each section header is the standard pattern. shadcn doesn't ship a DnD primitive — pulling in @dnd-kit (~10kB) is the usual choice. Or skip drag entirely and offer up/down arrows in an "Edit layout" mode.
+- **Reset affordance.** "Restore default order" button somewhere when the user has reordered things and wants to start over.
+- **Mobile.** Drag-and-drop on touch is finicky; up/down arrows degrade better. Smithers is desktop-first today but worth considering.
+
+### Sketch (best guess at scope, not locked)
+- A small `useLayoutPrefs("today" | "project")` hook that reads/writes localStorage, returns `{ order: string[]; collapsed: Set<string>; reorder, toggleCollapse, reset }`.
+- Each section grows a `<SectionCard id="..." title="..." defaultCollapsed?={...}>` wrapper that hooks into the prefs.
+- An "Edit layout" toggle in the page header that shows drag handles + a Reset button. Outside edit mode the section headers stay clean.
+
+Worth doing after we've lived with the current pages a while longer — we'll know which sections we actually want to hide.
+
+---
+
 ## Other deferred items
 
 - **v1.5 Linear ↔ Hive Mind ↔ Smithers sync** — deeper field standardization. Deferred until user signals priority.
