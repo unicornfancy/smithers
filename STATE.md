@@ -1,8 +1,28 @@
 # STATE.md — Smithers (snapshot)
 
-_Updated 2026-05-06_
+_Updated 2026-05-08_
 
-## Just completed (2026-05-06 — Hive-Mind writes, onboarding, calls, team-call notes)
+## Just completed (2026-05-07 to 2026-05-08 — /setup wizard + Phase H)
+
+### `/setup` wizard
+
+- **`/setup` route (d5aaffa)** — first-run experience for new TAMs picking up Smithers (the project-handoff workflow). Reads current config and surfaces what's missing: paths (vault / hive_mind / my_voice) with resolved-path badges, write-only API key inputs (anthropic / linear), MCP enable toggles (context_a8c / hive_mind / fathom) plus a Hive-Mind dist-build status indicator. Atomic writes to `config.local.yaml` (js-yaml deep-merge) and `apps/web/.env.local` (preserves blank lines + comments). Auto-redirect for missing-essential-config visitors deferred to a follow-up. Sidebar nav grew a Setup entry.
+
+### Phase H — multi-source context for AI drafts
+
+- **Picker dialog (2596d02)** — Every AI draft affordance (Zendesk reply, follow-up nudge, P2 update from call, post-call recap) opens `DraftContextPickerDialog` before the agent runs. Three sections: Pinned to project, Attach for this draft (Slack / GitHub / Linear / Zendesk URL paste), and No-extra-context confirmation. Generate button gated until the user has reviewed.
+- **URL resolvers** — `resolveSlackUrl` / `resolveGithubUrl` on the ContextA8C client (slack `get`, github `issue`/`pull-request` with `get` + `get_comments`, response envelope unwrapping); `resolveLinearUrl` on the Linear client (issue via GraphQL `getIssue`; project via `getProject` + recent updates). Linear-quirk guard returns null when the API silently swaps in a different issue for a non-existent identifier.
+- **`pinned-context.md` in Hive-Mind** — schema lives in HM (PR'd separately, merged on trunk as commit `dc26b93`). Smithers reads via new `getHiveMindPinnedContext` vault helper; writes via `pinContextAction` / `unpinContextAction` on the project workbench actions, going through the existing `write-project-file` + `commit` MCP tools. Body is intentionally NOT persisted — pins re-fetch live at use time so stale Slack threads don't leak into agent prompts.
+- **AiDraftDialog grows Regenerate + Change context + preview block + learning hint** — Regenerate keeps the curated context but lets the user add one-shot intent ("shorter", "ask for screenshots"). Change context reopens the picker with state intact. Preview block surfaces e.g. the latest Zendesk partner reply at the top, persists into draft frontmatter, and renders again on `/drafts/[id]`.
+- **All four draft agents accept `extra_context` and import a shared `EXTRA_CONTEXT_SYSTEM_PROMPT`** — same guidance to every agent: treat attached items as load-bearing, reference by substance not URL, prefer attached context over clarifying questions.
+- **Voice routing fix** — agents now read voice from `paths.my_voice/` (SKILL + PARTNER_COMMS + INTERNAL_STYLE_GUIDE + EXTERNAL_STYLE_GUIDE + REPORT_STRUCTURE concatenated) via a new `loadStyleReference` server helper. Falls back to vault root style guide when my_voice is unconfigured. Previous behavior read only the vault root file — meaning the auto-learn-from-archive loop was write-only, agents never saw appended learnings.
+- **Zendesk comments fix** — switched from the long-broken `comments` tool to `get-ticket-comments` (provider was upgraded). Mapper handles the new shape (`via.source.from.{address,name}` instead of `comment.author`) and decodes HTML entities in `plain_body`. Side effect: workbench Zendesk-Threads "Recent activity" disclosures now populate, fixing the gotcha that's been silent since the integration shipped.
+
+### Phase H follow-ups deferred (not built)
+- **H5 — suggestion engine** for the picker (recency-based pre-population from project activity feed + transcripts).
+- **H6 — workbench "Pinned context" affordance** for managing pins outside of a draft flow. Pinning currently happens via the picker's "Pin permanently" checkbox.
+
+## Previously (2026-05-06 — Hive-Mind writes, onboarding, calls, team-call notes)
 
 ### Hive-Mind writes live + Save Draft dual-write
 
@@ -65,17 +85,19 @@ _Updated 2026-05-06_
 In rough priority order:
 
 1. **Run the migration** — Neighborhood Nip + Shareable Connect; Import any HM projects you're actively working on (only what you're working on, not all of them) from /projects/onboard.
-2. **`/setup` wizard** — independent phase, designed in PLAN.md. New-TAM first-run config + OAuth + HM build check.
-3. **`/today` view focus** — design discussion needed; queued in PLAN.md. Polish items (day-specific banners, AFK / weekend / no-data states) plus open questions about opinionated section visibility, "what changed since you last opened this," calendar integration surface, For-You-Today confidence.
+2. **`/today` view focus** — design discussion needed; queued in PLAN.md. Polish items (day-specific banners, AFK / weekend / no-data states) plus open questions about opinionated section visibility, "what changed since you last opened this," calendar integration surface, For-You-Today confidence.
+3. **Phase H follow-ups** — H5 (suggestion engine in the picker) + H6 (workbench Pinned context card) — both queued in PLAN.md.
 4. **`/agendas/[project]` editor** — 23-line stub.
 5. **`/weekly-updates/[YYYY-WN]` editor** — stub.
-6. **Multi-source context for AI drafts** — design discussion needed; queued in PLAN.md.
-7. **Slack thread context for partner projects** — design discussion needed; queued in PLAN.md.
-8. **More AI affordances** — Summarize Zendesk thread, Verify @handles, Find related context.
-9. **Bell icon + unresolved-issues count** — vault-watcher events.
+6. **More AI affordances** — Summarize Zendesk thread, Verify @handles, Find related context.
+7. **Bell icon + unresolved-issues count** — vault-watcher events.
 
 ## Recent decisions (with the why)
 
+- **Pinned context lives in Hive-Mind, not vault** (2026-05-07) — `pinned-context.md` is per-project and team-shareable so a second TAM working on the same project sees the same context set. Pin body is NOT persisted — only ref + label + type — and re-fetched live so the agent never sees stale Slack/GitHub content.
+- **Picker gates Generate behind explicit review** (2026-05-07) — every draft affordance opens a context picker first; Generate is disabled until the user attaches ≥1 item or explicitly checks "No extra context". Prevents the agent from running on assumed defaults when context is available but unselected.
+- **Agents pull voice from my-voice/, not vault root** (2026-05-07) — SKILL + PARTNER_COMMS + INTERNAL_STYLE_GUIDE + EXTERNAL_STYLE_GUIDE + REPORT_STRUCTURE concatenated. Previously read only the vault root style guide, which meant auto-learn-from-archive was write-only — agents never saw appended learnings.
+- **Linear identifier-match guard against API quirk** (2026-05-08) — Linear's `issue(id:)` returns SOME other issue when the requested identifier doesn't exist (silent fuzzy-match). Verifying returned identifier matches what was asked prevents wildly wrong context from reaching the agent.
 - **TAMs only import the HM projects they're actively working on** (2026-05-06) — Hive-Mind is shared across the whole team; vault scratchpads are the personal subset the user wants Smithers to track. The /projects/onboard surface lists everything but doesn't pressure users to bulk-import.
 - **Match Fathom recordings via attendees, not just title** (2026-05-06) — partner-scheduled calls (calendar link) get generic titles; the attendees segment exposes the partner's email domain. Substring matching against the haystack catches the common case without per-project config.
 - **Team-call processing relaxes call-notes project_slug** (2026-05-06) — orphan recordings (internal Automattic meetings the user is note-taking on) save to vault `Call Notes/` without a `project_slug` field. The analyze-call agent's `project` input is also optional now.
@@ -99,7 +121,6 @@ In rough priority order:
 - **Fathom MCP 406 on first call** — `mcp-remote` to `api.fathom.ai/mcp` returns "Failed to open SSE stream: Not Acceptable" on initial tools/call; retry succeeds. Process Call doesn't auto-analyze on dialog open as a result — user has to click "Re-analyze". Issue is upstream (mcp-remote / Fathom remote), not Smithers code.
 - **The Pocket NYC partner-knowledge.md is empty** — PartnerCard renders blank until filled in. Content task, not a code task.
 - **Auto-learn-from-archive has no in-flight indicator** — fire-and-forget; the success toast pops when the agent returns. Plan called for a small "learning…" pill near the archive button. Polish item, deferred.
-- **ContextA8C `comments` tool not found** — Zendesk "Recent activity" disclosures always empty. Silent degradation.
 - **`gray-matter` round-trip rewrites YAML** — idempotent re-saves produce git diff noise.
 - **`router.refresh()` flash of stale data** — visible on Zendesk ticket attach.
 - **`Add N to Open Items` / `Add N to Follow-ups.md`** don't disable at N=0.
