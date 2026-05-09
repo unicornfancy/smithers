@@ -23,7 +23,7 @@ import {
   type RecentCallRow,
 } from "@/components/recent-calls-card";
 import { StallsCard } from "@/components/stalls-card";
-import { BackgroundTier } from "@/components/today/background-tier";
+import { SectionList, type SectionDef } from "@/components/section-list";
 import { HotPings } from "@/components/today/hot-pings";
 import {
   MovingFastStrip,
@@ -297,118 +297,220 @@ export default async function TodayPage() {
           />
         ) : null}
 
-        {/* HOT TIER — top of page, prominent. Only renders when there's */}
-        {/* a real signal (high-priority project, contact match, or LLM pick). */}
-        <HotPings pings={hotPings} totalCount={pings.length} />
-        <MovingFastStrip entries={movingFastEntries} windowDays={7} />
-
-        {/* ACTIVE TIER — current cards, full density. */}
-        {status.exists && followUps.active.length > 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Inbox className="text-muted-foreground size-4" />
-                Follow-ups waiting
-                <span className="text-muted-foreground text-xs font-normal">
-                  · {followUps.active.length}
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col divide-y">
-              {followUps.active.slice(0, 6).map((f) => (
-                <div
-                  key={f.follow_up_id}
-                  className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0"
-                >
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <p className="text-sm leading-snug">{f.task}</p>
-                    <p className="text-muted-foreground text-xs">
-                      {f.project}
-                      {f.sent ? ` · sent ${f.sent}` : ""}
-                      {f.follow_up_by ? ` · due ${f.follow_up_by}` : ""}
-                    </p>
-                  </div>
-                  <span className="text-muted-foreground text-[10px] uppercase tracking-wide">
-                    {f.status}
-                  </span>
-                </div>
-              ))}
-              {followUps.active.length > 6 ? (
-                <Button variant="link" size="sm" asChild className="self-start">
-                  <Link href="/follow-ups">
-                    See all {followUps.active.length} waiting
-                  </Link>
-                </Button>
-              ) : null}
-            </CardContent>
-          </Card>
-        ) : null}
-
-        <TopThreeCard
-          initialCandidates={topCandidates}
-          apiKeyConfigured={agentStatus.configured}
-          pinnedIds={Array.from(pinnedTop3Ids)}
-          cachedLlm={cachedTop3 ?? undefined}
-        />
-
-        <StallsCard
-          summary={stalls}
-          apiKeyConfigured={agentStatus.configured}
-        />
-
-        <PingsToAction
-          result={filteredPingsResult}
-          actionedIds={Array.from(actionedIds)}
-          actionedCheckedAt={actionedCheckedAt}
-        />
-
-        <RecentCallsCard
-          rows={recentCallRows}
-          unmatchedCount={unmatchedRecentCalls}
-        />
-
-        {/* BACKGROUND TIER — collapsed by default; localStorage-persisted. */}
-        <BackgroundTier label="Counts & summary">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              icon={<FolderKanban className="size-4" />}
-              label="Projects"
-              value={projects.length}
-              href="/projects"
-            />
-            <StatCard
-              icon={<PenLine className="size-4" />}
-              label="Drafts in flight"
-              value={inProgressDrafts.length}
-              href="/drafts"
-            />
-            <StatCard
-              icon={<Inbox className="size-4" />}
-              label="Follow-ups waiting"
-              value={followUps.active.length}
-              href="/follow-ups"
-              tone={followUps.active.length > 5 ? "warn" : "neutral"}
-            />
-            <StatCard
-              icon={<CalendarDays className="size-4" />}
-              label="Daily notes"
-              value={dailyNotes.length}
-              secondary={
-                latestDailyNote ? `latest ${latestDailyNote.date}` : undefined
-              }
-            />
-          </div>
-
-          <RealisticShapeCard
-            apiKeyConfigured={agentStatus.configured}
-            cached={cachedShape?.output}
+        {status.exists && projects.length > 0 ? (
+          <SectionList
+            scope="today"
+            sections={buildTodaySections({
+              hotPings,
+              movingFastEntries,
+              pingsTotal: pings.length,
+              followUps,
+              topCandidates,
+              agentConfigured: agentStatus.configured,
+              pinnedTop3Ids,
+              cachedTop3,
+              stalls,
+              filteredPingsResult,
+              actionedIds,
+              actionedCheckedAt,
+              recentCallRows,
+              unmatchedRecentCalls,
+              projectsCount: projects.length,
+              inProgressDraftsCount: inProgressDrafts.length,
+              dailyNotesCount: dailyNotes.length,
+              latestDailyNoteDate: latestDailyNote?.date,
+              cachedShape,
+            })}
           />
-        </BackgroundTier>
+        ) : null}
       </PageShell>
     </>
   );
 }
 
+
+/**
+ * Compose the section list /today renders, in default order. Each
+ * section gets a stable id used by `useLayoutPrefs` to track user
+ * customizations. Pre-built React nodes (server-rendered) get handed
+ * to the client `SectionList` which orders + shows/hides them per
+ * the user's saved layout.
+ */
+function buildTodaySections(args: {
+  hotPings: Ping[];
+  movingFastEntries: MovingFastEntry[];
+  pingsTotal: number;
+  followUps: { active: Array<{ follow_up_id: string; task: string; project: string; sent?: string; follow_up_by?: string; status: string }> };
+  topCandidates: TopThreeCandidate[];
+  agentConfigured: boolean;
+  pinnedTop3Ids: Set<string>;
+  cachedTop3: { output: TopThreeOutput; candidates: TopThreeCandidate[] } | null;
+  stalls: Awaited<ReturnType<typeof detectStalls>>;
+  filteredPingsResult: SourceResult<Ping[]>;
+  actionedIds: Set<string>;
+  actionedCheckedAt: string | null;
+  recentCallRows: RecentCallRow[];
+  unmatchedRecentCalls: number;
+  projectsCount: number;
+  inProgressDraftsCount: number;
+  dailyNotesCount: number;
+  latestDailyNoteDate: string | undefined;
+  cachedShape: { output: RealisticShapeOutput } | null;
+}): SectionDef[] {
+  const sections: SectionDef[] = [];
+
+  if (args.hotPings.length > 0) {
+    sections.push({
+      id: "hot-pings",
+      title: "Hot today",
+      node: <HotPings pings={args.hotPings} totalCount={args.pingsTotal} />,
+    });
+  }
+
+  if (args.movingFastEntries.length > 0) {
+    sections.push({
+      id: "moving-fast",
+      title: "Moving fast",
+      node: <MovingFastStrip entries={args.movingFastEntries} windowDays={7} />,
+    });
+  }
+
+  if (args.followUps.active.length > 0) {
+    sections.push({
+      id: "follow-ups-waiting",
+      title: "Follow-ups waiting",
+      node: (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Inbox className="text-muted-foreground size-4" />
+              Follow-ups waiting
+              <span className="text-muted-foreground text-xs font-normal">
+                · {args.followUps.active.length}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col divide-y">
+            {args.followUps.active.slice(0, 6).map((f) => (
+              <div
+                key={f.follow_up_id}
+                className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0"
+              >
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <p className="text-sm leading-snug">{f.task}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {f.project}
+                    {f.sent ? ` · sent ${f.sent}` : ""}
+                    {f.follow_up_by ? ` · due ${f.follow_up_by}` : ""}
+                  </p>
+                </div>
+                <span className="text-muted-foreground text-[10px] uppercase tracking-wide">
+                  {f.status}
+                </span>
+              </div>
+            ))}
+            {args.followUps.active.length > 6 ? (
+              <Button variant="link" size="sm" asChild className="self-start">
+                <Link href="/follow-ups">
+                  See all {args.followUps.active.length} waiting
+                </Link>
+              </Button>
+            ) : null}
+          </CardContent>
+        </Card>
+      ),
+    });
+  }
+
+  sections.push({
+    id: "top-three",
+    title: "Top 3 for today",
+    node: (
+      <TopThreeCard
+        initialCandidates={args.topCandidates}
+        apiKeyConfigured={args.agentConfigured}
+        pinnedIds={Array.from(args.pinnedTop3Ids)}
+        cachedLlm={args.cachedTop3 ?? undefined}
+      />
+    ),
+  });
+
+  sections.push({
+    id: "stalls",
+    title: "Stalls",
+    node: (
+      <StallsCard summary={args.stalls} apiKeyConfigured={args.agentConfigured} />
+    ),
+  });
+
+  sections.push({
+    id: "pings-to-action",
+    title: "Pings to action",
+    node: (
+      <PingsToAction
+        result={args.filteredPingsResult}
+        actionedIds={Array.from(args.actionedIds)}
+        actionedCheckedAt={args.actionedCheckedAt}
+      />
+    ),
+  });
+
+  sections.push({
+    id: "recent-calls",
+    title: "Recent calls",
+    node: (
+      <RecentCallsCard
+        rows={args.recentCallRows}
+        unmatchedCount={args.unmatchedRecentCalls}
+      />
+    ),
+  });
+
+  sections.push({
+    id: "counts-summary",
+    title: "Counts & summary",
+    defaultHidden: true,
+    node: (
+      <div className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            icon={<FolderKanban className="size-4" />}
+            label="Projects"
+            value={args.projectsCount}
+            href="/projects"
+          />
+          <StatCard
+            icon={<PenLine className="size-4" />}
+            label="Drafts in flight"
+            value={args.inProgressDraftsCount}
+            href="/drafts"
+          />
+          <StatCard
+            icon={<Inbox className="size-4" />}
+            label="Follow-ups waiting"
+            value={args.followUps.active.length}
+            href="/follow-ups"
+            tone={args.followUps.active.length > 5 ? "warn" : "neutral"}
+          />
+          <StatCard
+            icon={<CalendarDays className="size-4" />}
+            label="Daily notes"
+            value={args.dailyNotesCount}
+            secondary={
+              args.latestDailyNoteDate ? `latest ${args.latestDailyNoteDate}` : undefined
+            }
+          />
+        </div>
+        <RealisticShapeCard
+          apiKeyConfigured={args.agentConfigured}
+          cached={args.cachedShape?.output}
+        />
+      </div>
+    ),
+  });
+
+  return sections;
+}
 
 const HOT_PINGS_LIMIT = 5;
 const HOT_PINGS_MIN_SCORE = 20;
