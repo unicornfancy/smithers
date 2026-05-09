@@ -214,4 +214,8 @@ export class MockLinearTransport implements LinearClient {
   } | null> {
     return null;
   }
+
+  async checkIssueActioned(_url: string, _sinceTs: string): Promise<boolean> {
+    return false;
+  }
 }

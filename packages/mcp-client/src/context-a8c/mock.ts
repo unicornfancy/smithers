@@ -661,6 +661,14 @@ export class MockContextA8CTransport implements ContextA8CClient {
   ): Promise<boolean> {
     return false;
   }
+
+  async checkSlackActioned(
+    _url: string,
+    _sinceTs: string,
+    _slackHandle: string,
+  ): Promise<boolean> {
+    return false;
+  }
 }
 
 function shortHash(rng: () => number): string {

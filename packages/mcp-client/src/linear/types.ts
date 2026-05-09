@@ -82,4 +82,12 @@ export interface LinearClient {
     label: string;
     body: string;
   } | null>;
+
+  /**
+   * Check whether the authenticated viewer has commented on a Linear
+   * issue since the given timestamp. Used by /today's "Pings to action"
+   * panel to grey out issues you've already replied to. Returns false
+   * on parse / fetch / auth failure.
+   */
+  checkIssueActioned(url: string, sinceTs: string): Promise<boolean>;
 }

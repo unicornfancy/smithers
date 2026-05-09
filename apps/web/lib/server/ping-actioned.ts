@@ -128,7 +128,20 @@ async function detectActioned(ping: PingActionedInput): Promise<boolean> {
         .checkGithubIssueActioned(ping.url, ping.timestamp, login)
         .catch(() => false);
     }
-    // Slack / Linear / P2 land in Phase 2.
+    case "slack": {
+      const slackHandle = cfg.identity.slack_handle;
+      if (!ping.url || !slackHandle) return false;
+      return mcp.contextA8C
+        .checkSlackActioned(ping.url, ping.timestamp, slackHandle)
+        .catch(() => false);
+    }
+    case "linear": {
+      if (!ping.url) return false;
+      return mcp.linear
+        .checkIssueActioned(ping.url, ping.timestamp)
+        .catch(() => false);
+    }
+    // P2 has no clean comment-fetch primitive; stays unchecked.
     default:
       return false;
   }

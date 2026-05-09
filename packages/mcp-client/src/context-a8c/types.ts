@@ -185,6 +185,18 @@ export interface ContextA8CClient {
     sinceTs: string,
     login: string,
   ): Promise<boolean>;
+
+  /**
+   * Check whether `slackHandle` has posted in a Slack thread / channel
+   * since the given timestamp. Matches against the `user`, `username`,
+   * and `user_name` fields the slack/get tool returns. Returns false on
+   * parse / fetch failure.
+   */
+  checkSlackActioned(
+    url: string,
+    sinceTs: string,
+    slackHandle: string,
+  ): Promise<boolean>;
 }
 
 export interface LinearProjectMetadata {

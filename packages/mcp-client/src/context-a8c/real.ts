@@ -1074,6 +1074,33 @@ export class RealContextA8CTransport implements ContextA8CClient {
     );
   }
 
+  async checkSlackActioned(
+    url: string,
+    sinceTs: string,
+    slackHandle: string,
+  ): Promise<boolean> {
+    if (!url || !slackHandle.trim()) return false;
+    if (!/^https?:\/\/[^/]*\.slack\.com\//i.test(url)) return false;
+    const target = slackHandle.trim().toLowerCase().replace(/^@/, "");
+    const sinceMs = Date.parse(sinceTs);
+    if (Number.isNaN(sinceMs)) return false;
+    try {
+      const result = await this.mcp.callJsonTool<SlackGetResult>(
+        "context-a8c-execute-tool",
+        { provider: "slack", tool: "get", params: { url } },
+      );
+      const messages = Array.isArray(result?.messages)
+        ? result!.messages
+        : result?.message
+          ? [result.message]
+          : null;
+      if (!messages) return false;
+      return messages.some((m) => slackMessageMatches(m, target, sinceMs));
+    } catch {
+      return false;
+    }
+  }
+
   async checkGithubIssueActioned(
     url: string,
     sinceTs: string,
@@ -1130,6 +1157,24 @@ interface SlackMessage {
   user?: string;
   username?: string;
   user_name?: string;
+  /** Slack timestamp — Unix epoch seconds with sub-second, e.g. "1715000000.000100". */
+  ts?: string;
+  thread_ts?: string;
+}
+
+function slackMessageMatches(
+  m: SlackMessage,
+  target: string,
+  sinceMs: number,
+): boolean {
+  const author = (m.user_name ?? m.username ?? m.user ?? "")
+    .toLowerCase()
+    .replace(/^@/, "");
+  if (!author || author !== target) return false;
+  if (!m.ts) return false;
+  const messageMs = Number.parseFloat(m.ts) * 1000;
+  if (!Number.isFinite(messageMs)) return false;
+  return messageMs > sinceMs;
 }
 interface GithubIssueOrPr {
   number?: number;

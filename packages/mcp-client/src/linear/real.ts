@@ -369,6 +369,44 @@ export class RealLinearTransport implements LinearClient {
       body: lines.join("\n\n"),
     };
   }
+
+  async checkIssueActioned(url: string, sinceTs: string): Promise<boolean> {
+    const parsed = parseLinearUrlForContext(url);
+    if (!parsed || parsed.kind !== "issue") return false;
+    const viewerId = await this.viewerId().catch(() => "");
+    if (!viewerId) return false;
+    const data = await this.gql<{
+      issue?: {
+        identifier: string;
+        comments: {
+          nodes: Array<{
+            createdAt: string;
+            user: { id: string };
+          }>;
+        };
+      };
+    }>(
+      `query CheckIssueActioned($identifier: String!) {
+        issue(id: $identifier) {
+          identifier
+          comments {
+            nodes { createdAt user { id } }
+          }
+        }
+      }`,
+      { identifier: parsed.identifier },
+    );
+    const issue = data?.issue;
+    if (!issue) return false;
+    // Same fuzzy-match guard as getIssue: Linear sometimes returns a
+    // different issue when the identifier doesn't exist.
+    if (issue.identifier.toUpperCase() !== parsed.identifier.toUpperCase()) {
+      return false;
+    }
+    return issue.comments.nodes.some(
+      (c) => c.user.id === viewerId && c.createdAt > sinceTs,
+    );
+  }
 }
 
 /**
