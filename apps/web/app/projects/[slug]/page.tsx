@@ -16,6 +16,7 @@ import { LiveActivityFeed } from "@/components/live-activity-feed";
 import { NeedsDecisionPanel } from "@/components/needs-decision-panel";
 import { ZendeskThreadsPanel } from "@/components/zendesk-threads-panel";
 import { PageShell } from "@/components/page-shell";
+import { SectionList, type SectionDef } from "@/components/section-list";
 import { WorkbenchHeader } from "@/components/workbench-header";
 import { ProjectStatusCard } from "@/components/project-status-card";
 import { HiveMindDraftsSection } from "@/components/hive-mind-drafts-section";
@@ -369,101 +370,177 @@ export default async function ProjectWorkbenchPage({
     },
   ];
 
+  const sections: SectionDef[] = [];
+
+  sections.push({
+    id: "needs-decision",
+    title: "Needs decision",
+    node: (
+      <NeedsDecisionPanel
+        summary={stalls}
+        apiKeyConfigured={agentStatus.configured}
+      />
+    ),
+  });
+
+  sections.push({
+    id: "for-you-today",
+    title: "For you today",
+    node: (
+      <ForYouTodayPanel
+        project={detail}
+        apiKeyConfigured={agentStatus.configured}
+      />
+    ),
+  });
+
+  if (isPartner) {
+    sections.push({
+      id: "milestones",
+      title: "Milestones",
+      node: <MilestonesPanel deadlines={detail.deadlines} />,
+    });
+  }
+
+  sections.push({
+    id: "live-activity",
+    title: "Live activity",
+    node: (
+      <LiveActivityFeed
+        result={activityResult}
+        configured={configuredSources}
+        linkedFollowUps={linkedFollowUpMap}
+        projectSlug={detail.slug}
+        projectName={detail.name}
+      />
+    ),
+  });
+
+  if (linearProject) {
+    sections.push({
+      id: "project-status",
+      title: "Project status",
+      node: (
+        <ProjectStatusCard
+          linearProject={linearProject}
+          linearPhaseIssues={linearPhaseIssues}
+          activePhaseSubtasks={activePhaseSubtasks}
+        />
+      ),
+    });
+  }
+
+  sections.push({
+    id: "project-brief",
+    title: "Project brief",
+    node: <ProjectBriefSection brief={hiveMindBrief} editPath={hmBriefPath} />,
+  });
+
+  sections.push({
+    id: "project-log",
+    title: "Project log",
+    node: (
+      <ProjectLogPanel
+        project={detail}
+        projectNotes={projectNotes}
+        linearUpdates={linearUpdates}
+      />
+    ),
+  });
+
+  sections.push({
+    id: "items-and-drafts",
+    title: "Items & drafts",
+    node: (
+      <div className="grid gap-3 lg:grid-cols-2">
+        <OpenItemsPanel
+          projectSlug={detail.slug}
+          projectName={detail.name}
+          open={open}
+          done={done}
+          githubRepo={detail.github_repo}
+        />
+        <DraftsForProjectPanel
+          drafts={projectDrafts}
+          projectName={detail.name}
+        />
+        {hiveMindDrafts.length > 0 ? (
+          <HiveMindDraftsSection drafts={hiveMindDrafts} />
+        ) : null}
+      </div>
+    ),
+  });
+
+  sections.push({
+    id: "zendesk-threads",
+    title: "Zendesk threads",
+    node: (
+      <ZendeskThreadsPanel
+        projectSlug={detail.slug}
+        tickets={effectiveZendeskTickets}
+        refreshHints={[
+          partnerProfile?.display_name ?? "",
+          detail.partner ? detail.partner.replace(/-/g, " ") : "",
+          detail.name,
+        ].filter(Boolean)}
+        savedSearchTerms={detail.zendesk_search_terms ?? []}
+        followUps={effectiveFollowUps}
+        recentActivityByTicketId={recentActivityByTicketId}
+        defaultSearchQuery={
+          partnerProfile?.display_name ?? detail.partner ?? detail.name
+        }
+        alwaysShow={isPartner}
+        linkedFollowUps={linkedFollowUpMap}
+        projectName={detail.name}
+      />
+    ),
+  });
+
+  sections.push({
+    id: "recent-calls",
+    title: "Recent calls",
+    node: (
+      <CallNotesPanel
+        projectSlug={detail.slug}
+        projectName={detail.name}
+        recordings={projectRecordings}
+        savedNotesByRecordingId={savedCallNotesByRecordingId}
+        callTranscripts={callTranscripts}
+      />
+    ),
+  });
+
+  if (isPartner) {
+    sections.push({
+      id: "partner-info",
+      title: "Partner info",
+      node: <PartnerInfoPanel project={detail} partner={partnerProfile} />,
+    });
+  }
+
+  sections.push({
+    id: "personal-notes",
+    title: "Personal notes",
+    node: <PersonalNotesPanel notes={detail.notes} />,
+  });
+
+  sections.push({
+    id: "partner-profile",
+    title: "Partner profile",
+    node: (
+      <PartnerCard
+        partner={hiveMindPartner}
+        editPath={hmPartnerKnowledgePath}
+        hmIsConfigured={hmIsConfigured}
+      />
+    ),
+  });
+
   return (
     <>
       <WorkbenchHeader project={detail} />
       <PageShell className="max-w-5xl">
-        <NeedsDecisionPanel
-          summary={stalls}
-          apiKeyConfigured={agentStatus.configured}
-        />
-
-        <ForYouTodayPanel
-          project={detail}
-          apiKeyConfigured={agentStatus.configured}
-        />
-
-        {isPartner ? <MilestonesPanel deadlines={detail.deadlines} /> : null}
-
-        <LiveActivityFeed
-          result={activityResult}
-          configured={configuredSources}
-          linkedFollowUps={linkedFollowUpMap}
-          projectSlug={detail.slug}
-          projectName={detail.name}
-        />
-
-        {linearProject ? (
-          <ProjectStatusCard
-            linearProject={linearProject}
-            linearPhaseIssues={linearPhaseIssues}
-            activePhaseSubtasks={activePhaseSubtasks}
-          />
-        ) : null}
-
-        <ProjectBriefSection brief={hiveMindBrief} editPath={hmBriefPath} />
-
-        <ProjectLogPanel
-          project={detail}
-          projectNotes={projectNotes}
-          linearUpdates={linearUpdates}
-        />
-
-        <div className="grid gap-3 lg:grid-cols-2">
-          <OpenItemsPanel
-            projectSlug={detail.slug}
-            projectName={detail.name}
-            open={open}
-            done={done}
-            githubRepo={detail.github_repo}
-          />
-          <DraftsForProjectPanel
-            drafts={projectDrafts}
-            projectName={detail.name}
-          />
-          {hiveMindDrafts.length > 0 ? (
-            <HiveMindDraftsSection drafts={hiveMindDrafts} />
-          ) : null}
-        </div>
-
-        <ZendeskThreadsPanel
-          projectSlug={detail.slug}
-          tickets={effectiveZendeskTickets}
-          refreshHints={[
-            partnerProfile?.display_name ?? "",
-            detail.partner ? detail.partner.replace(/-/g, " ") : "",
-            detail.name,
-          ].filter(Boolean)}
-          savedSearchTerms={detail.zendesk_search_terms ?? []}
-          followUps={effectiveFollowUps}
-          recentActivityByTicketId={recentActivityByTicketId}
-          defaultSearchQuery={
-            partnerProfile?.display_name ?? detail.partner ?? detail.name
-          }
-          alwaysShow={isPartner}
-          linkedFollowUps={linkedFollowUpMap}
-          projectName={detail.name}
-        />
-
-        <CallNotesPanel
-          projectSlug={detail.slug}
-          projectName={detail.name}
-          recordings={projectRecordings}
-          savedNotesByRecordingId={savedCallNotesByRecordingId}
-          callTranscripts={callTranscripts}
-        />
-
-        {isPartner ? (
-          <PartnerInfoPanel project={detail} partner={partnerProfile} />
-        ) : null}
-
-        <PersonalNotesPanel notes={detail.notes} />
-
-        <PartnerCard
-          partner={hiveMindPartner}
-          editPath={hmPartnerKnowledgePath}
-          hmIsConfigured={hmIsConfigured}
-        />
+        <SectionList scope="project" sections={sections} />
       </PageShell>
     </>
   );
