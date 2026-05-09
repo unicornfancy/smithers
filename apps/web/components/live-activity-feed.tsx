@@ -99,7 +99,10 @@ export function LiveActivityFeed({
               ? events.length
               : `${filtered.length} / ${events.length}`}
           </span>
-          <span className="text-muted-foreground/70 ml-auto text-xs font-normal">
+          <span
+            className="text-muted-foreground/70 ml-auto text-xs font-normal"
+            suppressHydrationWarning
+          >
             {freshnessLabel}
           </span>
         </CardTitle>
