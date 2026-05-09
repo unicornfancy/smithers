@@ -7,7 +7,7 @@ import Database, { type Database as DB } from "better-sqlite3";
 
 import { loadConfig } from "./config";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 let cached: DB | null = null;
 let cachedPath: string | null = null;
@@ -64,7 +64,8 @@ function applyMigrations(db: DB): void {
 
   if (current < 1) migrationV1(db);
   if (current < 2) migrationV2(db);
-  // Future migrations land here as `if (current < 3) migrationV3(db); ...`
+  if (current < 3) migrationV3(db);
+  // Future migrations land here as `if (current < 4) migrationV4(db); ...`
 
   db.prepare(
     "INSERT INTO meta(key, value) VALUES('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -104,5 +105,19 @@ function migrationV2(db: DB): void {
     );
     CREATE INDEX IF NOT EXISTS idx_llm_cache_agent
       ON llm_cache(agent);
+  `);
+}
+
+function migrationV3(db: DB): void {
+  // Per-ping "did Katie already reply" verdict cache. Populated by an
+  // explicit Refresh action on /today's Pings panel — not on every page
+  // load — so the per-source MCP fanout cost is paid on demand only.
+  // `actioned=true` greys the ping out in the UI.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ping_actioned (
+      ping_id TEXT PRIMARY KEY,
+      actioned INTEGER NOT NULL,
+      checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 }

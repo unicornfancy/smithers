@@ -161,6 +161,30 @@ export interface ContextA8CClient {
     label: string;
     body: string;
   } | null>;
+
+  /**
+   * Check whether the user has replied on a Zendesk ticket since the
+   * given timestamp. "Replied" = any internal (non-external) comment
+   * exists with `created_at > sinceTs`. Used by /today's "Pings to
+   * action" panel to grey out already-actioned tickets. Returns false
+   * on any failure (degrades silently).
+   */
+  checkZendeskTicketActioned(
+    ticketRef: string,
+    sinceTs: string,
+  ): Promise<boolean>;
+
+  /**
+   * Check whether `login` has commented on a GitHub issue / PR since
+   * the given timestamp. Used by /today's "Pings to action" panel to
+   * grey out issues the user has already replied to. Returns false on
+   * parse / fetch failure.
+   */
+  checkGithubIssueActioned(
+    url: string,
+    sinceTs: string,
+    login: string,
+  ): Promise<boolean>;
 }
 
 export interface LinearProjectMetadata {

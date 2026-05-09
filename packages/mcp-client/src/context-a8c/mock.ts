@@ -646,6 +646,21 @@ export class MockContextA8CTransport implements ContextA8CClient {
   } | null> {
     return null;
   }
+
+  async checkZendeskTicketActioned(
+    _ticketRef: string,
+    _sinceTs: string,
+  ): Promise<boolean> {
+    return false;
+  }
+
+  async checkGithubIssueActioned(
+    _url: string,
+    _sinceTs: string,
+    _login: string,
+  ): Promise<boolean> {
+    return false;
+  }
 }
 
 function shortHash(rng: () => number): string {

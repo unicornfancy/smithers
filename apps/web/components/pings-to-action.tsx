@@ -2,6 +2,7 @@ import * as React from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
+  CheckCircle2,
   CircleDot,
   Github,
   Inbox,
@@ -16,14 +17,24 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DismissPingButton } from "@/components/dismiss-ping-button";
+import { RefreshPingsActionedButton } from "@/components/refresh-pings-actioned-button";
 
 interface PingsToActionProps {
   result: SourceResult<Ping[]>;
+  /** Ping ids the user has already replied to (computed by the explicit Refresh action). */
+  actionedIds?: string[];
+  /** Most-recent ping_actioned check timestamp; surfaced as "checked Xm ago" next to the refresh button. */
+  actionedCheckedAt?: string | null;
 }
 
-export function PingsToAction({ result }: PingsToActionProps) {
+export function PingsToAction({
+  result,
+  actionedIds,
+  actionedCheckedAt,
+}: PingsToActionProps) {
   const pings = result.ok ? result.data : (result.cachedData ?? []);
   const isMock = pings.some((p) => p.is_mock);
+  const actionedSet = new Set(actionedIds ?? []);
 
   return (
     <Card>
@@ -34,8 +45,17 @@ export function PingsToAction({ result }: PingsToActionProps) {
           <span className="text-muted-foreground text-xs font-normal">
             · {pings.length}
           </span>
-          <span className="text-muted-foreground/70 ml-auto text-xs font-normal">
+          <span className="text-muted-foreground/70 ml-auto flex items-center gap-2 text-xs font-normal">
             {describeFreshness(result)}
+            <RefreshPingsActionedButton
+              pings={pings.map((p) => ({
+                id: p.id,
+                source: p.source,
+                url: p.url,
+                timestamp: p.timestamp,
+              }))}
+              checkedAt={actionedCheckedAt ?? null}
+            />
           </span>
         </CardTitle>
       </CardHeader>
@@ -60,7 +80,7 @@ export function PingsToAction({ result }: PingsToActionProps) {
         ) : (
           <ul className="flex flex-col divide-y">
             {pings.map((p) => (
-              <PingRow key={p.id} ping={p} />
+              <PingRow key={p.id} ping={p} actioned={actionedSet.has(p.id)} />
             ))}
           </ul>
         )}
@@ -69,9 +89,14 @@ export function PingsToAction({ result }: PingsToActionProps) {
   );
 }
 
-function PingRow({ ping }: { ping: Ping }) {
+function PingRow({ ping, actioned }: { ping: Ping; actioned: boolean }) {
   return (
-    <li className="group flex items-start gap-2.5 py-2 first:pt-0 last:pb-0">
+    <li
+      className={cn(
+        "group flex items-start gap-2.5 py-2 first:pt-0 last:pb-0",
+        actioned && "opacity-50",
+      )}
+    >
       <span className="text-muted-foreground mt-0.5 shrink-0">
         <PingIcon source={ping.source} />
       </span>
@@ -91,6 +116,15 @@ function PingRow({ ping }: { ping: Ping }) {
               className="h-4 shrink-0 border-amber-500/40 px-1 text-[9px] font-normal uppercase text-amber-700 dark:text-amber-400"
             >
               partner
+            </Badge>
+          ) : null}
+          {actioned ? (
+            <Badge
+              variant="outline"
+              className="h-4 shrink-0 gap-1 border-emerald-500/40 px-1 text-[9px] font-normal uppercase text-emerald-700 dark:text-emerald-400"
+            >
+              <CheckCircle2 className="size-2.5" />
+              replied
             </Badge>
           ) : null}
           <span className="text-muted-foreground/80 truncate text-[11px]">

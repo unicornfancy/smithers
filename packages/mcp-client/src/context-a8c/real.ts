@@ -1063,6 +1063,61 @@ export class RealContextA8CTransport implements ContextA8CClient {
       return null;
     }
   }
+
+  async checkZendeskTicketActioned(
+    ticketRef: string,
+    sinceTs: string,
+  ): Promise<boolean> {
+    const events = await this.fetchZendeskTicketActivity(ticketRef);
+    return events.some(
+      (e) => e.actor && !e.actor.is_external && e.timestamp > sinceTs,
+    );
+  }
+
+  async checkGithubIssueActioned(
+    url: string,
+    sinceTs: string,
+    login: string,
+  ): Promise<boolean> {
+    const parsed = parseGithubIssueUrl(url);
+    if (!parsed || !login.trim()) return false;
+    const targetLogin = login.toLowerCase();
+    try {
+      const commentsRaw = await this.mcp.callJsonTool<GithubReadEnvelope>(
+        "context-a8c-execute-tool",
+        {
+          provider: "github",
+          tool: parsed.kind === "pull" ? "pull-request" : "issue",
+          params:
+            parsed.kind === "pull"
+              ? {
+                  owner: parsed.owner,
+                  repo: parsed.repo,
+                  pullNumber: parsed.number,
+                  method: "get_comments",
+                }
+              : {
+                  owner: parsed.owner,
+                  repo: parsed.repo,
+                  issue_number: parsed.number,
+                  method: "get_comments",
+                },
+        },
+      );
+      const comments: GithubComment[] = Array.isArray(commentsRaw?.result)
+        ? commentsRaw!.result
+        : Array.isArray(commentsRaw)
+          ? (commentsRaw as GithubComment[])
+          : [];
+      return comments.some(
+        (c) =>
+          c.user?.login?.toLowerCase() === targetLogin &&
+          (c.created_at ?? "") > sinceTs,
+      );
+    } catch {
+      return false;
+    }
+  }
 }
 
 interface SlackGetResult {

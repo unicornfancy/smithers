@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 
 import { clearCachedFor } from "@/lib/server/llm-cache";
 import {
+  recomputeActioned,
+  type PingActionedInput,
+} from "@/lib/server/ping-actioned";
+import {
   clearAction,
   dismiss,
   recordAction,
@@ -100,4 +104,21 @@ export async function unacceptStallAction(stallId: string): Promise<void> {
   await invalidateLlmCaches();
   revalidatePath("/today");
   revalidatePath("/projects/[slug]", "page");
+}
+
+/**
+ * Recompute "did Katie already reply" for the given pings (typically
+ * the current /today list). Fans out per-source MCP calls in parallel,
+ * writes verdicts to the ping_actioned cache, and revalidates so the
+ * panel re-renders with the new verdicts.
+ *
+ * Callers pass a lightweight subset of `Ping` — only id, source, url,
+ * and timestamp are read by the orchestrator.
+ */
+export async function refreshPingsActionedAction(
+  pings: PingActionedInput[],
+): Promise<{ checked: number; actioned: number }> {
+  const result = await recomputeActioned(pings);
+  revalidatePath("/today");
+  return result;
 }

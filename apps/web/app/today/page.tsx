@@ -38,6 +38,10 @@ import {
   getCached,
 } from "@/lib/server/llm-cache";
 import { getMcpClient } from "@/lib/server/mcp";
+import {
+  getActionedStatuses,
+  getMostRecentCheckedAt,
+} from "@/lib/server/ping-actioned";
 import { detectStalls } from "@/lib/server/stalls";
 import {
   computePingImportanceScore,
@@ -215,6 +219,18 @@ export default async function TodayPage() {
     projects,
   });
 
+  // Cached "did Katie already reply" verdicts. Populated by an explicit
+  // Refresh action — see refreshPingsActionedAction. Pings without a
+  // cache entry render normally (treated as not-yet-checked).
+  const actionedMap = await getActionedStatuses(pings.map((p) => p.id)).catch(
+    () => new Map(),
+  );
+  const actionedIds = new Set<string>();
+  for (const [id, row] of actionedMap) {
+    if (row.actioned) actionedIds.add(id);
+  }
+  const actionedCheckedAt = await getMostRecentCheckedAt().catch(() => null);
+
   return (
     <>
       <AppHeader
@@ -305,7 +321,11 @@ export default async function TodayPage() {
           apiKeyConfigured={agentStatus.configured}
         />
 
-        <PingsToAction result={filteredPingsResult} />
+        <PingsToAction
+          result={filteredPingsResult}
+          actionedIds={Array.from(actionedIds)}
+          actionedCheckedAt={actionedCheckedAt}
+        />
 
         <RecentCallsCard
           rows={recentCallRows}
