@@ -28,7 +28,16 @@ export async function getDb(): Promise<DB> {
   const cfg = await loadConfig();
   const dbPath = join(cfg.paths.data, "state.db");
 
-  if (cached && cachedPath === dbPath) return cached;
+  if (cached && cachedPath === dbPath) {
+    // Re-check migrations on every call. The handle is long-lived
+    // (often multi-day in `pnpm dev`), but new code may add migrations
+    // the cached connection hasn't seen yet. Each call is a single
+    // SELECT against `meta` plus the matching CREATE TABLE IF NOT
+    // EXISTS — cheap, and avoids a "no such table" error after pulling
+    // a schema bump without a server restart.
+    applyMigrations(cached);
+    return cached;
+  }
   if (cached) {
     // Path changed (config swap mid-runtime) — close the old handle.
     cached.close();
