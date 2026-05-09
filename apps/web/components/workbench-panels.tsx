@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { ConvertFollowUpToTaskButton } from "@/components/convert-follow-up-to-task-button";
+import { DetachRecordingButton } from "@/components/detach-recording-button";
 
 import type {
   CallRecordingRef,
@@ -698,6 +699,11 @@ export function CallNotesPanel({
                     Open
                   </a>
                 ) : null}
+                <DetachRecordingButton
+                  projectSlug={projectSlug}
+                  recordingId={r.recording_id}
+                  recordingLabel={r.title ?? undefined}
+                />
               </div>
             </li>
           );

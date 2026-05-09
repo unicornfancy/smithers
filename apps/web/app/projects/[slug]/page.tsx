@@ -33,6 +33,7 @@ import {
 import { ForYouTodayPanel } from "@/components/for-you-today-panel";
 import { getAgentRuntimeStatus } from "@/lib/server/agents";
 import { getMcpClient } from "@/lib/server/mcp";
+import { recordingMatchesProject } from "@/lib/server/recording-match";
 import { detectStallsForProject } from "@/lib/server/stalls";
 import { getVault } from "@/lib/server/vault";
 
@@ -237,13 +238,13 @@ export default async function ProjectWorkbenchPage({
     : (recordingsResult.cachedData ?? []);
   const projectRecordings = allRecordings
     .filter((r) =>
-      recordingMatchesProject(
-        r,
-        detail.name,
-        detail.partner,
-        partnerProfile?.display_name,
-        detail.fathom_search_terms,
-      ),
+      recordingMatchesProject(r, {
+        name: detail.name,
+        partner: detail.partner,
+        partner_display_name: partnerProfile?.display_name,
+        fathom_search_terms: detail.fathom_search_terms,
+        fathom_excluded_recording_ids: detail.fathom_excluded_recording_ids,
+      }),
     )
     .slice(0, 8);
 
@@ -468,50 +469,3 @@ export default async function ProjectWorkbenchPage({
   );
 }
 
-/**
- * Cheap match for routing Fathom recordings to a project. Splits the
- * project/partner/search-term strings into ≥3-char tokens and checks
- * whether any token appears anywhere in the recording's title or
- * attendees string. The attendees string is the smoking gun for calls
- * the partner scheduled via a calendar link, where the title is
- * generic ("Katie McCanna's meeting") but an attendee email exposes
- * the partner's domain (e.g. `grant@thepocketnyc.com` → contains
- * `pocket` → matches the-pocket-nyc).
- *
- * False-positive prone for short common tokens; the ≥3 chars filter +
- * dropping noise words keeps it usable.
- */
-function recordingMatchesProject(
-  recording: { title?: string; attendees?: string },
-  projectName: string,
-  partnerSlug: string | undefined,
-  partnerName: string | undefined,
-  fathomSearchTerms: string[] | undefined,
-): boolean {
-  if (!recording.title && !recording.attendees) return false;
-  const haystack = `${recording.title ?? ""} ${recording.attendees ?? ""}`.toLowerCase();
-  const tokens = new Set<string>();
-  for (const s of [projectName, partnerSlug, partnerName, ...(fathomSearchTerms ?? [])]) {
-    if (!s) continue;
-    for (const t of s.toLowerCase().split(/[\s\-_/.]+/)) {
-      if (t.length >= 3 && !STOP_TOKENS.has(t)) tokens.add(t);
-    }
-  }
-  for (const t of tokens) {
-    if (haystack.includes(t)) return true;
-  }
-  return false;
-}
-
-const STOP_TOKENS = new Set([
-  "the",
-  "and",
-  "for",
-  "phase",
-  "project",
-  "foundation",
-  "inc",
-  "llc",
-  "corp",
-  "team",
-]);

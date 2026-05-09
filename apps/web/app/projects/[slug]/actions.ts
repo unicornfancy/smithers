@@ -1006,6 +1006,34 @@ export async function setZendeskSearchTermsAction(
 }
 
 /**
+ * Mark a Fathom recording as "not this project" — appends the
+ * recording_id to fathom_excluded_recording_ids in frontmatter so the
+ * shared recordingMatchesProject helper hides it from this project on
+ * future renders. Used when fuzzy token matching surfaces a call on the
+ * wrong workbench. Idempotent.
+ */
+export async function detachRecordingFromProjectAction(
+  slug: string,
+  recordingId: string,
+): Promise<{ ok: true; changed: boolean } | { ok: false; reason: string }> {
+  if (!slug) return { ok: false, reason: "slug is required" };
+  if (!recordingId) return { ok: false, reason: "recordingId is required" };
+  const vault = await getVault();
+  try {
+    const result = await vault.addFathomExcludedRecordingId(slug, recordingId);
+    revalidatePath(`/projects/${slug}`);
+    revalidatePath("/calls");
+    revalidatePath("/today");
+    return { ok: true, changed: result.changed };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "Failed",
+    };
+  }
+}
+
+/**
  * Promote a Zendesk ticket to primary by reordering the project's
  * frontmatter array so the picked ticket lands at position 0.
  */

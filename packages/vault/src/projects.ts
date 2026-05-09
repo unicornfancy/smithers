@@ -216,6 +216,9 @@ async function projectFromFile(
     zendesk_tickets: normalizeZendeskTickets(fm.zendesk_tickets),
     zendesk_search_terms: normalizeStringArray(fm.zendesk_search_terms),
     fathom_search_terms: normalizeStringArray(fm.fathom_search_terms),
+    fathom_excluded_recording_ids: normalizeStringArray(
+      fm.fathom_excluded_recording_ids,
+    ),
     p2_url: fm.p2_url,
     primary_slack_channel: fm.primary_slack_channel,
     team_slack_channel: fm.team_slack_channel,
@@ -959,6 +962,52 @@ export async function setProjectFathomSearchTerms(
   }
   await writeFileAtomic(path, serializeMarkdown(merged, content));
   return { fathom_search_terms: cleaned, changed: true };
+}
+
+export interface AddFathomExcludedRecordingIdResult {
+  fathom_excluded_recording_ids: string[];
+  changed: boolean;
+}
+
+/**
+ * Append a recording id to a project's `fathom_excluded_recording_ids`,
+ * de-duplicated. Idempotent: re-marking the same recording is a no-op.
+ * Used by the workbench Detach button when a fuzzy-match false-positive
+ * surfaces a call on the wrong project.
+ */
+export async function addFathomExcludedRecordingId(
+  opts: ResolvedVaultOptions,
+  slug: string,
+  recordingId: string,
+): Promise<AddFathomExcludedRecordingIdResult> {
+  const trimmed = recordingId.trim();
+  if (!trimmed) {
+    throw new Error("recordingId is required");
+  }
+  const project = await readProject(opts, slug);
+  if (!project) {
+    throw new Error(`Project "${slug}" not found`);
+  }
+  if (project.source.kind === "hive-mind") {
+    throw new Error(
+      `Project "${slug}" lives in Hive Mind; settings edits go through the shared-notes flow`,
+    );
+  }
+  const path = project.source.absolute_path;
+  const raw = await tryReadFile(path);
+  if (raw === null) {
+    throw new Error(`Project file disappeared at ${path}`);
+  }
+  const { data, content } = parseMarkdown(raw);
+  const existing =
+    normalizeStringArray(data["fathom_excluded_recording_ids"]) ?? [];
+  if (existing.includes(trimmed)) {
+    return { fathom_excluded_recording_ids: existing, changed: false };
+  }
+  const updated = [...existing, trimmed];
+  const merged = { ...data, fathom_excluded_recording_ids: updated };
+  await writeFileAtomic(path, serializeMarkdown(merged, content));
+  return { fathom_excluded_recording_ids: updated, changed: true };
 }
 
 export interface RefreshZendeskMetadataResult {

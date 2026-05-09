@@ -42,6 +42,7 @@ import {
   getActionedStatuses,
   getMostRecentCheckedAt,
 } from "@/lib/server/ping-actioned";
+import { recordingMatchesProject } from "@/lib/server/recording-match";
 import { detectStalls } from "@/lib/server/stalls";
 import {
   computePingImportanceScore,
@@ -129,7 +130,7 @@ export default async function TodayPage() {
       .filter(
         (p) =>
           (p.kind === "partner" || p.kind === "team") &&
-          recentCallMatches(rec, p),
+          recordingMatchesProject(rec, p),
       )
       .map((p) => ({ slug: p.slug, name: p.name })),
   }));
@@ -374,47 +375,6 @@ export default async function TodayPage() {
   );
 }
 
-/**
- * Same shape as the workbench / /calls match logic — kept inline for the
- * /today fan-out. Splits project name + partner slug + curated
- * fathom_search_terms into ≥3-char tokens, checks against title +
- * attendees haystack.
- */
-function recentCallMatches(
-  recording: { title?: string; attendees?: string },
-  project: { name: string; partner?: string; fathom_search_terms?: string[] },
-): boolean {
-  if (!recording.title && !recording.attendees) return false;
-  const haystack = `${recording.title ?? ""} ${recording.attendees ?? ""}`.toLowerCase();
-  const tokens = new Set<string>();
-  for (const s of [
-    project.name,
-    project.partner,
-    ...(project.fathom_search_terms ?? []),
-  ]) {
-    if (!s) continue;
-    for (const t of s.toLowerCase().split(/[\s\-_/.]+/)) {
-      if (t.length >= 3 && !RECENT_CALL_STOP_TOKENS.has(t)) tokens.add(t);
-    }
-  }
-  for (const t of tokens) {
-    if (haystack.includes(t)) return true;
-  }
-  return false;
-}
-
-const RECENT_CALL_STOP_TOKENS = new Set([
-  "the",
-  "and",
-  "for",
-  "phase",
-  "project",
-  "foundation",
-  "inc",
-  "llc",
-  "corp",
-  "team",
-]);
 
 const HOT_PINGS_LIMIT = 5;
 const HOT_PINGS_MIN_SCORE = 20;

@@ -65,6 +65,7 @@ import {
   createProject,
   createProjectScratchpad,
   ensureProjectId,
+  addFathomExcludedRecordingId,
   listProjects,
   readProject,
   refreshProjectZendeskMetadata,
@@ -72,6 +73,7 @@ import {
   setProjectFathomSearchTerms,
   setProjectZendeskSearchTerms,
   updateProjectFrontmatter,
+  type AddFathomExcludedRecordingIdResult,
   type AddProjectZendeskTicketResult,
   type AppendDecisionsInput,
   type AppendDecisionsResult,
@@ -231,6 +233,7 @@ export {
   setPrimaryZendeskTicket,
   setProjectFathomSearchTerms,
   setProjectZendeskSearchTerms,
+  addFathomExcludedRecordingId,
   splitTasks,
   updateProjectFrontmatter,
   toggleProjectTask,
@@ -313,6 +316,10 @@ export interface Vault {
     slug: string,
     terms: string[],
   ) => ReturnType<typeof setProjectFathomSearchTerms>;
+  addFathomExcludedRecordingId: (
+    slug: string,
+    recordingId: string,
+  ) => ReturnType<typeof addFathomExcludedRecordingId>;
   updateProjectFrontmatter: (
     slug: string,
     patch: Parameters<typeof updateProjectFrontmatter>[2],
@@ -436,6 +443,8 @@ export function createVault(options: VaultOptions): Vault {
       setProjectZendeskSearchTerms(resolved, slug, terms),
     setProjectFathomSearchTerms: (slug, terms) =>
       setProjectFathomSearchTerms(resolved, slug, terms),
+    addFathomExcludedRecordingId: (slug, recordingId) =>
+      addFathomExcludedRecordingId(resolved, slug, recordingId),
     updateProjectFrontmatter: (slug, patch) =>
       updateProjectFrontmatter(resolved, slug, patch),
     resolveFollowUp: (followUpId, note) =>

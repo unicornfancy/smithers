@@ -81,6 +81,15 @@ export interface ProjectFrontmatter {
    * these terms are an escape hatch when those don't suffice.
    */
   fathom_search_terms?: string[];
+  /**
+   * Recording ids the user has explicitly marked as "not this project"
+   * via the Detach button on the workbench. Wins over token matching —
+   * the recording is hidden from this project regardless of how many
+   * tokens hit. Required because the matcher is fuzzy (≥3-char token
+   * substring) and false-positive prone for projects sharing common
+   * words.
+   */
+  fathom_excluded_recording_ids?: string[];
   p2_url?: string;
 
   primary_slack_channel?: string;
@@ -134,6 +143,8 @@ export interface Project {
   zendesk_search_terms?: string[];
   /** See ProjectFrontmatter.fathom_search_terms — same shape, always an array here. */
   fathom_search_terms?: string[];
+  /** See ProjectFrontmatter.fathom_excluded_recording_ids — same shape, always an array here. */
+  fathom_excluded_recording_ids?: string[];
   p2_url?: string;
   primary_slack_channel?: string;
   team_slack_channel?: string;

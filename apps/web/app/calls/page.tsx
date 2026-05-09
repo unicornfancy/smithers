@@ -1,10 +1,10 @@
 import type { CallRecordingRef } from "@smithers/mcp-client";
-import type { Project } from "@smithers/vault";
 
 import { AppHeader } from "@/components/app-header";
 import { CallsTable } from "@/components/calls-table";
 import { PageShell } from "@/components/page-shell";
 import { getMcpClient } from "@/lib/server/mcp";
+import { recordingMatchesProject } from "@/lib/server/recording-match";
 import { getVault } from "@/lib/server/vault";
 
 export const metadata = {
@@ -68,46 +68,3 @@ export default async function CallsPage() {
   );
 }
 
-/**
- * Same logic as the project-workbench filter — kept colocated so the two
- * surfaces stay in sync. Splits project name + partner slug + display
- * name + curated fathom_search_terms into ≥3-char tokens, then checks
- * whether any token appears in the recording's title or attendees
- * string. Attendees catch calendar-link meetings where the title is
- * generic but the partner email gives it away.
- */
-function recordingMatchesProject(
-  recording: { title?: string; attendees?: string },
-  project: Project,
-): boolean {
-  if (!recording.title && !recording.attendees) return false;
-  const haystack = `${recording.title ?? ""} ${recording.attendees ?? ""}`.toLowerCase();
-  const tokens = new Set<string>();
-  for (const s of [
-    project.name,
-    project.partner,
-    ...(project.fathom_search_terms ?? []),
-  ]) {
-    if (!s) continue;
-    for (const t of s.toLowerCase().split(/[\s\-_/.]+/)) {
-      if (t.length >= 3 && !STOP_TOKENS.has(t)) tokens.add(t);
-    }
-  }
-  for (const t of tokens) {
-    if (haystack.includes(t)) return true;
-  }
-  return false;
-}
-
-const STOP_TOKENS = new Set([
-  "the",
-  "and",
-  "for",
-  "phase",
-  "project",
-  "foundation",
-  "inc",
-  "llc",
-  "corp",
-  "team",
-]);
