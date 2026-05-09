@@ -46,6 +46,15 @@ export interface SmithersConfig {
   p2: {
     team_p2_url?: string;
     smithers_p2_post_url?: string;
+    team_weekly_post_finder?: {
+      /** Substituted with the ISO week number — e.g. "Week {n}" → "Week 19". */
+      title_patterns?: string[];
+      fallback?: "ask" | "newest" | "none";
+    };
+  };
+  weekly_update?: {
+    /** Free-form template instructions handed to the agent. Empty = use default per-project list. */
+    format_template?: string;
   };
   working_rhythm: {
     timezone: string;

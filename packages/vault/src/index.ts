@@ -21,9 +21,11 @@ import {
   appendChatToCallNotes,
   findCallNotesByRecordingId,
   listCallNotes,
+  listRecentCallSlices,
   saveCallNotes,
   type AppendChatToCallNotesResult,
   type ChatMessage,
+  type RecentCallSlice,
   type SavedCallAnalysis,
   type SavedCallNote,
   type SaveCallNotesInput,
@@ -121,6 +123,15 @@ import {
   type HiveMindZendeskData,
 } from "./hive-mind";
 import { watchVault, type VaultEventHandler } from "./watcher";
+import {
+  listWeeklyUpdates,
+  readWeeklyUpdate,
+  saveWeeklyUpdate,
+  type SaveWeeklyUpdateInput,
+  type WeeklyUpdate,
+  type WeeklyUpdateFrontmatter,
+  type WeeklyUpdateRow,
+} from "./weekly-updates";
 
 export * from "./types";
 export * from "./config";
@@ -213,6 +224,7 @@ export {
   filterFollowUpsForProject,
   listAgendas,
   listCallNotes,
+  listRecentCallSlices,
   listDailyNotes,
   listDrafts,
   listFollowUps,
@@ -246,7 +258,18 @@ export {
   createDraftFromAi,
   archiveDraft,
   listArchivedDraftsWithDiffs,
+  listWeeklyUpdates,
+  readWeeklyUpdate,
+  saveWeeklyUpdate,
   watchVault,
+};
+
+export type {
+  RecentCallSlice,
+  SaveWeeklyUpdateInput,
+  WeeklyUpdate,
+  WeeklyUpdateFrontmatter,
+  WeeklyUpdateRow,
 };
 
 export interface Vault {
@@ -274,9 +297,19 @@ export interface Vault {
     bodyMarkdown: string,
   ) => ReturnType<typeof upsertDailySection>;
   listCallNotes: () => ReturnType<typeof listCallNotes>;
+  listRecentCallSlices: (
+    range: Parameters<typeof listRecentCallSlices>[1],
+  ) => ReturnType<typeof listRecentCallSlices>;
   listAgendas: () => ReturnType<typeof listAgendas>;
   readStyleGuide: () => ReturnType<typeof readStyleGuide>;
   readWorkingWith: () => ReturnType<typeof readWorkingWith>;
+  listWeeklyUpdates: () => ReturnType<typeof listWeeklyUpdates>;
+  readWeeklyUpdate: (
+    isoWeek: string,
+  ) => ReturnType<typeof readWeeklyUpdate>;
+  saveWeeklyUpdate: (
+    input: SaveWeeklyUpdateInput,
+  ) => ReturnType<typeof saveWeeklyUpdate>;
   toggleProjectTask: (
     slug: string,
     taskId: string,
@@ -422,9 +455,13 @@ export function createVault(options: VaultOptions): Vault {
     upsertDailySection: (date, sectionId, body) =>
       upsertDailySection(resolved, date, sectionId, body),
     listCallNotes: () => listCallNotes(resolved),
+    listRecentCallSlices: (range) => listRecentCallSlices(resolved, range),
     listAgendas: () => listAgendas(resolved),
     readStyleGuide: () => readStyleGuide(resolved),
     readWorkingWith: () => readWorkingWith(resolved),
+    listWeeklyUpdates: () => listWeeklyUpdates(resolved),
+    readWeeklyUpdate: (isoWeek) => readWeeklyUpdate(resolved, isoWeek),
+    saveWeeklyUpdate: (input) => saveWeeklyUpdate(resolved, input),
     toggleProjectTask: (slug, taskId, done) =>
       toggleProjectTask(resolved, slug, taskId, done),
     appendProjectTask: (slug, text, markers) =>

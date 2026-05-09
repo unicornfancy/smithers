@@ -180,6 +180,51 @@ export async function findCallNotesByRecordingId(
   return null;
 }
 
+/**
+ * Lightweight slice of a saved call note keyed for the weekly-update
+ * facts collector. Returns frontmatter-only (recording_id, project,
+ * recorded_at, title, summary) — no analysis structure parsed. Same
+ * file-scan cost as findCallNotesByRecordingId, capped per call by
+ * the date filter.
+ */
+export interface RecentCallSlice {
+  recording_id: string;
+  project_slug: string;
+  recorded_at: string;
+  title: string;
+  summary?: string;
+}
+
+export async function listRecentCallSlices(
+  opts: ResolvedVaultOptions,
+  range: { since: string; until: string },
+): Promise<RecentCallSlice[]> {
+  const paths = vaultPaths(opts);
+  const files = await listMarkdownFiles(paths.callNotes);
+  const out: RecentCallSlice[] = [];
+  for (const f of files) {
+    const abs = join(paths.callNotes, f);
+    const raw = await tryReadFile(abs);
+    if (!raw) continue;
+    const { data } = parseMarkdown(raw);
+    const recordedAt =
+      typeof data["recorded_at"] === "string" ? data["recorded_at"] : null;
+    if (!recordedAt || recordedAt < range.since || recordedAt >= range.until) {
+      continue;
+    }
+    const analysis = data["analysis"] as { summary?: string } | undefined;
+    out.push({
+      recording_id: typeof data["recording_id"] === "string" ? data["recording_id"] : "",
+      project_slug: typeof data["project_slug"] === "string" ? data["project_slug"] : "",
+      recorded_at: recordedAt,
+      title: typeof data["title"] === "string" ? data["title"] : f,
+      summary: typeof analysis?.summary === "string" ? analysis.summary : undefined,
+    });
+  }
+  out.sort((a, b) => b.recorded_at.localeCompare(a.recorded_at));
+  return out;
+}
+
 // --- internals ---
 
 function parseSavedFrontmatter(

@@ -8,6 +8,7 @@ export type AgentName =
   | "draft-p2-update"
   | "incorporate-reference"
   | "weekly-update"
+  | "compose-weekly-update"
   | "top-3"
   | "realistic-shape"
   | "summarize-thread"

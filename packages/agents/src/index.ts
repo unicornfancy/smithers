@@ -79,6 +79,13 @@ export {
 } from "./agents/draft-p2-update";
 
 export {
+  composeWeeklyUpdate,
+  type WeeklyUpdateInput,
+  type WeeklyUpdateOutput,
+  type WeeklyUpdateProjectFacts,
+} from "./agents/compose-weekly-update";
+
+export {
   composeCallRecap,
   type ComposeCallRecapInput,
   type ComposeCallRecapOutput,
