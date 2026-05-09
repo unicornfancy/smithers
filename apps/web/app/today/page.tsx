@@ -29,6 +29,10 @@ import {
   MovingFastStrip,
   type MovingFastEntry,
 } from "@/components/today/moving-fast-strip";
+import {
+  TodayFilters,
+  type PingSource,
+} from "@/components/today/today-filters";
 import { TopThreeCard } from "@/components/top-three-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,7 +73,17 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function TodayPage() {
+interface TodayPageProps {
+  searchParams: Promise<{
+    source?: string;
+    pinned?: string;
+  }>;
+}
+
+export default async function TodayPage({ searchParams }: TodayPageProps) {
+  const params = await searchParams;
+  const sourceFilter = parseSourceFilter(params.source);
+  const pinnedOnly = params.pinned === "1";
   const today = new Date().toLocaleDateString(undefined, {
     weekday: "long",
     year: "numeric",
@@ -254,12 +268,59 @@ export default async function TodayPage() {
     projects,
   });
 
+  // T4 filter application — source chips narrow the ping streams
+  // before they hit each section; pinned-only narrows Hot pings + the
+  // Moving fast strip to projects with priority: high.
+  const pinnedSlugs = pinnedOnly
+    ? new Set(
+        await Promise.all(
+          projects.map(async (p) => ({
+            slug: p.slug,
+            priority: await getProjectPriority(p.slug),
+          })),
+        ).then((rows) =>
+          rows.filter((r) => r.priority === "high").map((r) => r.slug),
+        ),
+      )
+    : null;
+
+  const filterPing = (p: Ping): boolean => {
+    if (sourceFilter.size > 0 && !sourceFilter.has(p.source)) return false;
+    if (pinnedSlugs) {
+      const slug = p.project_match?.project_slug;
+      if (!slug || !pinnedSlugs.has(slug)) return false;
+    }
+    return true;
+  };
+
+  const filteredHotPings = hotPings.filter(filterPing);
+  const filteredMovingFast = pinnedSlugs
+    ? movingFastEntries.filter((e) => pinnedSlugs.has(e.slug))
+    : movingFastEntries;
+  const sourceFilteredPingsResult: typeof filteredPingsResult =
+    sourceFilter.size === 0
+      ? filteredPingsResult
+      : filteredPingsResult.ok
+        ? {
+            ...filteredPingsResult,
+            data: filteredPingsResult.data.filter((p) => sourceFilter.has(p.source)),
+          }
+        : {
+            ...filteredPingsResult,
+            cachedData: filteredPingsResult.cachedData?.filter((p) =>
+              sourceFilter.has(p.source),
+            ),
+          };
+  const filteredPingsForActioned = sourceFilteredPingsResult.ok
+    ? sourceFilteredPingsResult.data
+    : (sourceFilteredPingsResult.cachedData ?? []);
+
   // Cached "did Katie already reply" verdicts. Populated by an explicit
   // Refresh action — see refreshPingsActionedAction. Pings without a
   // cache entry render normally (treated as not-yet-checked).
-  const actionedMap = await getActionedStatuses(pings.map((p) => p.id)).catch(
-    () => new Map(),
-  );
+  const actionedMap = await getActionedStatuses(
+    filteredPingsForActioned.map((p) => p.id),
+  ).catch(() => new Map());
   const actionedIds = new Set<string>();
   for (const [id, row] of actionedMap) {
     if (row.actioned) actionedIds.add(id);
@@ -298,30 +359,33 @@ export default async function TodayPage() {
         ) : null}
 
         {status.exists && projects.length > 0 ? (
-          <SectionList
-            scope="today"
-            sections={buildTodaySections({
-              hotPings,
-              movingFastEntries,
-              pingsTotal: pings.length,
-              followUps,
-              topCandidates,
-              agentConfigured: agentStatus.configured,
-              pinnedTop3Ids,
-              cachedTop3,
-              stalls,
-              filteredPingsResult,
-              actionedIds,
-              actionedCheckedAt,
-              recentCallRows,
-              unmatchedRecentCalls,
-              projectsCount: projects.length,
-              inProgressDraftsCount: inProgressDrafts.length,
-              dailyNotesCount: dailyNotes.length,
-              latestDailyNoteDate: latestDailyNote?.date,
-              cachedShape,
-            })}
-          />
+          <>
+            <TodayFilters />
+            <SectionList
+              scope="today"
+              sections={buildTodaySections({
+                hotPings: filteredHotPings,
+                movingFastEntries: filteredMovingFast,
+                pingsTotal: filteredPingsForActioned.length,
+                followUps,
+                topCandidates,
+                agentConfigured: agentStatus.configured,
+                pinnedTop3Ids,
+                cachedTop3,
+                stalls,
+                filteredPingsResult: sourceFilteredPingsResult,
+                actionedIds,
+                actionedCheckedAt,
+                recentCallRows,
+                unmatchedRecentCalls,
+                projectsCount: projects.length,
+                inProgressDraftsCount: inProgressDrafts.length,
+                dailyNotesCount: dailyNotes.length,
+                latestDailyNoteDate: latestDailyNote?.date,
+                cachedShape,
+              })}
+            />
+          </>
         ) : null}
       </PageShell>
     </>
@@ -510,6 +574,20 @@ function buildTodaySections(args: {
   });
 
   return sections;
+}
+
+const ALL_PING_SOURCES: PingSource[] = ["slack", "zendesk", "github", "linear", "p2"];
+
+function parseSourceFilter(raw: string | undefined): Set<PingSource> {
+  const out = new Set<PingSource>();
+  if (!raw) return out;
+  for (const s of raw.split(",")) {
+    const trimmed = s.trim().toLowerCase();
+    if (ALL_PING_SOURCES.includes(trimmed as PingSource)) {
+      out.add(trimmed as PingSource);
+    }
+  }
+  return out;
 }
 
 const HOT_PINGS_LIMIT = 5;
