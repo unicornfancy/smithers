@@ -67,6 +67,14 @@ export interface TopThreeOutput {
   picks: [TopThreePick, TopThreePick, TopThreePick];
   /** Optional concentration-aware framing for the day, surfaced under the trio. */
   framing: string;
+  /**
+   * Self-reported confidence in [0, 1]. /today gates LLM picks behind a
+   * threshold so when signals are weak we fall through to the rules-only
+   * scoring instead of trusting an arbitrary trio. High values mean
+   * clear urgency cues (overdue + escalated + matches user's pinned set);
+   * low values mean the candidates were undifferentiated.
+   */
+  confidence: number;
 }
 
 const SYSTEM_PROMPT = `You are Smithers, a personal assistant choosing today's Top 3 for the user.
@@ -83,6 +91,12 @@ Rules:
   - Good: "Fourth attempt at this thread — without a reply by EOD, the launch slips."
   - Bad: "This is a follow-up that has been waiting a long time."
 - "next_action" must be a concrete verb the user can do today (Reply, Draft, Decide, Ship, etc.) plus the object.
+
+Confidence:
+- Emit a "confidence" number in [0, 1] reflecting how confident you are in this trio.
+- High (>= 0.7) when there are clear signals: a candidate is overdue, an escalation/force-decide stall, the user's explicit pinned IDs cover the slate, or one project obviously owns the day.
+- Medium (~0.5) when the picks are reasonable but several other candidates were close on score and could plausibly have made the cut.
+- Low (< 0.3) when picks feel arbitrary, scores are flat, or you're guessing between near-equivalent items. The downstream UI gates LLM picks behind a confidence threshold and falls back to rules-only when this is low — return an honest low value rather than padding.
 
 Time-of-day adjustment:
 - morning: forward-looking. Favor prep, drafting, and starting threads that take time to land.
@@ -131,8 +145,13 @@ const OUTPUT_SCHEMA = {
       type: "string",
       description: "One sentence framing for the day. Mentions concentration when applicable.",
     },
+    confidence: {
+      type: "number",
+      description:
+        "Self-reported confidence in [0, 1]. High when clear urgency signals are present; low when picks are arbitrary.",
+    },
   },
-  required: ["picks", "framing"],
+  required: ["picks", "framing", "confidence"],
   additionalProperties: false,
 };
 
@@ -231,10 +250,25 @@ function validateOutput(
     }
   }
   const framing = typeof obj.framing === "string" ? obj.framing : "";
+  const confidence = coerceConfidence(obj.confidence);
   return {
     picks: [validatedPicks[0]!, validatedPicks[1]!, validatedPicks[2]!],
     framing,
+    confidence,
   };
+}
+
+/**
+ * Force the agent's confidence into a usable [0, 1] number even if it
+ * fat-fingers the type. Non-numeric / NaN / out-of-range values fall
+ * through to 0 so the consumer treats it as "not confident" — the safer
+ * direction since the gate skips LLM picks below the threshold.
+ */
+function coerceConfidence(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return 0;
+  if (raw < 0) return 0;
+  if (raw > 1) return 1;
+  return raw;
 }
 
 function validatePick(

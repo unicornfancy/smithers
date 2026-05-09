@@ -4,7 +4,8 @@
       "Bash(curl -s http://127.0.0.1:*)",
       "Bash(curl -s http://localhost:*)",
       "Bash(pnpm typecheck)",
-      "Bash(pnpm -r typecheck)"
+      "Bash(pnpm -r typecheck)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

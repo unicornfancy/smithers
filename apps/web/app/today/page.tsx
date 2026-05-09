@@ -10,6 +10,7 @@ import {
 
 import type { RealisticShapeOutput, TopThreeOutput } from "@smithers/agents";
 import type { Ping, SourceResult } from "@smithers/mcp-client";
+import type { Project } from "@smithers/vault";
 
 import { AppHeader } from "@/components/app-header";
 import { DailyNoteSourceLink } from "@/components/daily-note-source-link";
@@ -22,6 +23,12 @@ import {
   type RecentCallRow,
 } from "@/components/recent-calls-card";
 import { StallsCard } from "@/components/stalls-card";
+import { BackgroundTier } from "@/components/today/background-tier";
+import { HotPings } from "@/components/today/hot-pings";
+import {
+  MovingFastStrip,
+  type MovingFastEntry,
+} from "@/components/today/moving-fast-strip";
 import { TopThreeCard } from "@/components/top-three-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +39,13 @@ import {
 } from "@/lib/server/llm-cache";
 import { getMcpClient } from "@/lib/server/mcp";
 import { detectStalls } from "@/lib/server/stalls";
+import {
+  computePingImportanceScore,
+  extractPartnerContacts,
+  getProjectActivityCounts,
+  getProjectPriority,
+  type PingImportanceContext,
+} from "@/lib/server/today-signals";
 import {
   applyTop3UserActions,
   buildTopThreeCandidates,
@@ -194,6 +208,13 @@ export default async function TodayPage() {
         },
       };
 
+  // T1 wiring: importance score + 7-day velocity. Each helper degrades
+  // to a no-op (empty array) on failure so /today still renders.
+  const { hotPings, movingFastEntries } = await buildHotAndMovingFast({
+    pings,
+    projects,
+  });
+
   return (
     <>
       <AppHeader
@@ -213,36 +234,24 @@ export default async function TodayPage() {
           <VaultMissingNotice vaultPath={status.vault_path} />
         ) : null}
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            icon={<FolderKanban className="size-4" />}
-            label="Projects"
-            value={projects.length}
-            href="/projects"
-          />
-          <StatCard
-            icon={<PenLine className="size-4" />}
-            label="Drafts in flight"
-            value={inProgressDrafts.length}
-            href="/drafts"
-          />
-          <StatCard
-            icon={<Inbox className="size-4" />}
-            label="Follow-ups waiting"
-            value={followUps.active.length}
-            href="/follow-ups"
-            tone={followUps.active.length > 5 ? "warn" : "neutral"}
-          />
-          <StatCard
-            icon={<CalendarDays className="size-4" />}
-            label="Daily notes"
-            value={dailyNotes.length}
-            secondary={
-              latestDailyNote ? `latest ${latestDailyNote.date}` : undefined
+        {status.exists && projects.length === 0 ? (
+          <EmptyState
+            title="No projects yet"
+            description="Add some markdown files under your vault's Projects/ folder, or run /setup to point Smithers at a different vault."
+            action={
+              <Button asChild size="sm">
+                <Link href="/setup">Run setup wizard</Link>
+              </Button>
             }
           />
-        </div>
+        ) : null}
 
+        {/* HOT TIER — top of page, prominent. Only renders when there's */}
+        {/* a real signal (high-priority project, contact match, or LLM pick). */}
+        <HotPings pings={hotPings} totalCount={pings.length} />
+        <MovingFastStrip entries={movingFastEntries} windowDays={7} />
+
+        {/* ACTIVE TIER — current cards, full density. */}
         {status.exists && followUps.active.length > 0 ? (
           <Card>
             <CardHeader>
@@ -284,18 +293,6 @@ export default async function TodayPage() {
           </Card>
         ) : null}
 
-        {status.exists && projects.length === 0 ? (
-          <EmptyState
-            title="No projects yet"
-            description="Add some markdown files under your vault's Projects/ folder, or run /setup to point Smithers at a different vault."
-            action={
-              <Button asChild size="sm">
-                <Link href="/setup">Run setup wizard</Link>
-              </Button>
-            }
-          />
-        ) : null}
-
         <TopThreeCard
           initialCandidates={topCandidates}
           apiKeyConfigured={agentStatus.configured}
@@ -315,10 +312,43 @@ export default async function TodayPage() {
           unmatchedCount={unmatchedRecentCalls}
         />
 
-        <RealisticShapeCard
-          apiKeyConfigured={agentStatus.configured}
-          cached={cachedShape?.output}
-        />
+        {/* BACKGROUND TIER — collapsed by default; localStorage-persisted. */}
+        <BackgroundTier label="Counts & summary">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              icon={<FolderKanban className="size-4" />}
+              label="Projects"
+              value={projects.length}
+              href="/projects"
+            />
+            <StatCard
+              icon={<PenLine className="size-4" />}
+              label="Drafts in flight"
+              value={inProgressDrafts.length}
+              href="/drafts"
+            />
+            <StatCard
+              icon={<Inbox className="size-4" />}
+              label="Follow-ups waiting"
+              value={followUps.active.length}
+              href="/follow-ups"
+              tone={followUps.active.length > 5 ? "warn" : "neutral"}
+            />
+            <StatCard
+              icon={<CalendarDays className="size-4" />}
+              label="Daily notes"
+              value={dailyNotes.length}
+              secondary={
+                latestDailyNote ? `latest ${latestDailyNote.date}` : undefined
+              }
+            />
+          </div>
+
+          <RealisticShapeCard
+            apiKeyConfigured={agentStatus.configured}
+            cached={cachedShape?.output}
+          />
+        </BackgroundTier>
       </PageShell>
     </>
   );
@@ -365,6 +395,77 @@ const RECENT_CALL_STOP_TOKENS = new Set([
   "corp",
   "team",
 ]);
+
+const HOT_PINGS_LIMIT = 5;
+const HOT_PINGS_MIN_SCORE = 20;
+const MOVING_FAST_LIMIT = 5;
+
+/**
+ * Build the HOT-tier inputs for /today: top pings by importance score
+ * and the velocity strip's top partner projects by 7-day activity.
+ *
+ * Sequential per-project lookups are fine — we only have ~10 partner
+ * projects in practice. Failures collapse to empty lists rather than
+ * throwing, since /today is a read-only dashboard.
+ */
+async function buildHotAndMovingFast(args: {
+  pings: Ping[];
+  projects: Project[];
+}): Promise<{
+  hotPings: Ping[];
+  movingFastEntries: MovingFastEntry[];
+}> {
+  const { projects } = args;
+  const referencedSlugs = new Set<string>();
+  for (const p of args.pings) {
+    const slug = p.project_match?.project_slug;
+    if (slug) referencedSlugs.add(slug);
+  }
+
+  const projectPriorities = new Map<
+    string,
+    "high" | "medium" | "low" | null
+  >();
+  const projectContacts = new Map<string, Set<string>>();
+  for (const slug of referencedSlugs) {
+    const project = projects.find((p) => p.slug === slug);
+    if (!project) continue;
+    projectPriorities.set(slug, await getProjectPriority(slug));
+    const partnerSlug = project.hive_mind_partner_slug ?? project.partner;
+    if (partnerSlug) {
+      projectContacts.set(slug, await extractPartnerContacts(partnerSlug));
+    } else {
+      projectContacts.set(slug, new Set());
+    }
+  }
+
+  const ctx: PingImportanceContext = {
+    projectPriorities,
+    projectContacts,
+  };
+
+  const hotPings = [...args.pings]
+    .map((p) => ({ ping: p, score: computePingImportanceScore(p, ctx) }))
+    .filter((x) => x.score >= HOT_PINGS_MIN_SCORE)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, HOT_PINGS_LIMIT)
+    .map((x) => x.ping);
+
+  const partnerProjects = projects.filter(
+    (p) => p.kind === "partner" || p.kind === "team",
+  );
+  const counts = await getProjectActivityCounts(
+    partnerProjects.map((p) => p.slug),
+    { days: 7 },
+  );
+  const movingFastEntries: MovingFastEntry[] = partnerProjects
+    .map((p) => ({ slug: p.slug, name: p.name, count: counts[p.slug] ?? 0 }))
+    .filter((e) => e.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, MOVING_FAST_LIMIT);
+
+  return { hotPings, movingFastEntries };
+}
 
 function StatCard({
   icon,

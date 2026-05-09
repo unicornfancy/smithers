@@ -45,14 +45,22 @@ type State =
     }
   | { kind: "error"; message: string; missingKey: boolean };
 
+const LLM_CONFIDENCE_THRESHOLD = 0.7;
+
 export function TopThreeCard({
   initialCandidates,
   apiKeyConfigured,
   pinnedIds,
   cachedLlm,
 }: Props) {
+  // Gate cached LLM picks: when Claude self-reported low confidence, fall
+  // back to the rules-based view so we don't surface picks Claude itself
+  // flagged as guesses. The user can still click Regenerate to retry.
+  const cachedConfidence = cachedLlm?.output.confidence ?? 1;
+  const cachedLlmIsTrusted =
+    cachedLlm !== undefined && cachedConfidence >= LLM_CONFIDENCE_THRESHOLD;
   const [state, setState] = useState<State>(
-    cachedLlm
+    cachedLlmIsTrusted && cachedLlm
       ? { kind: "llm", output: cachedLlm.output, candidates: cachedLlm.candidates }
       : { kind: "rules" },
   );
@@ -144,6 +152,13 @@ export function TopThreeCard({
           <p className="text-muted-foreground text-sm">
             No candidates yet. Add an open task to a project, a follow-up, or
             wait for a ping.
+          </p>
+        ) : null}
+
+        {state.kind === "rules" && cachedLlm && !cachedLlmIsTrusted ? (
+          <p className="text-muted-foreground text-xs italic">
+            Claude returned low-confidence picks ({cachedConfidence.toFixed(2)}).
+            Showing rules-based ranking — click Regenerate to retry.
           </p>
         ) : null}
 

@@ -14,6 +14,7 @@ import type {
   Project,
   ProjectFrontmatter,
   ProjectKind,
+  ProjectPriority,
   ProjectSource,
   ProjectStatus,
   ZendeskTicketRef,
@@ -204,6 +205,7 @@ async function projectFromFile(
     name,
     kind,
     status,
+    priority: coerceProjectPriority(fm.priority),
     source: args.source,
     partner: fm.partner,
     github_repo: fm.github_repo,
@@ -279,6 +281,17 @@ function normalizeStringArray(raw: unknown): string[] | undefined {
     .map((s) => (s == null ? "" : String(s).trim()))
     .filter(Boolean);
   return cleaned.length > 0 ? cleaned : undefined;
+}
+
+/**
+ * Accept only the three valid priority strings; anything else falls
+ * through to undefined so a stray value in frontmatter doesn't poison
+ * the typed shape.
+ */
+function coerceProjectPriority(raw: unknown): ProjectPriority | undefined {
+  if (raw == null) return undefined;
+  if (raw === "high" || raw === "medium" || raw === "low") return raw;
+  return undefined;
 }
 
 function coerceTicketRef(item: unknown): ZendeskTicketRef | null {
@@ -732,6 +745,11 @@ export interface UpdateProjectFrontmatterPatch {
   slug?: string;
   kind?: ProjectKind;
   status?: ProjectStatus;
+  /**
+   * User-tagged priority; "" clears the field. Coerced at parse time —
+   * unknown strings are dropped silently rather than written.
+   */
+  priority?: ProjectPriority | "";
   partner?: string;
   github_repo?: string;
   staging_url?: string;

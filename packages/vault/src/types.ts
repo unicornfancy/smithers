@@ -32,6 +32,13 @@ export type ProjectStatus =
   | "launched"
   | "archived";
 
+/**
+ * User-tagged importance signal. Coarse high/medium/low so the user can
+ * tag a project once and have it influence ping scoring + /today layout
+ * without needing to maintain a numeric priority.
+ */
+export type ProjectPriority = "high" | "medium" | "low";
+
 /** Normalized project metadata from frontmatter (all fields optional except identity). */
 export interface ProjectFrontmatter {
   project_id?: string;
@@ -40,6 +47,7 @@ export interface ProjectFrontmatter {
   kind?: ProjectKind;
   partner?: string;
   status?: ProjectStatus;
+  priority?: ProjectPriority;
 
   github_repo?: string;
   staging_url?: string;
@@ -103,6 +111,8 @@ export interface Project {
   kind: ProjectKind;
   /** Defaults to `active` when not specified. */
   status: ProjectStatus;
+  /** User-tagged priority; absent unless the user opted to tag the project. */
+  priority?: ProjectPriority;
 
   /** Where this project lives in the filesystem. */
   source: ProjectSource;
