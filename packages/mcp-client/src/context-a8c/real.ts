@@ -261,6 +261,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
           return mapLinearInboxToPings(
             asArray(result?.notifications),
             this.opts.internalEmailDomains,
+            this.opts.selfEmail,
           );
         },
       },
@@ -1263,11 +1264,18 @@ type ContextA8CSourceId =
 export function mapLinearInboxToPings(
   notifications: LinearInboxNotification[],
   internalDomains: readonly string[],
+  selfEmail: string = "",
 ): Ping[] {
+  const self = selfEmail.trim().toLowerCase();
   const seen = new Set<string>();
   const out: Ping[] = [];
   for (let i = 0; i < notifications.length; i++) {
-    const ping = mapOne(notifications[i]!, i, internalDomains);
+    const n = notifications[i]!;
+    // Drop "you posted X" / "you changed status" / "you commented" type
+    // notifications — Linear surfaces these in the inbox even though
+    // they don't represent inbound work waiting on the user.
+    if (self && n.actor?.email?.toLowerCase() === self) continue;
+    const ping = mapOne(n, i, internalDomains);
     if (!ping) continue;
     // Belt-and-suspenders: even with the more-unique fallback id we
     // build below, two notifications occasionally arrive with truly

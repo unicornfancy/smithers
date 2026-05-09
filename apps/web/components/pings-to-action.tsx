@@ -1,9 +1,13 @@
+"use client";
+
 import * as React from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
   CheckCircle2,
   CircleDot,
+  Eye,
+  EyeOff,
   Github,
   Inbox,
   LifeBuoy,
@@ -15,6 +19,7 @@ import type { Ping, SourceResult } from "@smithers/mcp-client";
 
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DismissPingButton } from "@/components/dismiss-ping-button";
 import { RefreshPingsActionedButton } from "@/components/refresh-pings-actioned-button";
@@ -27,6 +32,8 @@ interface PingsToActionProps {
   actionedCheckedAt?: string | null;
 }
 
+const SHOW_ACTIONED_KEY = "smithers:today:pings:show-actioned";
+
 export function PingsToAction({
   result,
   actionedIds,
@@ -36,6 +43,36 @@ export function PingsToAction({
   const isMock = pings.some((p) => p.is_mock);
   const actionedSet = new Set(actionedIds ?? []);
 
+  // Default to hiding replied pings — they don't need attention. The
+  // user can flip this with the Show button to verify the verdict or
+  // undo a misclassification. Persists in localStorage so the choice
+  // survives page reloads.
+  const [showActioned, setShowActioned] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      const v = window.localStorage.getItem(SHOW_ACTIONED_KEY);
+      if (v === "1") setShowActioned(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  function toggleShowActioned() {
+    setShowActioned((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(SHOW_ACTIONED_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
+
+  const visiblePings = showActioned
+    ? pings
+    : pings.filter((p) => !actionedSet.has(p.id));
+  const hiddenCount = pings.length - visiblePings.length;
+
   return (
     <Card>
       <CardHeader>
@@ -43,7 +80,8 @@ export function PingsToAction({
           <Inbox className="text-muted-foreground size-4" />
           Pings to action
           <span className="text-muted-foreground text-xs font-normal">
-            · {pings.length}
+            · {visiblePings.length}
+            {hiddenCount > 0 ? ` (${hiddenCount} replied hidden)` : ""}
           </span>
           <span className="text-muted-foreground/70 ml-auto flex items-center gap-2 text-xs font-normal">
             {describeFreshness(result)}
@@ -56,6 +94,26 @@ export function PingsToAction({
               }))}
               checkedAt={actionedCheckedAt ?? null}
             />
+            {hiddenCount > 0 || showActioned ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground h-6 gap-1 px-1.5 text-[11px]"
+                onClick={toggleShowActioned}
+                title={
+                  showActioned
+                    ? "Hide pings you've already replied to"
+                    : "Show pings you've already replied to"
+                }
+              >
+                {showActioned ? (
+                  <EyeOff className="size-3" />
+                ) : (
+                  <Eye className="size-3" />
+                )}
+                {showActioned ? "Hide replied" : "Show replied"}
+              </Button>
+            ) : null}
           </span>
         </CardTitle>
       </CardHeader>
@@ -73,13 +131,15 @@ export function PingsToAction({
             can be wired and reviewed before live MCPs are connected.
           </div>
         ) : null}
-        {pings.length === 0 ? (
+        {visiblePings.length === 0 ? (
           <p className="text-muted-foreground text-sm italic">
-            No inbound pings waiting on you. Inbox zero, for now.
+            {pings.length === 0
+              ? "No inbound pings waiting on you. Inbox zero, for now."
+              : `Inbox zero — ${pings.length} ping${pings.length === 1 ? "" : "s"} hidden as already replied. Click Show replied to view them.`}
           </p>
         ) : (
           <ul className="flex flex-col divide-y">
-            {pings.map((p) => (
+            {visiblePings.map((p) => (
               <PingRow key={p.id} ping={p} actioned={actionedSet.has(p.id)} />
             ))}
           </ul>

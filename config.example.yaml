@@ -3,6 +3,7 @@
 
 identity:
   name: ""
+  email: "" # used to filter "you posted X" notifications out of /today's Pings to Action
   github_handle: ""
   slack_handle: ""
   internal_email_domains:

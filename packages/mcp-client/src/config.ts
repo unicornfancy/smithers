@@ -25,6 +25,13 @@ export interface McpClientOptions {
    */
   internalEmailDomains?: string[];
   /**
+   * The user's primary work email. When set, the Linear inbox ping
+   * mapper drops notifications where the actor email matches — Linear
+   * sends "you posted X" / "you changed status" notifications which
+   * shouldn't surface as inbound pings.
+   */
+  selfEmail?: string;
+  /**
    * Absolute path to the built Hive Mind MCP server entry point
    * (`<hive-mind-repo>/mcp/server/dist/index.js`). When set, the real
    * transport spawns `node <path>` instead of trying to invoke a
@@ -54,6 +61,7 @@ export interface ResolvedMcpClientOptions {
   mockHiveMind: boolean;
   mockLinear: boolean;
   internalEmailDomains: string[];
+  selfEmail: string;
   hiveMindServerPath: string | null;
   ttl: DefaultTtls;
 }
@@ -83,6 +91,7 @@ export function resolveMcpClientOptions(
       opts.internalEmailDomains?.length
         ? opts.internalEmailDomains
         : ["automattic.com"],
+    selfEmail: opts.selfEmail?.trim().toLowerCase() ?? "",
     hiveMindServerPath: opts.hiveMindServerPath ?? null,
     ttl: {
       activity: { ...DEFAULT_TTLS.activity, ...(opts.ttl?.activity ?? {}) },

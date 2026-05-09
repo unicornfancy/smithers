@@ -37,6 +37,7 @@ export async function getMcpClient(): Promise<McpClient> {
     mockHiveMind: !cfg.mcps.hive_mind.enabled || !hiveMindServerReady,
     mockLinear: !process.env["LINEAR_API_KEY"],
     internalEmailDomains: cfg.identity.internal_email_domains,
+    selfEmail: cfg.identity.email,
     hiveMindServerPath: hiveMindServerReady ? hiveMindServerPath : undefined,
   });
   return cached;

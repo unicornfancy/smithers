@@ -13,6 +13,13 @@ import yaml from "js-yaml";
 export interface SmithersConfig {
   identity: {
     name: string;
+    /**
+     * The user's primary work email. Used to filter self-authored
+     * notifications out of Pings to Action — e.g. Linear inbox sends
+     * "you posted an update" / "you changed status" notifications
+     * which shouldn't surface as inbound pings.
+     */
+    email?: string;
     github_handle?: string;
     slack_handle?: string;
     internal_email_domains: string[];
