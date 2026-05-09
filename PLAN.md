@@ -27,81 +27,24 @@ Scope: launchd plists + node-cron in-process for recurring jobs: briefing, ping 
 
 ---
 
-## `/today` v2
+## `/today` v2 — remaining flex stages (T5, T6)
 
-**Decided 2026-05-08.** Scope locked; ready to build in staged slices.
+**T1 + T2 + T3 + T7 shipped 2026-05-08.** Scoring, velocity strip, 3-tier layout, per-section reorder/show-hide, and the Top-3 confidence gate are live. Stage 1 also covered the "Collapsible + reorderable sections on project pages" plan item via the same `useLayoutPrefs` + `SectionList` primitive.
 
-### Page model: 3-tier hierarchy
-The page reorganizes around the three roles it plays for the user — triage / awareness / flex. Section visibility maps to a tier; each tier renders with its own visual weight.
+**T4 (filter chips) reverted** — visual noise, and chips weren't actually filtering server-side (likely an RSC cache-busting issue with `router.replace` not invalidating data fetches under `dynamic = "force-dynamic"`). If filtering comes back, that's the area to investigate.
 
-```
-HOT (top, prominent)
-  - Top pings by importance score
-  - "Moving fast" horizontal strip — top 5 projects by 7-day activity
-ACTIVE (mid, default-expanded)
-  - Stalls, all other pings, recent calls
-  - LLM-curated top-3 (only when confidence ≥ threshold)
-BACKGROUND (collapsed by default)
-  - Stat cards, drafts in flight, realistic-shape
-```
-
-### Importance signal — hybrid scoring
-Each ping gets a numeric score; top-N go to HOT.
-- **+ priority project bonus** — ping is from a project with `priority: high` in Hive-Mind `info.md` (or vault project frontmatter when HM not linked). User tags the project once.
-- **+ partner-contact bonus** — ping author email/handle appears in the project's `partner-knowledge.md` team contacts. Distinguishes external partner voices from internal noise.
-- **+ LLM bonus (gated)** — `composeTopThree` agent's pick, only when confidence ≥ threshold. (Requires adding `confidence` to the agent's output schema.) Falls through to rules-only when confidence is low — addresses the long-running gripe that the LLM picks haven't been reliable.
-- **+ small staleness tiebreaker** — items waiting > 5 days nudge upward, doesn't dominate.
-
-### Velocity signal — "Moving fast" strip
-- For each partner project, count activity events from `mcp.contextA8C.listProjectActivity` in the last 7 days (Slack messages, GitHub commits/PRs/issue comments, Linear updates, Zendesk comments). Sum across sources.
-- Sort projects descending by event count; top 5 in a horizontal strip with name + count + click-through to workbench.
-
-### Flex — staged rollout (NOT v1 in one shot)
-User wants maximum flexibility, but shipping all of it together is too much surface to keep clean. Staged:
-- **Stage 1**: section ordering + collapse (folds in the separate "Collapsible + reorderable sections" plan item)
-- **Stage 2**: filter chips at top of the page — "Show only Slack/Zendesk/GitHub/Linear/P2" multi-select; "Pinned projects" toggle scopes the Hot strip
-- **Stage 3**: Modes — Focus / Scan / Catchup, each storing its own section visibility + density. User toggles between via a small mode-switcher in the header.
-- **Stage 4**: Per-day-of-week defaults — Monday auto-loads a "Weekly Update prep" mode, Friday loads "End-of-week reflection." Customizable per user.
-
-### Persistence
-- localStorage per-browser for v1 (no sync). Promote to disk in `paths.data/today-prefs.json` once we want cross-machine sync.
-- Pinned projects (a `priority: high` flag) stored on project frontmatter — already shared across the app, not /today-only.
-
-### Slices (build order)
-- **T1** — backend signals: importance score + velocity event count helpers. Add `priority` field reader to vault project parser; add HM `info.md` priority lookup. Add a `getProjectActivityCounts(7d)` helper. No UI yet.
-- **T2** — frontend: 3-tier layout with HOT (top pings + Moving fast strip), ACTIVE (existing cards in current order), BACKGROUND (collapsed-by-default cards). No flex yet.
-- **T3** — Stage 1 of flex: section ordering + collapse persistence (localStorage). Drag handles via @dnd-kit OR up/down arrows in an "Edit layout" mode.
-- **T4** — Stage 2 of flex: filter chips + pinned projects.
-- **T5** — Stage 3 of flex: Focus/Scan/Catchup mode switcher.
-- **T6** — Stage 4 of flex: per-day-of-week defaults with editable presets.
-- **T7** — Add `confidence` to `composeTopThree` agent output; gate LLM picks behind threshold.
-
-### Open follow-ups (not blocking)
-- Calendar MCP integration ("what's on your schedule today") — separate plan item if/when we add it.
-- "What changed since you last opened this" affordance — postponed; not in v2 scope.
+**T5 — Focus / Scan / Catchup mode switcher** and **T6 — per-day-of-week defaults** stay deferred until a real itch surfaces. The current flex (reorder + hide via Edit layout) covers most of the customization need; modes would be a further "save layout as named mode" layer on top.
 
 ---
 
-## Collapsible + reorderable sections on project pages
+## Weekly Updates — follow-ups
 
-**Deferred — needs design discussion.** (`/today` side handled by `/today` v2 above; this entry covers `/projects/[slug]`.)
+**WU1 + WU2 shipped 2026-05-08.** Two-pane editor + AI generator + free-form format template settings card are live.
 
-Project workbenches carry many sections (Project Status, Project Log, Partner, Zendesk, Follow-ups, Call Transcripts, Drafts, Open Items, Pinned Context, Live Activity, etc.). They render in a fixed order with no per-user customization. Goal: let the user collapse sections they're ignoring and reorder the ones they care about. Same persistence layer + drag-and-drop primitive as `/today` Stage 1 — once that lands, this is mostly UI plumbing.
-
-### Open questions
-- **Persistence target.** localStorage (per-browser, no sync, simplest) vs a new file under `paths.data/` (per-user, syncs if the data dir is in the vault) vs vault frontmatter on a `_layout.md`. Probably localStorage for v1; promote to disk if it ever needs to survive a fresh checkout.
-- **Per-page or per-project order?** `/today` is one ordering for all days. `/projects/[slug]` could be one global ordering OR per-project (some partners have rich Zendesk threads, others don't have any tickets, etc.). Per-page is simpler. Per-project is more flexible.
-- **Default collapse heuristic.** Auto-collapse empty sections (e.g. no zendesk tickets → Zendesk panel collapsed by default)? Or honor explicit user choice and treat empty-section noise as a separate fix?
-- **Drag-and-drop interaction.** A drag handle in each section header is the standard pattern. shadcn doesn't ship a DnD primitive — pulling in @dnd-kit (~10kB) is the usual choice. Or skip drag entirely and offer up/down arrows in an "Edit layout" mode.
-- **Reset affordance.** "Restore default order" button somewhere when the user has reordered things and wants to start over.
-- **Mobile.** Drag-and-drop on touch is finicky; up/down arrows degrade better. Smithers is desktop-first today but worth considering.
-
-### Sketch (best guess at scope, not locked)
-- A small `useLayoutPrefs("today" | "project")` hook that reads/writes localStorage, returns `{ order: string[]; collapsed: Set<string>; reorder, toggleCollapse, reset }`.
-- Each section grows a `<SectionCard id="..." title="..." defaultCollapsed?={...}>` wrapper that hooks into the prefs.
-- An "Edit layout" toggle in the page header that shows drag handles + a Reset button. Outside edit mode the section headers stay clean.
-
-Worth doing after we've lived with the current pages a while longer — we'll know which sections we actually want to hide.
+Possible follow-ups (none scoped, none scheduled):
+- **One-click "Post as comment" to the team P2** — currently the user copies and pastes manually. Would require either a P2 provider in ContextA8C or direct WP.com REST `POST /comments` with auth.
+- **Per-project facts table on the editor** — current Facts panel shows counts; a more detailed roll-up (each event with link) might help cross-checking.
+- **Sticky "user notes for this run"** — currently per-generate; might be worth persisting a "next week pre-notes" file the user appends to throughout the week.
 
 ---
 
@@ -110,6 +53,7 @@ Worth doing after we've lived with the current pages a while longer — we'll kn
 - **v1.5 Linear ↔ Hive Mind ↔ Smithers sync** — deeper field standardization. Deferred until user signals priority.
 - **Change-project-kind wizard** — Team/Personal ↔ Partner copy/unlink flow. Preserves `project_id`.
 - **`/agendas/[project]` editor** — currently a stub.
-- **`/weekly-updates/[YYYY-WN]` editor** — stub.
 - **In-flight indicator on auto-learn-from-archive** — currently fire-and-forget with a success toast on completion. Plan called for a small "learning…" pill near the archive button until the toast fires; deferred as a polish item.
-- **Phase H follow-ups** — the suggestion engine (H5: scan recent project activity and pre-populate the picker with togglable suggestions) and the workbench "Pinned context" affordance (H6: a small card on the project page for managing pins outside of a draft flow) were scoped but deferred. Pinning currently happens via the picker's "Pin permanently" checkbox; suggestions section in the picker is currently empty.
+- **H6 — workbench "Pinned context" affordance** — a small card on the project page for managing pins outside of a draft flow. Pinning currently happens via the picker's "Pin permanently" checkbox.
+- **Migration: Neighborhood Nip + Shareable to Hive-Mind** — both vault projects have `hive_mind_partner_slug` set but haven't actually pushed their Open Items / Zendesk metadata into HM. Plus the 9 reverse imports queued in the original Phase F (a8c-creators, awaken-the-world, etc.) — still pending.
+- **More AI affordances** — Summarize Zendesk thread, Verify @handles before posting, Find related context. Each is a self-contained small slice.

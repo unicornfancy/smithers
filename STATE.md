@@ -2,7 +2,48 @@
 
 _Updated 2026-05-08_
 
-## Just completed (2026-05-07 to 2026-05-08 — /setup wizard + Phase H)
+## Just completed (2026-05-08 PM — /today v2, weekly updates, ping-actioned, picker H5, call cleanup)
+
+### `/today` v2 — 3-tier layout, importance scoring, velocity, flex (T1, T2, T3, T7)
+
+- **HOT / ACTIVE / BACKGROUND tiers (78bb605)** — page reorganized into three visual weights. HOT shows top-N pings ranked by hybrid importance (priority project + partner-contact + LLM pick + small staleness tiebreaker, threshold ≥ 20) plus a "Moving fast" strip ranking partner/team projects by 7-day activity volume.
+- **Backend signal helpers (`apps/web/lib/server/today-signals.ts`)** — `getProjectPriority`, `getProjectActivityCount(s)`, `extractPartnerContacts`, `computePingImportanceScore`. New `priority` field on vault Project + ProjectFrontmatter; HM `info.md` priority takes precedence when project is HM-linked.
+- **`composeTopThree` confidence gate (T7)** — agent emits a self-reported `confidence: 0..1` per the rubric in its system prompt. TopThreeCard falls back to rules-only view when cached LLM confidence < 0.7, with a one-line explainer ("Claude returned low-confidence picks; click Regenerate to retry").
+- **Per-section reorder + show/hide (T3, ca99542 + 0876d12)** — new `useLayoutPrefs(scope, knownIds)` hook + `SectionList` client wrapper. Edit-layout toggle in page header exposes per-section up/down + hide controls; choices persist in localStorage. Same primitive wired into `/today` and the project workbench (per-page, not per-project, for v1). Folded in the separate "Collapsible + reorderable sections on project pages" PLAN item.
+- **T4 filter chips (cea8023) reverted (075d1ab)** — visual noise; chips weren't actually filtering (likely RSC cache busting issue). Stages T5 (modes) and T6 (per-day defaults) deferred unless a real itch surfaces.
+
+### Pings to Action — already-replied detection + noise drops + project context
+
+- **`ping_actioned` SQLite cache + Refresh button (ef02f88, d6bced7)** — schema v3 table records per-ping "did Katie reply" verdicts. Populated on demand by an explicit Refresh button on the panel header (not on every page load — per-source MCP fanout would be too slow). Detectors per source:
+  - **Zendesk**: any internal-domain comment after the ping timestamp (via `get-ticket-comments`).
+  - **GitHub**: any comment from configured `identity.github_handle` (falls back to "unicornfancy") after the ping timestamp.
+  - **Slack**: any post from `identity.slack_handle` after the ping timestamp.
+  - **Linear**: cached `viewer.id` query, any comment from viewer after the ping timestamp.
+  - **P2**: skipped (no clean comment-fetch primitive).
+- **Hide replied by default (24946c6)** — actioned pings now hide entirely (not just grey out); Eye/EyeOff toggle in panel header surfaces them when needed. Persists in localStorage.
+- **Drop self-authored Linear pings (24946c6)** — new `identity.email` config field; Linear inbox mapper drops notifications where `actor.email` matches. Filters out the "you posted X / you changed status" noise Linear surfaces.
+- **Drop projectUpdateCreated (78b2554)** — pure follower broadcasts with no link to act on. Mapper-side filter; tight noise list (only types that are *purely* informational; mentions and assignments stay).
+- **Project context on Linear pings (65ed791)** — Linear inbox notifications now stash project name + Linear UUID on `ProjectMatch` (`display_label` + `linear_project_id`, `in_vault: false`). `/today` resolves to vault slug when one matches `linear_project_id` frontmatter, otherwise renders the name as a non-link label with a "set up via /projects/onboard" tooltip.
+- **DB migration auto-rerun (53b473d)** — `getDb()` now re-runs idempotent migrations on every cached-handle return. Fixes "no such table: ping_actioned" after a schema bump without a server restart.
+- **Hydration warnings on relative timestamps (08a09fa)** — `suppressHydrationWarning` on every span rendering `formatRelative(...)` — server vs. client drift by ~1s was triggering React's mismatch warning across pings, refresh button, live activity feed.
+
+### Phase H5 — draft picker suggestion engine (d534a4b)
+
+Picker dialog grows a Suggestions section between Preview and Pinned: 7-day-window project activity (Slack threads, GitHub comments, Linear issues, Zendesk comments, call transcripts) pre-populated as togglable rows. Selected suggestions resolve at Generate time (URL-based for Slack/GH/Linear, ticket-id for Zendesk, project-relative ref for call transcripts). Zendesk reply button passes `excludeZendeskTicketId` so the source ticket isn't suggested as its own context. New server actions: `getDraftContextSuggestionsAction`, `resolveCallTranscriptContextAction`, `getProjectHiveMindSlugsAction`. Closes the H5 entry from the previous session's deferred list; H6 (workbench Pinned-context affordance) still deferred.
+
+### Call attribution cleanup (f4d6f69)
+
+- **Shared `recordingMatchesProject` helper** — three near-duplicate fuzzy-match implementations on `/today`, `/calls`, and the project workbench were drifting on stop-words. One source of truth at `apps/web/lib/server/recording-match.ts` now drives all three.
+- **Extended STOP_TOKENS** — added `site, page, new, old, wordpress, wp, web, review, dev, redesign, migration, build` after Katie hit a "site" collision: "Body Dao Acupuncture New Site" claimed "Automattic + Neighborhood Nip: Dev Site Review".
+- **Per-project Detach button** — new `fathom_excluded_recording_ids` frontmatter field + "Not this project" ⊖ button on each Recent Calls workbench row. Idempotent vault helper appends; matcher returns false early when recording_id is in the exclude list. Doesn't delete the call — still appears on `/calls` and any other matching project.
+
+### Weekly Updates — two-pane editor + AI generator + format settings (WU1, WU2)
+
+- **`/weekly-updates` index + `/weekly-updates/[isoWeek]` editor (b0c0e51)** — Monday weekly-update workflow end-to-end (minus posting). Index lists past archived files + a "Draft this week" CTA. Editor is two-pane: facts side panel (auto-populated when Generate runs) + markdown textarea / preview toggle, plus Generate / Save / Copy buttons. Header surfaces this week's team P2 post link auto-detected via WordPress.com REST API on `team_p2_url` (falls back to homepage when private/unmatched).
+- **Backend** — vault helpers `listWeeklyUpdates / readWeeklyUpdate / saveWeeklyUpdate` (writes `Weekly Updates/<YYYY-WNN>.md`), plus `listRecentCallSlices` for date-range frontmatter scans. `collectWeeklyFacts(isoWeek)` pulls per-project activity + Linear updates + recent calls + recent drafts for the ISO week. New `compose-weekly-update` agent takes facts + format template + voice + optional user-notes ("AFK Mon-Wed next week", etc.) → markdown body in Katie's per-project Last Week / This Week format.
+- **Format settings card (f3745ac)** — top of `/settings`. Three preset buttons (per-project default, top-3, prioritized) load templates as starting points; free-form textarea is the source of truth. Saves to `weekly_update.format_template` in `config.local.yaml`. Drive-by: extracted YAML write helpers from `setup/actions.ts` to a shared `apps/web/lib/server/config-write.ts`.
+
+### Earlier 2026-05-07 to 2026-05-08 — /setup wizard + Phase H
 
 ### `/setup` wizard
 
