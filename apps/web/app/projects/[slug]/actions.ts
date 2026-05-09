@@ -1357,6 +1357,142 @@ export async function fetchZendeskLatestPartnerActivityAction(
 }
 
 /**
+ * Look up the Hive-Mind partner/project slug pair for a Smithers
+ * project. Used by the draft context picker when resolving a
+ * call-transcript suggestion at Generate time. Returns null when
+ * the project isn't HM-connected.
+ */
+export async function getProjectHiveMindSlugsAction(
+  slug: string,
+): Promise<{ partnerSlug: string; projectSlug: string } | null> {
+  if (!slug) return null;
+  const vault = await getVault();
+  const project = await vault.readProject(slug).catch(() => null);
+  if (!project?.hive_mind_partner_slug) return null;
+  return {
+    partnerSlug: project.hive_mind_partner_slug,
+    projectSlug: project.hive_mind_project_slug ?? project.slug,
+  };
+}
+
+/**
+ * Phase H5 suggestion engine. Pulls the project's recent (≤7d) activity
+ * from `listProjectActivity` plus any Hive-Mind call transcripts, drops
+ * anything already pinned, sorts by timestamp desc, and returns up to
+ * five candidates the picker can offer the user. Bodies are NOT fetched
+ * here — the picker resolves them at Generate time so we don't pay for
+ * fetches the user might toggle off.
+ */
+export async function getDraftContextSuggestionsAction(
+  slug: string,
+  opts?: {
+    /** Zendesk ticket id currently being replied to — exclude from suggestions. */
+    excludeZendeskTicketId?: string;
+  },
+): Promise<{ rows: DraftContextSuggestion[] }> {
+  if (!slug) return { rows: [] };
+
+  const vault = await getVault();
+  const project = await vault.readProject(slug).catch(() => null);
+  if (!project) return { rows: [] };
+
+  // Already-pinned refs — exclude from suggestions so we don't double up.
+  const pinnedRefs = new Set<string>();
+  if (project.hive_mind_partner_slug) {
+    const pinned = await vault
+      .getHiveMindPinnedContext(
+        project.hive_mind_partner_slug,
+        project.hive_mind_project_slug ?? project.slug,
+      )
+      .catch(() => null);
+    for (const row of pinned?.rows ?? []) pinnedRefs.add(row.ref);
+  }
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+
+  const mcp = await getMcpClient();
+  const activityResult = await mcp.contextA8C
+    .listProjectActivity({
+      project_slug: project.slug,
+      project_name: project.name,
+      limit: 30,
+      since: sevenDaysAgo,
+      refs: {
+        github_repo: project.github_repo,
+        linear_project_id: project.linear_project_id,
+        linear_project_slug: project.linear_project_slug,
+        zendesk_tickets: project.zendesk_tickets?.map((t) => t.id),
+        p2_url: project.p2_url,
+        primary_slack_channel: project.primary_slack_channel,
+        team_slack_channel: project.team_slack_channel,
+        partner: project.partner,
+      },
+    })
+    .catch(() => null);
+
+  const events = activityResult?.ok
+    ? activityResult.data
+    : (activityResult?.cachedData ?? []);
+
+  const candidates: DraftContextSuggestion[] = [];
+
+  for (const event of events) {
+    const mapped = mapActivityEventToSuggestion(event, opts?.excludeZendeskTicketId);
+    if (!mapped) continue;
+    if (pinnedRefs.has(mapped.ref)) continue;
+    candidates.push(mapped);
+  }
+
+  // Hive-Mind call transcripts. Their ref is the project-relative path
+  // (call-transcripts/<file>.md) — same shape pinned-context.md uses.
+  if (project.hive_mind_partner_slug) {
+    const hmPartner = project.hive_mind_partner_slug;
+    const hmProject = project.hive_mind_project_slug ?? project.slug;
+    const transcripts = await vault
+      .getHiveMindCallTranscripts(hmPartner, hmProject)
+      .catch(() => []);
+    for (const t of transcripts) {
+      const ref = `call-transcripts/${t.filename}`;
+      if (pinnedRefs.has(ref)) continue;
+      const ts = t.frontmatter.date
+        ? new Date(`${t.frontmatter.date}T00:00:00Z`).toISOString()
+        : "";
+      // Drop transcripts older than the 7-day window so the suggestion
+      // section stays "what just happened" rather than "what's on file".
+      if (ts && ts < sevenDaysAgo) continue;
+      candidates.push({
+        type: "call-transcript",
+        ref,
+        label: t.frontmatter.title ?? t.filename.replace(/\.md$/i, ""),
+        sourceLabel: "Call",
+        timestamp: ts,
+      });
+    }
+  }
+
+  candidates.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+  return { rows: candidates.slice(0, 5) };
+}
+
+export interface DraftContextSuggestion {
+  type:
+    | "slack-thread"
+    | "slack-message"
+    | "github-issue-comment"
+    | "call-transcript"
+    | "zendesk-ticket"
+    | "linear-issue";
+  /** Stable ref — URL for slack/github/linear/zendesk; vault relative path for call-transcript. */
+  ref: string;
+  label: string;
+  /** Short source label shown next to the badge — e.g. "Slack #channel", "GitHub", "Call". */
+  sourceLabel: string;
+  /** ISO timestamp of the underlying event (drives recency sort). */
+  timestamp: string;
+}
+
+/**
  * Read the project's pinned-context.md rows. Returns an empty array
  * (not null) when nothing is pinned or Hive-Mind isn't configured —
  * the picker UI treats both as "no pins yet".
@@ -1489,6 +1625,83 @@ export async function unpinContextAction(
 }
 
 // --- internals ---
+
+/**
+ * Map a `ContextA8C.listProjectActivity` event to a `DraftContextSuggestion`
+ * the picker can show. Returns null when the event lacks a usable ref or
+ * matches the excluded Zendesk ticket. Slack messages get classified as
+ * "slack-thread" when the URL hints at a thread (has a `thread_ts` or
+ * permalink path), else "slack-message".
+ */
+function mapActivityEventToSuggestion(
+  event: import("@smithers/mcp-client").ActivityEvent,
+  excludeZendeskTicketId?: string,
+): DraftContextSuggestion | null {
+  const ts = event.timestamp;
+  const url = event.url ?? "";
+  const labelFromTitleOrExcerpt =
+    event.title?.trim() || (event.excerpt ? event.excerpt.slice(0, 60) : "");
+
+  if (event.source === "slack") {
+    if (!url) return null;
+    // Slack permalinks for thread replies include `?thread_ts=` (or the
+    // canonical thread URL form). Treat anything else as a top-level message.
+    const isThread = /thread_ts=/i.test(url);
+    return {
+      type: isThread ? "slack-thread" : "slack-message",
+      ref: url,
+      label: labelFromTitleOrExcerpt || "Slack message",
+      sourceLabel: event.excerpt?.startsWith("#")
+        ? `Slack ${event.excerpt}`
+        : "Slack",
+      timestamp: ts,
+    };
+  }
+
+  if (event.source === "github") {
+    if (!url) return null;
+    return {
+      type: "github-issue-comment",
+      ref: url,
+      label: labelFromTitleOrExcerpt || url,
+      sourceLabel: "GitHub",
+      timestamp: ts,
+    };
+  }
+
+  if (event.source === "linear") {
+    if (!url) return null;
+    return {
+      type: "linear-issue",
+      ref: url,
+      label: labelFromTitleOrExcerpt || url,
+      sourceLabel: "Linear",
+      timestamp: ts,
+    };
+  }
+
+  if (event.source === "zendesk" && event.kind === "zendesk-comment") {
+    // Pull the ticket id from the event id (`zendesk:<ticketId>:<commentId>`)
+    // first, then fall back to URL parsing.
+    const idMatch = /^zendesk:(\d+):/.exec(event.id);
+    const urlMatch = /\/tickets\/(\d+)/.exec(url);
+    const ticketId = idMatch?.[1] ?? urlMatch?.[1] ?? "";
+    if (!ticketId) return null;
+    if (excludeZendeskTicketId && ticketId === excludeZendeskTicketId) {
+      return null;
+    }
+    const ref = url || `https://automattic.zendesk.com/agent/tickets/${ticketId}`;
+    return {
+      type: "zendesk-ticket",
+      ref,
+      label: labelFromTitleOrExcerpt || `Zendesk #${ticketId}`,
+      sourceLabel: `Zendesk #${ticketId}`,
+      timestamp: ts,
+    };
+  }
+
+  return null;
+}
 
 function serializeHMZendesk(args: {
   search_terms: string[];

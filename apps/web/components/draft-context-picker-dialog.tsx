@@ -1,15 +1,21 @@
 "use client";
 
-import { ExternalLink, Loader2, Sparkles, X } from "lucide-react";
+import { Loader2, Sparkles, X } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
 import type { ContextItem } from "@smithers/mcp-client";
 
-import { resolveContextUrlAction } from "@/app/drafts/actions";
 import {
+  resolveCallTranscriptContextAction,
+  resolveContextUrlAction,
+} from "@/app/drafts/actions";
+import {
+  getDraftContextSuggestionsAction,
+  getProjectHiveMindSlugsAction,
   listPinnedContextAction,
   pinContextAction,
+  type DraftContextSuggestion,
 } from "@/app/projects/[slug]/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +49,12 @@ interface Props {
    */
   preview?: { label: string; body: string; meta?: string } | null;
   /**
+   * When the picker is opened from a Zendesk ticket reply flow, pass
+   * the ticket id so the suggestion engine doesn't propose the same
+   * ticket the user is already replying to.
+   */
+  excludeZendeskTicketId?: string;
+  /**
    * Called when the user confirms — receives the curated list of context
    * items (with bodies) that should be passed to the agent. Empty list
    * is a valid choice (means "no extra context").
@@ -66,6 +78,7 @@ export function DraftContextPickerDialog({
   title,
   projectSlug,
   preview,
+  excludeZendeskTicketId,
   onGenerate,
   busy,
 }: Props) {
@@ -80,9 +93,17 @@ export function DraftContextPickerDialog({
   const [resolving, setResolving] = React.useState(false);
   const [pinThis, setPinThis] = React.useState(false);
   const [acknowledgedNoContext, setAcknowledgedNoContext] = React.useState(false);
+  const [suggestions, setSuggestions] = React.useState<DraftContextSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = React.useState(false);
+  const [suggestedSelected, setSuggestedSelected] = React.useState<Set<string>>(
+    new Set(),
+  );
 
   const reviewed =
-    pinnedSelected.size > 0 || attached.length > 0 || acknowledgedNoContext;
+    pinnedSelected.size > 0 ||
+    attached.length > 0 ||
+    suggestedSelected.size > 0 ||
+    acknowledgedNoContext;
 
   // Reset + load pinned items each time the dialog opens.
   React.useEffect(() => {
@@ -91,7 +112,9 @@ export function DraftContextPickerDialog({
     setPinThis(false);
     setAcknowledgedNoContext(false);
     setAttached([]);
+    setSuggestedSelected(new Set());
     setPinnedLoading(true);
+    setSuggestionsLoading(true);
     void listPinnedContextAction(projectSlug)
       .then((res) => {
         setPinned(res.rows);
@@ -103,10 +126,25 @@ export function DraftContextPickerDialog({
         setPinnedSelected(new Set());
       })
       .finally(() => setPinnedLoading(false));
-  }, [open, projectSlug]);
+    void getDraftContextSuggestionsAction(projectSlug, {
+      excludeZendeskTicketId,
+    })
+      .then((res) => setSuggestions(res.rows))
+      .catch(() => setSuggestions([]))
+      .finally(() => setSuggestionsLoading(false));
+  }, [open, projectSlug, excludeZendeskTicketId]);
 
   function togglePinned(ref: string) {
     setPinnedSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(ref)) next.delete(ref);
+      else next.add(ref);
+      return next;
+    });
+  }
+
+  function toggleSuggested(ref: string) {
+    setSuggestedSelected((prev) => {
       const next = new Set(prev);
       if (next.has(ref)) next.delete(ref);
       else next.add(ref);
@@ -174,28 +212,64 @@ export function DraftContextPickerDialog({
   }
 
   async function generate() {
-    // Build the curated context list — selected pins + all manual attachments.
-    // For pinned items, we have type/ref/label but NO body (intentionally
-    // not persisted). Re-resolve them now so the agent sees fresh content.
+    // Build the curated context list — manual attachments + selected pins
+    // + selected suggestions. For pinned items + suggestions, we have
+    // type/ref/label but NO body (intentionally not persisted). Re-resolve
+    // them now so the agent sees fresh content.
     const curated: ContextItem[] = [...attached];
+
+    // Resolve a Hive-Mind slug pair once so call-transcript suggestions
+    // and pins can be looked up. Lazy — only fetched when needed.
+    let hmSlugsPromise: Promise<{ partnerSlug: string; projectSlug: string } | null> | null = null;
+    function getHmSlugs() {
+      if (!hmSlugsPromise) hmSlugsPromise = getProjectHiveMindSlugsAction(projectSlug);
+      return hmSlugsPromise;
+    }
+
+    async function resolvePinOrSuggestion(item: {
+      type: ContextItem["type"];
+      ref: string;
+      label: string;
+    }): Promise<ContextItem> {
+      if (item.type === "call-transcript") {
+        const slugs = await getHmSlugs();
+        if (slugs) {
+          const res = await resolveCallTranscriptContextAction({
+            partnerSlug: slugs.partnerSlug,
+            projectSlug: slugs.projectSlug,
+            ref: item.ref,
+          }).catch(() => null);
+          if (res?.ok) return res.item;
+        }
+        // Couldn't resolve — fall back to label-only so the agent at
+        // least knows there was a call to consider.
+        return { type: item.type, ref: item.ref, label: item.label, body: item.label };
+      }
+      const isUrl = /^https?:\/\//i.test(item.ref);
+      if (!isUrl) {
+        return { type: item.type, ref: item.ref, label: item.label, body: item.label };
+      }
+      const res = await resolveContextUrlAction(item.ref).catch(() => null);
+      if (res?.ok) return res.item;
+      return { type: item.type, ref: item.ref, label: item.label, body: item.label };
+    }
+
     const selectedPins = pinned.filter((p) => pinnedSelected.has(p.ref));
     for (const pin of selectedPins) {
-      // Skip refresh when the URL doesn't look fetchable (e.g. call-transcript
-      // local paths) — fall back to label-as-body so the agent at least sees
-      // the title.
-      const isUrl = /^https?:\/\//i.test(pin.ref);
-      if (!isUrl) {
-        curated.push({ type: pin.type, ref: pin.ref, label: pin.label, body: pin.label });
-        continue;
-      }
-      const res = await resolveContextUrlAction(pin.ref).catch(() => null);
-      if (res?.ok) {
-        curated.push(res.item);
-      } else {
-        // Resolve failed; surface metadata only so the agent isn't fully blind.
-        curated.push({ type: pin.type, ref: pin.ref, label: pin.label, body: pin.label });
-      }
+      curated.push(
+        await resolvePinOrSuggestion({ type: pin.type, ref: pin.ref, label: pin.label }),
+      );
     }
+
+    const selectedSuggestions = suggestions.filter((s) =>
+      suggestedSelected.has(s.ref),
+    );
+    for (const sug of selectedSuggestions) {
+      curated.push(
+        await resolvePinOrSuggestion({ type: sug.type, ref: sug.ref, label: sug.label }),
+      );
+    }
+
     onGenerate(curated);
   }
 
@@ -226,6 +300,62 @@ export function DraftContextPickerDialog({
               </div>
             </section>
           ) : null}
+
+          <section className="space-y-2">
+            <h3 className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+              Suggestions
+            </h3>
+            {suggestionsLoading ? (
+              <div className="text-muted-foreground flex items-center gap-2 text-xs">
+                <Loader2 className="size-3 animate-spin" />
+                Loading suggestions…
+              </div>
+            ) : suggestions.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                No recent activity to suggest.
+              </p>
+            ) : (
+              <ul className="divide-border divide-y overflow-hidden rounded-md border">
+                {suggestions.map((row) => (
+                  <li
+                    key={row.ref}
+                    className="flex items-start gap-2 px-3 py-2"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={suggestedSelected.has(row.ref)}
+                      onChange={() => toggleSuggested(row.ref)}
+                      className="mt-1 size-4 shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <Badge
+                          variant="secondary"
+                          className="shrink-0 font-normal text-[10px]"
+                        >
+                          {row.type}
+                        </Badge>
+                        <div className="min-w-0 flex-1 truncate">
+                          {row.label}
+                        </div>
+                      </div>
+                      <div className="text-muted-foreground mt-0.5 flex max-w-full items-center gap-1.5 text-[11px]">
+                        <span className="truncate">{row.sourceLabel}</span>
+                        {row.timestamp ? (
+                          <>
+                            <span aria-hidden>·</span>
+                            <span className="shrink-0">
+                              {formatRelative(row.timestamp)}
+                            </span>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
           <section className="space-y-2">
             <h3 className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
@@ -394,3 +524,18 @@ export function DraftContextPickerDialog({
   );
 }
 
+function formatRelative(iso: string): string {
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return "";
+  const diffMs = Date.now() - ts;
+  const seconds = Math.round(diffMs / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.round(days / 7);
+  return `${weeks}w ago`;
+}

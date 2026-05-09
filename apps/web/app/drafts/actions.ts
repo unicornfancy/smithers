@@ -296,3 +296,48 @@ export async function resolveContextUrlAction(
     reason: "Unsupported URL. Paste a Slack message/thread URL, GitHub issue/PR URL, or Zendesk ticket URL.",
   };
 }
+
+/**
+ * Resolve a call transcript suggestion into a `ContextItem`. Call
+ * transcripts live in the Hive-Mind project folder (not at a URL), so
+ * `resolveContextUrlAction` doesn't apply — the picker calls this when
+ * the user toggles a `type: "call-transcript"` suggestion ON. Body is
+ * the full transcript markdown so the agent has the same content the
+ * user would paste manually.
+ */
+export async function resolveCallTranscriptContextAction(input: {
+  partnerSlug: string;
+  projectSlug: string;
+  /** Relative path within the HM project, e.g. `call-transcripts/2026-05-04-foo.md`. */
+  ref: string;
+}): Promise<
+  | { ok: true; item: ContextItem }
+  | { ok: false; reason: string }
+> {
+  const { partnerSlug, projectSlug, ref } = input;
+  if (!partnerSlug || !projectSlug) {
+    return { ok: false, reason: "partnerSlug and projectSlug are required" };
+  }
+  if (!ref.trim()) return { ok: false, reason: "ref is required" };
+
+  const vault = await getVault();
+  const transcripts = await vault
+    .getHiveMindCallTranscripts(partnerSlug, projectSlug)
+    .catch(() => []);
+  const expectedFilename = ref.replace(/^call-transcripts\//, "");
+  const match = transcripts.find((t) => t.filename === expectedFilename);
+  if (!match) {
+    return { ok: false, reason: "Call transcript not found in Hive-Mind." };
+  }
+
+  const label = match.frontmatter.title ?? expectedFilename.replace(/\.md$/i, "");
+  return {
+    ok: true,
+    item: {
+      type: "call-transcript",
+      ref,
+      label,
+      body: match.body,
+    },
+  };
+}

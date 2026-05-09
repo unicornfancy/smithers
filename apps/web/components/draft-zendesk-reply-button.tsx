@@ -159,6 +159,7 @@ export function DraftZendeskReplyButton({
         title={`Draft reply for #${ticketId}${ticketSubject ? ` — ${truncate(ticketSubject, 50)}` : ""}`}
         projectSlug={projectSlug}
         preview={preview}
+        excludeZendeskTicketId={ticketId}
         onGenerate={runWithContext}
         busy={pending}
       />
