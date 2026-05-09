@@ -138,14 +138,48 @@ export default async function TodayPage() {
     (r) => r.matchedProjects.length === 0,
   ).length;
 
+  // Linear inbox pings carry a Linear UUID for the issue's project
+  // (when there is one), but no knowledge of which vault project that
+  // maps to. Resolve here so the link in PingsToAction points at the
+  // Smithers workbench when one exists; otherwise the project name
+  // stays as a non-link label so the user still sees context.
+  const linearIdToVaultProject = new Map<string, { slug: string; name: string }>();
+  for (const p of projects) {
+    if (p.linear_project_id) {
+      linearIdToVaultProject.set(p.linear_project_id, { slug: p.slug, name: p.name });
+    }
+  }
+  const resolveLinearProjectMatch = (ping: Ping): Ping => {
+    const m = ping.project_match;
+    if (!m || m.matched_by !== "linear_project") return ping;
+    if (!m.linear_project_id) return ping;
+    const vault = linearIdToVaultProject.get(m.linear_project_id);
+    if (!vault) return ping;
+    return {
+      ...ping,
+      project_match: {
+        ...m,
+        project_slug: vault.slug,
+        display_label: vault.name,
+        in_vault: true,
+      },
+    };
+  };
+
   // Merge GitHub mention pings into the main SourceResult so the
   // existing PingsToAction component and filterPingsResult helper
   // handle them uniformly.
   const mergedPingsResult: typeof pingsResult = pingsResult.ok
-    ? { ...pingsResult, data: [...pingsResult.data, ...githubPings] }
+    ? {
+        ...pingsResult,
+        data: [...pingsResult.data.map(resolveLinearProjectMatch), ...githubPings],
+      }
     : {
         ...pingsResult,
-        cachedData: [...(pingsResult.cachedData ?? []), ...githubPings],
+        cachedData: [
+          ...(pingsResult.cachedData ?? []).map(resolveLinearProjectMatch),
+          ...githubPings,
+        ],
       };
 
   const dismissedPingIds = await listDismissedIds("ping").catch(

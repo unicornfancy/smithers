@@ -1323,13 +1323,25 @@ function mapOne(
     },
     excerpt,
     url: n.url ?? n.issue?.url,
-    project_match: n.issue?.project?.slug
-      ? {
-          project_slug: n.issue.project.slug,
-          matched_by: "linear_project",
-        }
-      : undefined,
+    project_match: buildLinearProjectMatch(n.issue?.project),
     is_mock: false,
+  };
+}
+
+function buildLinearProjectMatch(
+  project: { name?: string; slug?: string; id?: string } | undefined,
+): import("../types").ProjectMatch | undefined {
+  if (!project || (!project.slug && !project.id && !project.name)) return undefined;
+  // We don't know the vault slug at transport time — leave in_vault=false
+  // and stash project name + Linear UUID so /today can resolve to a
+  // vault project (or render the name as a non-link label when there
+  // isn't one yet).
+  return {
+    project_slug: project.slug ?? project.id ?? project.name ?? "",
+    matched_by: "linear_project",
+    display_label: project.name,
+    in_vault: false,
+    linear_project_id: project.id,
   };
 }
 

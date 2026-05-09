@@ -190,15 +190,7 @@ function PingRow({ ping, actioned }: { ping: Ping; actioned: boolean }) {
           <span className="text-muted-foreground/80 truncate text-[11px]">
             via {sourceLabel(ping.source)}
             {ping.project_match ? (
-              <>
-                {" · "}
-                <Link
-                  href={`/projects/${ping.project_match.project_slug}`}
-                  className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-                >
-                  {ping.project_match.project_slug}
-                </Link>
-              </>
+              <ProjectMatchLabel match={ping.project_match} />
             ) : null}
           </span>
         </div>
@@ -220,6 +212,42 @@ function PingRow({ ping, actioned }: { ping: Ping; actioned: boolean }) {
       </span>
       <DismissPingButton pingId={ping.id} label={ping.from.name} />
     </li>
+  );
+}
+
+function ProjectMatchLabel({
+  match,
+}: {
+  match: NonNullable<Ping["project_match"]>;
+}) {
+  const display = match.display_label ?? match.project_slug;
+  // Default to linked behavior for legacy callers that don't set
+  // in_vault — they're guaranteed to be vault slugs (zendesk_ticket,
+  // partner, etc.) since only Linear pings opt out.
+  const linkable = match.in_vault !== false;
+  if (linkable) {
+    return (
+      <>
+        {" · "}
+        <Link
+          href={`/projects/${match.project_slug}`}
+          className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+        >
+          {display}
+        </Link>
+      </>
+    );
+  }
+  return (
+    <>
+      {" · "}
+      <span
+        className="text-muted-foreground/80"
+        title="This Linear project isn't set up in Smithers yet — open it on /projects/onboard to add it."
+      >
+        {display}
+      </span>
+    </>
   );
 }
 

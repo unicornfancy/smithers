@@ -125,6 +125,12 @@ export interface ActivityActor {
 }
 
 export interface ProjectMatch {
+  /**
+   * Vault project slug when `in_vault` is true; otherwise an external
+   * identifier (Linear slug, GitHub repo, etc.) that won't resolve to
+   * a Smithers project page. Callers should use `display_label` for
+   * rendering and only build links when `in_vault === true`.
+   */
   project_slug: string;
   matched_by:
     | "github_repo"
@@ -133,6 +139,24 @@ export interface ProjectMatch {
     | "zendesk_ticket"
     | "p2_url"
     | "partner";
+  /**
+   * Human-friendly project name for UI display (e.g. "Body Dao
+   * Acupuncture New Site"). Falls back to project_slug when absent.
+   */
+  display_label?: string;
+  /**
+   * True when project_slug links to a Smithers vault project; false
+   * for external matches (Linear projects not yet imported, etc.).
+   * Defaults to true when omitted to preserve legacy callers.
+   */
+  in_vault?: boolean;
+  /**
+   * Linear project UUID, when matched_by === "linear_project". Used by
+   * /today to resolve Linear pings to their vault project (looking up
+   * by `linear_project_id` in vault frontmatter) so the link target
+   * reflects the Smithers slug rather than Linear's identifier.
+   */
+  linear_project_id?: string;
 }
 
 /**
