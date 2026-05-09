@@ -270,7 +270,10 @@ function ActivityRow({
             {event.excerpt ? <> · {event.excerpt}</> : null}
           </p>
         </div>
-        <span className="text-muted-foreground/80 mt-0.5 shrink-0 text-[11px] tabular-nums">
+        <span
+          className="text-muted-foreground/80 mt-0.5 shrink-0 text-[11px] tabular-nums"
+          suppressHydrationWarning
+        >
           {formatRelative(event.timestamp)}
         </span>
       </div>

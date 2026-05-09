@@ -1275,6 +1275,9 @@ export function mapLinearInboxToPings(
     // notifications — Linear surfaces these in the inbox even though
     // they don't represent inbound work waiting on the user.
     if (self && n.actor?.email?.toLowerCase() === self) continue;
+    // Drop notification types that are pure broadcasts — no link to
+    // act on, no waiting reply, just noise in the panel.
+    if (NOISE_LINEAR_NOTIFICATION_TYPES.has(n.type ?? "")) continue;
     const ping = mapOne(n, i, internalDomains);
     if (!ping) continue;
     // Belt-and-suspenders: even with the more-unique fallback id we
@@ -1327,6 +1330,18 @@ function mapOne(
     is_mock: false,
   };
 }
+
+/**
+ * Linear notification types that don't represent inbound work — they're
+ * informational broadcasts with no action expected. Keep this list
+ * tight: only types that are *purely* noise. When in doubt, prefer to
+ * leave the notification in (the user can dismiss individual rows).
+ */
+const NOISE_LINEAR_NOTIFICATION_TYPES = new Set<string>([
+  // "User X posted an update on Project Y" — no link to act on, no
+  // mention, just a follower broadcast.
+  "projectUpdateCreated",
+]);
 
 function buildLinearProjectMatch(
   project: { name?: string; slug?: string; id?: string } | undefined,

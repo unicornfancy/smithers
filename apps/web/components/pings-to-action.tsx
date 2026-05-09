@@ -83,7 +83,10 @@ export function PingsToAction({
             · {visiblePings.length}
             {hiddenCount > 0 ? ` (${hiddenCount} replied hidden)` : ""}
           </span>
-          <span className="text-muted-foreground/70 ml-auto flex items-center gap-2 text-xs font-normal">
+          <span
+            className="text-muted-foreground/70 ml-auto flex items-center gap-2 text-xs font-normal"
+            suppressHydrationWarning
+          >
             {describeFreshness(result)}
             <RefreshPingsActionedButton
               pings={pings.map((p) => ({
@@ -207,7 +210,10 @@ function PingRow({ ping, actioned }: { ping: Ping; actioned: boolean }) {
           <p className="text-foreground text-sm leading-snug">{ping.excerpt}</p>
         )}
       </div>
-      <span className="text-muted-foreground/80 mt-0.5 shrink-0 text-[11px] tabular-nums">
+      <span
+        className="text-muted-foreground/80 mt-0.5 shrink-0 text-[11px] tabular-nums"
+        suppressHydrationWarning
+      >
         {formatRelative(ping.timestamp)}
       </span>
       <DismissPingButton pingId={ping.id} label={ping.from.name} />

@@ -38,7 +38,11 @@ export function RefreshPingsActionedButton({ pings, checkedAt }: Props) {
   return (
     <span className="flex items-center gap-1.5">
       {checkedAt ? (
-        <span className="text-[10px]" title={`Last checked ${checkedAt}`}>
+        <span
+          className="text-[10px]"
+          title={`Last checked ${checkedAt}`}
+          suppressHydrationWarning
+        >
           checked {formatRelative(checkedAt)}
         </span>
       ) : null}
