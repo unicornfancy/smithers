@@ -3,6 +3,8 @@ import { AppHeader } from "@/components/app-header";
 import { HiveMindReconcileCard } from "@/components/hive-mind-reconcile-card";
 import { McpHealthCard } from "@/components/mcp-health-card";
 import { PageShell, PlaceholderCard } from "@/components/page-shell";
+import { WeeklyUpdateFormatCard } from "@/components/weekly-update-format-card";
+import { loadConfig } from "@/lib/server/config";
 
 export const metadata = {
   title: "Settings · Smithers",
@@ -10,11 +12,16 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const cfg = await loadConfig();
   return (
     <>
       <AppHeader title="Settings" subtitle="Identity, paths, MCPs, thresholds" />
       <PageShell>
+        <WeeklyUpdateFormatCard
+          initialTemplate={cfg.weekly_update?.format_template ?? ""}
+        />
+
         <HiveMindReconcileCard />
 
         <McpHealthCard />

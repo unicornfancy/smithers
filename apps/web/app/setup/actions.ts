@@ -1,12 +1,19 @@
 "use server";
 
 import { existsSync } from "node:fs";
-import { readFile, rename, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-
-import yaml from "js-yaml";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { expandConfigPath, loadConfig } from "@/lib/server/config";
+import {
+  configLocalPath as sharedConfigLocalPath,
+  findRepoRoot,
+  isObject,
+  readYamlFile,
+  tryReadText,
+  writeTextAtomic,
+  writeYamlAtomic,
+} from "@/lib/server/config-write";
 
 export interface SetupStatus {
   paths: {
@@ -195,51 +202,12 @@ function nonEmpty(v: string | undefined): boolean {
   return typeof v === "string" && v.trim().length > 0;
 }
 
-function findRepoRoot(): string {
-  // apps/web → repo root is two up.
-  return resolve(process.cwd(), "..", "..");
-}
-
 function configLocalPath(): string {
-  return join(findRepoRoot(), "config.local.yaml");
+  return sharedConfigLocalPath();
 }
 
 function envLocalPath(): string {
   return join(findRepoRoot(), "apps/web/.env.local");
-}
-
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-async function tryReadText(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, "utf-8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
-  }
-}
-
-async function readYamlFile(path: string): Promise<Record<string, unknown>> {
-  const raw = await tryReadText(path);
-  if (raw === null) return {};
-  const parsed = yaml.load(raw);
-  return isObject(parsed) ? parsed : {};
-}
-
-async function writeYamlAtomic(
-  path: string,
-  data: Record<string, unknown>,
-): Promise<void> {
-  const out = yaml.dump(data, { indent: 2, lineWidth: 120, noRefs: true });
-  await writeTextAtomic(path, out);
-}
-
-async function writeTextAtomic(path: string, contents: string): Promise<void> {
-  const tmp = `${path}.smithers-tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tmp, contents, "utf-8");
-  await rename(tmp, path);
 }
 
 /**
