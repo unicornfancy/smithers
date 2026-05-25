@@ -42,16 +42,14 @@ export function AppSidebar() {
 
   return (
     <aside className="bg-sidebar text-sidebar-foreground border-sidebar-border flex w-60 shrink-0 flex-col border-r">
-      <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
-        <div className="flex size-8 items-center justify-center overflow-hidden rounded-md">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/icon.png"
-            alt="Smithers"
-            className="size-8 object-cover"
-          />
-        </div>
-        <div className="flex flex-col">
+      <div className="flex flex-col items-center gap-2 border-b border-sidebar-border px-4 py-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/icon.png"
+          alt="Smithers"
+          className="aspect-square w-[70%] rounded-md object-cover"
+        />
+        <div className="flex flex-col items-center">
           <span className="text-sm font-semibold leading-tight">Smithers</span>
           <span className="text-muted-foreground text-xs leading-tight">
             personal-assistant workbench
