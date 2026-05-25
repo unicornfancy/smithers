@@ -52,7 +52,7 @@ export function AppSidebar() {
         <div className="flex flex-col items-center">
           <span className="text-sm font-semibold leading-tight">Smithers</span>
           <span className="text-muted-foreground text-xs leading-tight">
-            personal-assistant workbench
+            Launch TAM Assistant
           </span>
         </div>
       </div>
