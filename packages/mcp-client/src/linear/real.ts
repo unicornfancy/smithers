@@ -47,7 +47,9 @@ interface RawProjectResponse {
 }
 
 interface RawProjectIssuesResponse {
-  issues?: { nodes: RawIssueNode[] };
+  project?: {
+    issues: { nodes: RawIssueNode[] };
+  } | null;
 }
 
 interface RawProjectUpdatesResponse {
@@ -166,24 +168,28 @@ export class RealLinearTransport implements LinearClient {
   }
 
   async getProjectIssues(projectId: string): Promise<LinearIssue[]> {
+    // Use the project{issues} connection so the lookup goes through
+    // `project(id: String!)`, which accepts both the short slug id
+    // (e.g. "8ca0b5d6870e") and the full UUID. The top-level
+    // `issues(filter: { project: { id: { eq: ID! } } })` shape rejects
+    // the short slug as "eq must be a UUID".
     const data = await this.gql<RawProjectIssuesResponse>(
-      `query GetProjectIssues($projectId: ID!) {
-        issues(filter: {
-          project: { id: { eq: $projectId } }
-          parent: { null: true }
-        }) {
-          nodes {
-            identifier title priority
-            state { name type }
-            team { key }
-            assignee { name displayName }
-            dueDate updatedAt url
+      `query GetProjectIssues($projectId: String!) {
+        project(id: $projectId) {
+          issues(filter: { parent: { null: true } }) {
+            nodes {
+              identifier title priority
+              state { name type }
+              team { key }
+              assignee { name displayName }
+              dueDate updatedAt url
+            }
           }
         }
       }`,
       { projectId },
     );
-    return data?.issues?.nodes ?? [];
+    return data?.project?.issues?.nodes ?? [];
   }
 
   async getProjectUpdates(projectId: string): Promise<LinearProjectUpdate[]> {

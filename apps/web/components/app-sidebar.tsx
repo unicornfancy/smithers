@@ -12,7 +12,6 @@ import {
   Newspaper,
   PhoneCall,
   Settings,
-  Sparkles,
   Wand2,
   PenLine,
 } from "lucide-react";
@@ -44,8 +43,13 @@ export function AppSidebar() {
   return (
     <aside className="bg-sidebar text-sidebar-foreground border-sidebar-border flex w-60 shrink-0 flex-col border-r">
       <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
-        <div className="bg-sidebar-primary text-sidebar-primary-foreground flex size-8 items-center justify-center rounded-md">
-          <Sparkles className="size-4" />
+        <div className="flex size-8 items-center justify-center overflow-hidden rounded-md">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/icon.png"
+            alt="Smithers"
+            className="size-8 object-cover"
+          />
         </div>
         <div className="flex flex-col">
           <span className="text-sm font-semibold leading-tight">Smithers</span>
