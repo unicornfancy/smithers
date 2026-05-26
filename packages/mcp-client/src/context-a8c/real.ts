@@ -284,7 +284,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
       tasks.push(this.fetchGithubPullRequests(query));
       tasks.push(this.fetchGithubIssues(query));
     }
-    if (allow("slack") && query.refs.primary_slack_channel) {
+    if (allow("slack") && query.refs.slack_channel) {
       tasks.push(this.fetchSlackMessages(query));
     }
     if (allow("zendesk") && (query.refs.zendesk_tickets ?? []).length > 0) {
@@ -527,7 +527,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
   private async fetchSlackMessages(
     query: ProjectActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>> {
-    const channelName = query.refs.primary_slack_channel!;
+    const channelName = query.refs.slack_channel!;
     return runIsolated(
       { cache: this.cache, health: this.health },
       {

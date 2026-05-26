@@ -127,7 +127,7 @@ function collectQuickLinks(p: Project): QuickLink[] {
   }
   if (p.staging_url) out.push({ label: "Staging" });
   if (p.production_url) out.push({ label: "Live" });
-  if (p.primary_slack_channel) out.push({ label: p.primary_slack_channel });
+  if (p.slack_channel) out.push({ label: p.slack_channel });
   return out;
 }
 

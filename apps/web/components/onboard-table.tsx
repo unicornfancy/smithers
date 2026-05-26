@@ -41,6 +41,35 @@ function slugify(input: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+const GENERIC_SLUG_TOKENS = new Set([
+  "phase",
+  "redesign",
+  "migration",
+  "rebuild",
+  "launch",
+  "site",
+  "new",
+  "old",
+  "project",
+  "v1",
+  "v2",
+  "v3",
+]);
+
+// Mirror of @smithers/vault/slug.isGenericSlug — duplicated so this client
+// component doesn't pull the vault barrel. Keep in sync.
+function isGenericSlug(slug: string): boolean {
+  const trimmed = slug.trim().toLowerCase();
+  if (!trimmed) return false;
+  if (trimmed.length < 6) return true;
+  const tokens = trimmed.split("-").filter(Boolean);
+  if (tokens.length === 0) return true;
+  if (tokens.length === 1) return GENERIC_SLUG_TOKENS.has(tokens[0]!);
+  return tokens.every(
+    (t) => GENERIC_SLUG_TOKENS.has(t) || /^\d{1,2}$/.test(t),
+  );
+}
+
 export function OnboardTable({ rows, showAll, hmPartners }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -440,6 +469,21 @@ function SetupDialog({
               onChange={(e) => setProjectSlug(e.target.value)}
               className="mt-1 w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             />
+            <p className="text-muted-foreground mt-1 text-[11px]">
+              Use a partner-specific slug. Generic slugs like{" "}
+              <code className="bg-muted rounded px-1">phase-2</code> or{" "}
+              <code className="bg-muted rounded px-1">redesign</code> collide
+              with other projects when matching follow-ups.
+            </p>
+            {isGenericSlug(projectSlug) && partnerSlug.trim() ? (
+              <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                Too generic — the vault will be created as{" "}
+                <code className="bg-muted rounded px-1">
+                  {partnerSlug.trim()}-{projectSlug}
+                </code>{" "}
+                instead.
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-1.5">
@@ -688,6 +732,21 @@ function ConnectDialog({
               onChange={(e) => setProjectSlug(e.target.value)}
               className="mt-1 w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             />
+            <p className="text-muted-foreground mt-1 text-[11px]">
+              Use a partner-specific slug. Generic slugs like{" "}
+              <code className="bg-muted rounded px-1">phase-2</code> or{" "}
+              <code className="bg-muted rounded px-1">redesign</code> collide
+              with other projects when matching follow-ups.
+            </p>
+            {isGenericSlug(projectSlug) && partnerSlug.trim() ? (
+              <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                Too generic — the vault will be created as{" "}
+                <code className="bg-muted rounded px-1">
+                  {partnerSlug.trim()}-{projectSlug}
+                </code>{" "}
+                instead.
+              </p>
+            ) : null}
           </div>
         </div>
         <DialogFooter>

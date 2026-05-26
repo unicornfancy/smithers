@@ -167,10 +167,10 @@ function collectQuickLinks(p: Project): QuickLink[] {
       icon: <ExternalLink className="size-3.5" />,
     });
   }
-  if (p.primary_slack_channel) {
+  if (p.slack_channel) {
     out.push({
-      label: p.primary_slack_channel,
-      href: `https://app.slack.com/client/T024FPGFE/${slackChannelSlug(p.primary_slack_channel)}`,
+      label: p.slack_channel,
+      href: `https://app.slack.com/client/T024FPGFE/${slackChannelSlug(p.slack_channel)}`,
       icon: <Slack className="size-3.5" />,
     });
   }

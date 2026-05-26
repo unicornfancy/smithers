@@ -110,8 +110,7 @@ export interface CreateProjectFormInput {
   linear_url?: string;
   /** Free-form GitHub URL or owner/repo. */
   github_input?: string;
-  primary_slack_channel?: string;
-  team_slack_channel?: string;
+  slack_channel?: string;
   /**
    * Zendesk threads (Automattic Zendesk). One per line, raw IDs or
    * full URLs. First entry becomes the primary thread.
@@ -150,13 +149,8 @@ export function buildProjectFrontmatterFromForm(
     const repo = parseGithubInput(input.github_input);
     if (repo) out.github_repo = repo;
   }
-  if (input.primary_slack_channel?.trim()) {
-    out.primary_slack_channel = normalizeSlackChannel(
-      input.primary_slack_channel,
-    );
-  }
-  if (input.team_slack_channel?.trim()) {
-    out.team_slack_channel = normalizeSlackChannel(input.team_slack_channel);
+  if (input.slack_channel?.trim()) {
+    out.slack_channel = normalizeSlackChannel(input.slack_channel);
   }
   const tickets = parseZendeskTicketsInput(input.zendesk_tickets_text);
   if (tickets.length > 0) out.zendesk_tickets = tickets;

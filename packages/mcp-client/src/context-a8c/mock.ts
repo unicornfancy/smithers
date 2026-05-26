@@ -446,7 +446,7 @@ export class MockContextA8CTransport implements ContextA8CClient {
       }
     }
 
-    if (query.refs.primary_slack_channel && allow("slack")) {
+    if (query.refs.slack_channel && allow("slack")) {
       const messageCount = 2 + Math.floor(rng() * 3);
       const partner = query.refs.partner ?? "default";
       const externals =
@@ -470,7 +470,7 @@ export class MockContextA8CTransport implements ContextA8CClient {
             is_external: fromExternal,
           },
           title: phrase,
-          excerpt: `#${query.refs.primary_slack_channel}`,
+          excerpt: `#${query.refs.slack_channel}`,
           project_match: {
             project_slug: query.project_slug,
             matched_by: "slack_channel",

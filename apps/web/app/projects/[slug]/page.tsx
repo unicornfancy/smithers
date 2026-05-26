@@ -120,8 +120,7 @@ export default async function ProjectWorkbenchPage({
           linear_project_slug: detail.linear_project_slug,
           zendesk_tickets: detail.zendesk_tickets?.map((t) => t.id),
           p2_url: detail.p2_url,
-          primary_slack_channel: detail.primary_slack_channel,
-          team_slack_channel: detail.team_slack_channel,
+          slack_channel: detail.slack_channel,
           partner: detail.partner,
         },
       }),
@@ -337,8 +336,8 @@ export default async function ProjectWorkbenchPage({
   const configuredSources = [
     {
       label: "Slack",
-      configured: Boolean(detail.primary_slack_channel),
-      reason: !detail.primary_slack_channel ? "no channel configured" : undefined,
+      configured: Boolean(detail.slack_channel),
+      reason: !detail.slack_channel ? "no channel configured" : undefined,
     },
     {
       label: "GitHub",

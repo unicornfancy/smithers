@@ -48,6 +48,22 @@ Possible follow-ups (none scoped, none scheduled):
 
 ---
 
+## Project briefs — attach affordance + skill integration
+
+Discovered while migrating Body Dao: a project brief exists in Hive-Mind at the project root (`brief.md`) but doesn't show in the Project brief card. The card reads from `briefs/project-brief.md` (the documented schema), so any brief saved at a different path is invisible.
+
+Two questions to resolve before building:
+- **Attach UI**: how does a user point Smithers at a brief that doesn't live at the canonical path? Options: link a file (path picker), set a frontmatter `brief_path` override, or move/rename the file to the canonical location.
+- **Project brief skill**: how does `/create-brief` (the existing skill) interact with Smithers when generating a brief into Hive-Mind? Should Smithers offer a "Generate brief" button on the workbench that invokes the skill end-to-end (skill → write to canonical path → commit → render)?
+
+## Projects screen — status filter + hide archived
+
+Two related changes on `/projects`:
+- **Filter chips by status** at the top of the list (active, paused, completed, archived).
+- **Hide archived by default** — currently all statuses render together, which buries active work as the archive grows.
+
+Implementation likely shares the same chip-based filter primitive considered (and reverted) on `/today` T4. If we re-attempt chips here, we need server-side filtering, not just visual hiding, so cache busting through `router.replace` is solved before shipping.
+
 ## Other deferred items
 
 - **v1.5 Linear ↔ Hive Mind ↔ Smithers sync** — deeper field standardization. Deferred until user signals priority.

@@ -33,8 +33,7 @@ interface FormState {
   partner_slug: string;
   linear_url: string;
   github_input: string;
-  primary_slack_channel: string;
-  team_slack_channel: string;
+  slack_channel: string;
   zendesk_tickets_text: string;
   p2_url: string;
   nda: boolean;
@@ -50,8 +49,7 @@ const initial: FormState = {
   partner_slug: "",
   linear_url: "",
   github_input: "",
-  primary_slack_channel: "",
-  team_slack_channel: "",
+  slack_channel: "",
   zendesk_tickets_text: "",
   p2_url: "",
   nda: false,
@@ -100,8 +98,7 @@ export function NewProjectForm() {
         partner_slug: state.partner_slug || undefined,
         linear_url: state.linear_url || undefined,
         github_input: state.github_input || undefined,
-        primary_slack_channel: state.primary_slack_channel || undefined,
-        team_slack_channel: state.team_slack_channel || undefined,
+        slack_channel: state.slack_channel || undefined,
         zendesk_tickets_text: state.zendesk_tickets_text || undefined,
         p2_url: state.p2_url || undefined,
         nda: state.nda,
@@ -219,16 +216,14 @@ export function NewProjectForm() {
             />
           </Field>
           <Field
-            label="Primary Slack channel"
+            label="Slack channel"
             hint="Channel name; with or without #"
           >
             <input
               type="text"
               className={inputClass}
-              value={state.primary_slack_channel}
-              onChange={(e) =>
-                update("primary_slack_channel", e.target.value)
-              }
+              value={state.slack_channel}
+              onChange={(e) => update("slack_channel", e.target.value)}
               placeholder="pocket-nyc-foundation"
             />
           </Field>
@@ -392,13 +387,9 @@ function buildPreviewYaml(s: PreviewState): string {
   }
   const githubRepo = previewGithub(s.github_input);
   if (githubRepo) lines.push(`github_repo: ${githubRepo}`);
-  if (s.primary_slack_channel.trim()) {
-    const ch = s.primary_slack_channel.trim().replace(/^#/, "");
-    lines.push(`primary_slack_channel: ${ch}`);
-  }
-  if (s.team_slack_channel.trim()) {
-    const ch = s.team_slack_channel.trim().replace(/^#/, "");
-    lines.push(`team_slack_channel: ${ch}`);
+  if (s.slack_channel.trim()) {
+    const ch = s.slack_channel.trim().replace(/^#/, "");
+    lines.push(`slack_channel: ${ch}`);
   }
   const tickets = s.zendesk_tickets_text
     .split(/\r?\n/)

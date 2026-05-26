@@ -92,8 +92,7 @@ export interface ProjectFrontmatter {
   fathom_excluded_recording_ids?: string[];
   p2_url?: string;
 
-  primary_slack_channel?: string;
-  team_slack_channel?: string;
+  slack_channel?: string;
 
   agenda_file?: string;
   next_nudge?: string;
@@ -146,8 +145,7 @@ export interface Project {
   /** See ProjectFrontmatter.fathom_excluded_recording_ids — same shape, always an array here. */
   fathom_excluded_recording_ids?: string[];
   p2_url?: string;
-  primary_slack_channel?: string;
-  team_slack_channel?: string;
+  slack_channel?: string;
   agenda_file?: string;
   next_nudge?: string;
   review_interval_days?: number;

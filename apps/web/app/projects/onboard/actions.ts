@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { slugify } from "@smithers/vault";
+import { isGenericSlug, slugify } from "@smithers/vault";
 
 import { getMcpClient } from "@/lib/server/mcp";
 import { getVault } from "@/lib/server/vault";
@@ -29,9 +29,17 @@ export async function importFromHiveMindAction(input: {
   }
   const vault = await getVault();
   try {
+    // Prefix with partner when the HM project slug is generic (`phase-2`,
+    // `redesign`, etc.). Without this, follow-up matching over-matches every
+    // row containing "phase 2" or similar across the vault.
+    const titleSlug = slugify(title);
+    const projectSlugBare = slugify(project);
+    const vaultSlug = isGenericSlug(titleSlug) || isGenericSlug(projectSlugBare)
+      ? `${partner}-${projectSlugBare}`
+      : titleSlug;
     const result = await vault.createProjectScratchpad({
       name: title,
-      slug: slugify(title),
+      slug: vaultSlug,
       kind: "partner",
       partner,
       hive_mind_partner_slug: partner,
@@ -96,9 +104,14 @@ export async function importFromHiveMindBatchAction(
       continue;
     }
     try {
+      const titleSlug = slugify(title);
+      const projectSlugBare = slugify(project);
+      const vaultSlug = isGenericSlug(titleSlug) || isGenericSlug(projectSlugBare)
+        ? `${partner}-${projectSlugBare}`
+        : titleSlug;
       const result = await vault.createProjectScratchpad({
         name: title,
-        slug: slugify(title),
+        slug: vaultSlug,
         kind: "partner",
         partner,
         hive_mind_partner_slug: partner,
@@ -268,9 +281,14 @@ export async function setupProjectFromLinearAction(input: {
     await mcp.hiveMind.commit(
       `feat: scaffold ${partnerSlug}/${projectSlug} from Smithers (Linear)`,
     );
+    // Vault slug needs to be distinct from generic HM slugs to avoid
+    // follow-up over-matching. HM stays as the user picked.
+    const vaultSlug = isGenericSlug(projectSlug)
+      ? `${partnerSlug}-${projectSlug}`
+      : projectSlug;
     const result = await vault.createProjectScratchpad({
       name: projectName,
-      slug: projectSlug,
+      slug: vaultSlug,
       kind: "partner",
       partner: partnerSlug,
       hive_mind_partner_slug: partnerSlug,

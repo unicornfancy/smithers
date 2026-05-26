@@ -91,7 +91,11 @@ export async function readProject(
       return readFlatProject(opts, join(paths.projects, e.name), e.name);
     }
   }
-  return null;
+  // Fallback: filename may have drifted from the frontmatter `slug:` (e.g. user
+  // renamed the file in Obsidian without updating the frontmatter, or vice
+  // versa). Scan and resolve by frontmatter slug so links don't break.
+  const all = await listProjects(opts);
+  return all.find((p) => p.slug === slug) ?? null;
 }
 
 /**
@@ -220,8 +224,7 @@ async function projectFromFile(
       fm.fathom_excluded_recording_ids,
     ),
     p2_url: fm.p2_url,
-    primary_slack_channel: fm.primary_slack_channel,
-    team_slack_channel: fm.team_slack_channel,
+    slack_channel: fm.slack_channel,
     agenda_file: fm.agenda_file,
     next_nudge: fm.next_nudge,
     review_interval_days: fm.review_interval_days,
@@ -762,8 +765,7 @@ export interface UpdateProjectFrontmatterPatch {
   hive_mind_partner_slug?: string;
   hive_mind_project_slug?: string;
   p2_url?: string;
-  primary_slack_channel?: string;
-  team_slack_channel?: string;
+  slack_channel?: string;
   agenda_file?: string;
   next_nudge?: string;
   review_interval_days?: number;

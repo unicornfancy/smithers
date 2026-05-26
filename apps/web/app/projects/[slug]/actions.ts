@@ -1451,8 +1451,7 @@ export async function getDraftContextSuggestionsAction(
         linear_project_slug: project.linear_project_slug,
         zendesk_tickets: project.zendesk_tickets?.map((t) => t.id),
         p2_url: project.p2_url,
-        primary_slack_channel: project.primary_slack_channel,
-        team_slack_channel: project.team_slack_channel,
+        slack_channel: project.slack_channel,
         partner: project.partner,
       },
     })

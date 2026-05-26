@@ -61,8 +61,7 @@ interface FormState {
   linear_project_id: string;
   linear_project_slug: string;
   p2_url: string;
-  primary_slack_channel: string;
-  team_slack_channel: string;
+  slack_channel: string;
   next_nudge: string;
   nda: boolean;
   tags_csv: string;
@@ -80,8 +79,7 @@ function projectToFormState(p: Project): FormState {
     linear_project_id: p.linear_project_id ?? "",
     linear_project_slug: p.linear_project_slug ?? "",
     p2_url: p.p2_url ?? "",
-    primary_slack_channel: p.primary_slack_channel ?? "",
-    team_slack_channel: p.team_slack_channel ?? "",
+    slack_channel: p.slack_channel ?? "",
     next_nudge: p.next_nudge ?? "",
     nda: p.nda ?? false,
     tags_csv: (p.tags ?? []).join(", "),
@@ -107,8 +105,7 @@ function formStateToPatch(s: FormState, original: FormState) {
   diffString("linear_project_id");
   diffString("linear_project_slug");
   diffString("p2_url");
-  diffString("primary_slack_channel");
-  diffString("team_slack_channel");
+  diffString("slack_channel");
   diffString("next_nudge");
   if (s.nda !== original.nda) patch["nda"] = s.nda;
   if (s.tags_csv !== original.tags_csv) {
@@ -346,22 +343,13 @@ export function ProjectMetadataModal({ project }: Props) {
                 disabled={pending}
               />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Primary Slack" hint="#channel-name">
-                <Input
-                  value={state.primary_slack_channel}
-                  onChange={(v) => update("primary_slack_channel", v)}
-                  disabled={pending}
-                />
-              </Field>
-              <Field label="Team Slack" hint="#channel-name">
-                <Input
-                  value={state.team_slack_channel}
-                  onChange={(v) => update("team_slack_channel", v)}
-                  disabled={pending}
-                />
-              </Field>
-            </div>
+            <Field label="Slack channel" hint="#channel-name">
+              <Input
+                value={state.slack_channel}
+                onChange={(v) => update("slack_channel", v)}
+                disabled={pending}
+              />
+            </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Next nudge" hint="YYYY-MM-DD">
                 <Input

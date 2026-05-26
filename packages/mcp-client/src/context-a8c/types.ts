@@ -36,8 +36,7 @@ export interface ProjectActivityRefs {
   /** Raw IDs or full URLs; first is the primary thread. */
   zendesk_tickets?: string[];
   p2_url?: string;
-  primary_slack_channel?: string;
-  team_slack_channel?: string;
+  slack_channel?: string;
   partner?: string;
 }
 
