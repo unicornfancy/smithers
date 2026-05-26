@@ -16,7 +16,19 @@
 export const VAULT_PACKAGE_VERSION = "0.0.3";
 
 import { resolveVaultOptions, type VaultOptions } from "./config";
-import { listAgendas } from "./agendas";
+import {
+  addAgendaItem,
+  agendaExists,
+  archiveCheckedAgendaItems,
+  listAgendas,
+  readAgenda,
+  setAgendaItemChecked,
+  type Agenda,
+  type AgendaArchiveSection,
+  type AgendaItem,
+  type AgendaMutationResult,
+  type AgendaRef,
+} from "./agendas";
 import {
   appendChatToCallNotes,
   findCallNotesByRecordingId,
@@ -222,7 +234,17 @@ export {
   editProjectTaskText,
   dailyNotePath,
   filterFollowUpsForProject,
+  addAgendaItem,
+  agendaExists,
+  archiveCheckedAgendaItems,
   listAgendas,
+  readAgenda,
+  setAgendaItemChecked,
+  type Agenda,
+  type AgendaArchiveSection,
+  type AgendaItem,
+  type AgendaMutationResult,
+  type AgendaRef,
   listCallNotes,
   listRecentCallSlices,
   listDailyNotes,
@@ -301,6 +323,21 @@ export interface Vault {
     range: Parameters<typeof listRecentCallSlices>[1],
   ) => ReturnType<typeof listRecentCallSlices>;
   listAgendas: () => ReturnType<typeof listAgendas>;
+  readAgenda: (filename: string) => ReturnType<typeof readAgenda>;
+  agendaExists: (filename: string) => ReturnType<typeof agendaExists>;
+  addAgendaItem: (
+    filename: string,
+    text: string,
+  ) => ReturnType<typeof addAgendaItem>;
+  setAgendaItemChecked: (
+    filename: string,
+    itemId: string,
+    checked: boolean,
+  ) => ReturnType<typeof setAgendaItemChecked>;
+  archiveCheckedAgendaItems: (
+    filename: string,
+    dateLabel: string,
+  ) => ReturnType<typeof archiveCheckedAgendaItems>;
   readStyleGuide: () => ReturnType<typeof readStyleGuide>;
   readWorkingWith: () => ReturnType<typeof readWorkingWith>;
   listWeeklyUpdates: () => ReturnType<typeof listWeeklyUpdates>;
@@ -457,6 +494,13 @@ export function createVault(options: VaultOptions): Vault {
     listCallNotes: () => listCallNotes(resolved),
     listRecentCallSlices: (range) => listRecentCallSlices(resolved, range),
     listAgendas: () => listAgendas(resolved),
+    readAgenda: (filename) => readAgenda(resolved, filename),
+    agendaExists: (filename) => agendaExists(resolved, filename),
+    addAgendaItem: (filename, text) => addAgendaItem(resolved, filename, text),
+    setAgendaItemChecked: (filename, itemId, checked) =>
+      setAgendaItemChecked(resolved, filename, itemId, checked),
+    archiveCheckedAgendaItems: (filename, dateLabel) =>
+      archiveCheckedAgendaItems(resolved, filename, dateLabel),
     readStyleGuide: () => readStyleGuide(resolved),
     readWorkingWith: () => readWorkingWith(resolved),
     listWeeklyUpdates: () => listWeeklyUpdates(resolved),
