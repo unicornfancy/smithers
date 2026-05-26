@@ -21,6 +21,12 @@ export interface SetupStatus {
     hive_mind: PathEntry;
     my_voice: PathEntry;
   };
+  identity: {
+    name: string;
+    email: string;
+    github_handle: string;
+    slack_handle: string;
+  };
   api_keys: {
     anthropic: { set: boolean };
     linear: { set: boolean };
@@ -81,6 +87,12 @@ export async function getSetupStatusAction(): Promise<SetupStatus> {
       vault: pathEntry(cfg.paths.vault, vaultResolved),
       hive_mind: pathEntry(cfg.paths.hive_mind, hiveMindResolved),
       my_voice: pathEntry(cfg.paths.my_voice ?? "", myVoiceResolved),
+    },
+    identity: {
+      name: cfg.identity.name ?? "",
+      email: cfg.identity.email ?? "",
+      github_handle: cfg.identity.github_handle ?? "",
+      slack_handle: cfg.identity.slack_handle ?? "",
     },
     api_keys: {
       anthropic: { set: nonEmpty(process.env["ANTHROPIC_API_KEY"]) },
@@ -150,6 +162,52 @@ export async function updatePathsAction(
     if (!changed) return { ok: true };
     if (Object.keys(paths).length > 0) next["paths"] = paths;
     else delete next["paths"];
+    await writeYamlAtomic(path, next);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "write-failed",
+    };
+  }
+}
+
+interface IdentityPatch {
+  name?: string;
+  email?: string;
+  github_handle?: string;
+  slack_handle?: string;
+}
+
+export async function updateIdentityAction(
+  input: IdentityPatch,
+): Promise<ActionResult> {
+  try {
+    const path = configLocalPath();
+    const current = await readYamlFile(path);
+    const next = structuredClone(current) as Record<string, unknown>;
+    const identity = isObject(next["identity"])
+      ? (next["identity"] as Record<string, unknown>)
+      : {};
+    let changed = false;
+    for (const key of [
+      "name",
+      "email",
+      "github_handle",
+      "slack_handle",
+    ] as const) {
+      if (input[key] === undefined) continue;
+      const incoming = (input[key] ?? "").trim();
+      const existing =
+        typeof identity[key] === "string" ? (identity[key] as string) : "";
+      if (incoming === existing) continue;
+      if (incoming === "") delete identity[key];
+      else identity[key] = incoming;
+      changed = true;
+    }
+    if (!changed) return { ok: true };
+    if (Object.keys(identity).length > 0) next["identity"] = identity;
+    else delete next["identity"];
     await writeYamlAtomic(path, next);
     return { ok: true };
   } catch (err) {

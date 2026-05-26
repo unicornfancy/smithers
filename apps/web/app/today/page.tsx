@@ -61,6 +61,7 @@ import {
   listEntityIdsWithAction,
   localMidnight,
 } from "@/lib/server/user-actions";
+import { requireConfiguredVault } from "@/lib/server/require-setup";
 import { getVault } from "@/lib/server/vault";
 
 export const metadata = {
@@ -70,6 +71,7 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function TodayPage() {
+  await requireConfiguredVault();
   const today = new Date().toLocaleDateString(undefined, {
     weekday: "long",
     year: "numeric",

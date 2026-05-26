@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import {
   updateApiKeyAction,
+  updateIdentityAction,
   updateMcpsAction,
   updatePathsAction,
   type SetupStatus,
@@ -65,6 +66,7 @@ export function SetupWizard({ initialStatus }: Props) {
     <div className="flex flex-col gap-6">
       <FirstRunBanner status={status} />
       <PathsSection status={status} setStatus={setStatus} />
+      <IdentitySection status={status} setStatus={setStatus} />
       <ApiKeysSection status={status} setStatus={setStatus} />
       <McpsSection status={status} setStatus={setStatus} />
       <OAuthSection />
@@ -253,6 +255,128 @@ function PathRow({
         </p>
       ) : null}
     </div>
+  );
+}
+
+type IdentityKey = "name" | "email" | "github_handle" | "slack_handle";
+
+const IDENTITY_FIELDS: { key: IdentityKey; label: string; hint: string; placeholder: string }[] = [
+  {
+    key: "name",
+    label: "Name",
+    hint: "Shown in your weekly updates and authored content.",
+    placeholder: "e.g. Katie McCanna",
+  },
+  {
+    key: "email",
+    label: "Email",
+    hint: "Used to filter your own activity out of Pings to Action.",
+    placeholder: "you@automattic.com",
+  },
+  {
+    key: "github_handle",
+    label: "GitHub handle",
+    hint: "Detects your replies on GitHub issues / PRs (no @).",
+    placeholder: "unicornfancy",
+  },
+  {
+    key: "slack_handle",
+    label: "Slack handle",
+    hint: "Detects your replies in Slack threads (no @).",
+    placeholder: "katiem",
+  },
+];
+
+function IdentitySection({
+  status,
+  setStatus,
+}: {
+  status: SetupStatus;
+  setStatus: React.Dispatch<React.SetStateAction<SetupStatus>>;
+}) {
+  const [draft, setDraft] = React.useState(status.identity);
+  const [pending, setPending] = React.useState(false);
+
+  React.useEffect(() => {
+    setDraft(status.identity);
+  }, [status.identity]);
+
+  const dirty = (Object.keys(draft) as IdentityKey[]).some(
+    (k) => draft[k] !== status.identity[k],
+  );
+
+  async function handleSave() {
+    setPending(true);
+    try {
+      const res = await updateIdentityAction(draft);
+      if (res.ok) {
+        setStatus((s) => ({ ...s, identity: draft }));
+        toast.success("Identity saved");
+      } else {
+        toast.error(res.reason);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Identity</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-muted-foreground text-xs">
+          These power the Pings to Action filters on /today — your own
+          comments, replies, and authored notifications get hidden so the
+          feed shows only things that need your attention.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {IDENTITY_FIELDS.map((field) => (
+            <div key={field.key} className="flex flex-col gap-1">
+              <label className="text-foreground text-xs font-medium">
+                {field.label}
+                <span className="text-muted-foreground/80 ml-1.5 font-normal">
+                  {field.hint}
+                </span>
+              </label>
+              <input
+                type="text"
+                value={draft[field.key]}
+                placeholder={field.placeholder}
+                disabled={pending}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, [field.key]: e.target.value }))
+                }
+                className={cn(
+                  "border-input bg-background focus-visible:ring-ring",
+                  "h-8 rounded-md border px-2.5 text-xs",
+                  "focus-visible:outline-none focus-visible:ring-1",
+                  "disabled:opacity-60",
+                )}
+              />
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={pending || !dirty}
+            onClick={() => void handleSave()}
+            className="h-8"
+          >
+            {pending ? (
+              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+            ) : null}
+            Save identity
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
