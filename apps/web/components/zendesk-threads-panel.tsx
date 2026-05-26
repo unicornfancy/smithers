@@ -22,6 +22,7 @@ import { ConvertFollowUpToTaskButton } from "@/components/convert-follow-up-to-t
 import { DraftFollowUpNudgeButton } from "@/components/draft-follow-up-nudge-button";
 import { DraftZendeskReplyButton } from "@/components/draft-zendesk-reply-button";
 import { MakePrimaryButton } from "@/components/make-primary-button";
+import { SummarizeZendeskThreadButton } from "@/components/summarize-zendesk-thread-button";
 import { RefreshZendeskMetadataButton } from "@/components/refresh-zendesk-metadata-button";
 import { ResolveFollowUpButton } from "@/components/resolve-follow-up-button";
 import { SnoozeFollowUpButton } from "@/components/snooze-follow-up-button";
@@ -702,6 +703,13 @@ function ZendeskRow({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
+        {projectSlug ? (
+          <SummarizeZendeskThreadButton
+            projectSlug={projectSlug}
+            ticketId={ticket.id}
+            ticketSubject={ticket.subject}
+          />
+        ) : null}
         {projectSlug && !dim ? (
           <DraftZendeskReplyButton
             projectSlug={projectSlug}
