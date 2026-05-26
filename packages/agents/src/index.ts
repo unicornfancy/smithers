@@ -63,6 +63,13 @@ export {
 } from "./agents/draft-zendesk-reply";
 
 export {
+  summarizeZendeskThread,
+  type SummarizeZendeskThreadComment,
+  type SummarizeZendeskThreadInput,
+  type SummarizeZendeskThreadOutput,
+} from "./agents/summarize-zendesk-thread";
+
+export {
   analyzeCallTranscript,
   type AnalyzeCallTranscriptInput,
   type AnalyzeCallTranscriptOutput,

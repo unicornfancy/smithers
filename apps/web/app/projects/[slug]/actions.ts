@@ -10,6 +10,7 @@ import {
   draftP2Update,
   draftZendeskReply,
   suggestNextStep,
+  summarizeZendeskThread,
   type AnalyzeCallTranscriptOutput,
   type CallActionItem,
   type CallDecision,
@@ -18,6 +19,8 @@ import {
   type ComposeNudgeOutput,
   type DraftP2UpdateOutput,
   type DraftZendeskReplyOutput,
+  type SummarizeZendeskThreadComment,
+  type SummarizeZendeskThreadOutput,
   type SuggestNextStepOutput,
 } from "@smithers/agents";
 import type {
@@ -456,6 +459,84 @@ export async function draftZendeskReplyAction(
       intent,
       style,
       extra_context: extraContext,
+    });
+    return { ok: true, data: result.output };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Agent call failed",
+    };
+  }
+}
+
+/**
+ * Run the summarize-zendesk-thread agent for a single attached ticket.
+ * Pulls subject + status from frontmatter, fetches the most recent
+ * comments via ContextA8C (best-effort; agent gracefully handles the
+ * empty case), and asks Claude for a short markdown summary the user
+ * can skim. Read-only — no frontmatter persistence; copy-only dialog.
+ */
+export async function summarizeZendeskThreadAction(
+  slug: string,
+  ticketId: string,
+): Promise<
+  | { ok: true; data: SummarizeZendeskThreadOutput }
+  | { ok: false; reason: "not-configured" | "error"; message?: string }
+> {
+  if (!slug) throw new Error("slug is required");
+  if (!ticketId) throw new Error("ticketId is required");
+
+  const runtime = await getAgentRuntime();
+  if (!runtime) return { ok: false, reason: "not-configured" };
+
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) {
+    return { ok: false, reason: "error", message: "Project not found" };
+  }
+
+  const thread = (project.zendesk_tickets ?? []).find(
+    (t) => t.id === ticketId,
+  );
+  if (!thread) {
+    return {
+      ok: false,
+      reason: "error",
+      message: `Ticket ${ticketId} is not attached to this project`,
+    };
+  }
+
+  // Best-effort comment fetch. ContextA8C sessions expire intermittently
+  // and the activity helper returns [] on any upstream error. The agent
+  // handles the no-comments case gracefully (summarizes from subject +
+  // status alone and notes the limitation).
+  const mcp = await getMcpClient();
+  const recent = await mcp.contextA8C
+    .fetchZendeskTicketActivity(ticketId, {
+      projectSlug: slug,
+      limit: 30,
+    })
+    .catch(() => []);
+  // fetchZendeskTicketActivity returns newest-first; the agent reads
+  // oldest-first so the prompt mirrors the natural read order.
+  const ordered = [...recent].reverse();
+  const comments: SummarizeZendeskThreadComment[] = ordered.map((e) => ({
+    author: e.actor?.name ?? "Zendesk",
+    is_external: e.actor?.is_external === true,
+    timestamp: e.timestamp,
+    body: e.excerpt ?? "",
+  }));
+
+  try {
+    const result = await summarizeZendeskThread(runtime, {
+      project,
+      thread: {
+        id: thread.id,
+        subject: thread.subject ?? null,
+        status: thread.status ?? null,
+      },
+      comments,
     });
     return { ok: true, data: result.output };
   } catch (err) {
