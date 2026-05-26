@@ -48,6 +48,22 @@ Possible follow-ups (none scoped, none scheduled):
 
 ---
 
+## Personal Digest (v2)
+
+A weekly self-check surface that's about Katie/the user, not the work. Distinct from `/weekly-updates` (which goes to the team P2 and reports on partner projects). Two pieces:
+
+- **Weekly highlight prompt** — once a week, asks "what's one thing worth remembering from this week?" Free-form answer persists to the vault (likely `Personal Digest/<YYYY-WNN>.md` or similar). No partner context, no agent rewriting — captured as-is.
+- **Personal development tracker** — running surface for goals, skills being learned, things to revisit. Lightweight; probably a single file with the same Open Items pattern as agendas, or section-per-area.
+
+Open questions for the design conversation:
+- When does the highlight prompt fire? Friday afternoon? Monday on first dev-server load of the week? Banner on `/today` vs dedicated `/digest` page?
+- How does this relate to (or stay separate from) weekly-updates? They're different audiences but might share a draft cycle.
+- Does this connect to the existing learn-from-archives loop / style guide, or stay isolated?
+
+Defer concrete design until weekly-updates settles and this can be properly scoped against it.
+
+---
+
 ## Project briefs — attach affordance + skill integration
 
 Discovered while migrating Body Dao: a project brief exists in Hive-Mind at the project root (`brief.md`) but doesn't show in the Project brief card. The card reads from `briefs/project-brief.md` (the documented schema), so any brief saved at a different path is invisible.
