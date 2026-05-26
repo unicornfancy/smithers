@@ -1,4 +1,5 @@
 import * as React from "react";
+import Link from "next/link";
 
 import { cn } from "@/lib/utils";
 
@@ -36,7 +37,14 @@ export function VaultMissingNotice({ vaultPath }: { vaultPath: string }) {
         <code className="bg-amber-100 dark:bg-amber-900/50 rounded px-1 py-0.5 text-[11px]">
           {vaultPath}
         </code>
-        . Run the setup wizard to point at the right folder.
+        .{" "}
+        <Link
+          href="/setup"
+          className="underline-offset-2 hover:underline font-medium"
+        >
+          Run the setup wizard
+        </Link>{" "}
+        to point at the right folder.
       </p>
     </div>
   );

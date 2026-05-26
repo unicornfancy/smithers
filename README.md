@@ -2,13 +2,11 @@
 
 > _A loyal, slightly fussy butler for your work._
 
-Smithers is a project-centric personal-assistant workbench that runs locally on your machine. It pulls together everything that lives in different tools — your vault notes, partner knowledge, GitHub repos, Linear designs, P2 threads, Slack conversations, Zendesk escalations, call transcripts — and surfaces them as **per-project workbenches** with AI-assisted drafting, follow-up tracking, agendas, weekly updates, and a derived `/today` dashboard.
+Smithers is a project-centric personal-assistant workbench for **Automattic Team51 TAMs**. It runs locally on your machine and pulls together everything that lives in different tools — your vault notes, partner knowledge from [Team51-Hive-Mind](https://github.com/a8cteam51/Team51-Hive-Mind), GitHub repos, Linear designs, P2 threads, Slack conversations, Zendesk escalations, Fathom call transcripts — and surfaces them as **per-project workbenches** with AI-assisted drafting, follow-up tracking, agendas, weekly updates, and a derived `/today` dashboard.
 
-It is the successor to a notes-folder-plus-cron-jobs setup. The vault stays as the source of truth, but you no longer live inside it.
+Markdown is the source of truth. SQLite at `~/.smithers/state.db` is cache + UI state only.
 
-## Status
-
-🚧 **Pre-alpha.** Currently scaffolding. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design and the tracked plan in `~/.cursor/plans/smithers_*.plan.md` for the full build map.
+New to Smithers? Start with [**ONBOARDING.md**](ONBOARDING.md) for the first-time walkthrough. When something breaks, [**TROUBLESHOOTING.md**](TROUBLESHOOTING.md) has the diagnostic commands.
 
 ## What's different from a notes folder
 
@@ -45,6 +43,15 @@ It is the successor to a notes-folder-plus-cron-jobs setup. The vault stays as t
 
 Plus `packages/transcription` (pluggable adapter pattern: Fathom · Granola · Manual paste; Whisper/Gemini stubs) and `packages/ui` (shared shadcn/ui components).
 
+## Prereqs
+
+- macOS or Linux (paths assume `~/` Unix semantics).
+- **Node 20+** (`node --version` — the repo's `engines` enforces this).
+- **pnpm 9+** (`pnpm --version` — install with `npm install -g pnpm` or `corepack enable`).
+- An **Anthropic API key** (`sk-ant-…`) for the AI affordances.
+- Optional but recommended: a local clone of [`a8cteam51/Team51-Hive-Mind`](https://github.com/a8cteam51/Team51-Hive-Mind) for partner data. Smithers runs without it (mock mode), but partner workbenches need it for real data.
+- Optional: a Linear API key for direct Linear writes (project status, sub-tasks).
+
 ## Quick start
 
 ```bash
@@ -55,19 +62,20 @@ cd ~/smithers
 # install
 pnpm install
 
-# run the first-time setup wizard (configures vault path, MCPs, transcription, etc.)
+# start the dev server
 pnpm dev
 # → open http://localhost:3000/setup
 ```
 
-The wizard will:
+The `/setup` wizard configures three things:
 
-1. Detect or create your vault.
-2. Detect a sibling [Team51-Hive-Mind](https://github.com/a8cteam51/Team51-Hive-Mind) clone (skippable).
-3. Configure your transcription provider.
-4. Test live-data MCP connections (skippable — degraded mode works).
-5. Run an initial sync.
-6. Drop you on `/today`.
+1. **Paths** — vault (your markdown notes folder), Hive Mind clone, my-voice skill files.
+2. **API keys** — `ANTHROPIC_API_KEY` (required) and `LINEAR_API_KEY` (optional). Both write to `apps/web/.env.local`.
+3. **MCP toggles** — turn ContextA8C / Hive Mind / Fathom on once you've set the corresponding path. Any MCP that's off falls back to mock data, so the UI keeps working while you finish setup.
+
+After saving any field, **restart `pnpm dev`** — Next.js reads config and env vars once at boot. Then visit `/today` for the daily dashboard.
+
+The full walkthrough lives in [`ONBOARDING.md`](ONBOARDING.md), including expected output at each step and the most common errors.
 
 ## Repo layout
 
@@ -92,6 +100,8 @@ smithers/
 
 ## Documentation
 
+- [`ONBOARDING.md`](ONBOARDING.md) — first-time setup walkthrough for a new TAM
+- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — "Smithers is acting weird, what do I run?"
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system design and component boundaries
 - [`docs/PHASE6.md`](docs/PHASE6.md) — context assembly model
 - [`docs/HIVE-MIND.md`](docs/HIVE-MIND.md) — how Smithers consumes Team51-Hive-Mind

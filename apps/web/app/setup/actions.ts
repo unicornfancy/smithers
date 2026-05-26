@@ -1,6 +1,6 @@
 "use server";
 
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -17,9 +17,9 @@ import {
 
 export interface SetupStatus {
   paths: {
-    vault: { value: string; exists: boolean; resolved: string };
-    hive_mind: { value: string; exists: boolean; resolved: string };
-    my_voice: { value: string; exists: boolean; resolved: string };
+    vault: PathEntry;
+    hive_mind: PathEntry;
+    my_voice: PathEntry;
   };
   api_keys: {
     anthropic: { set: boolean };
@@ -34,7 +34,25 @@ export interface SetupStatus {
     configured_path: string;
     built: boolean;
   };
+  config_local: {
+    path: string;
+    exists: boolean;
+  };
+  /** Kept for backwards-compat with anything reading the previous shape. */
   config_local_path: string;
+}
+
+export interface PathEntry {
+  value: string;
+  resolved: string;
+  exists: boolean;
+  /**
+   * Set when `exists` is true but the target is the wrong kind (e.g. a
+   * file where we want a directory). Surfaces as a distinct warning in
+   * the wizard so users don't see a green "Found" for a misconfigured
+   * path.
+   */
+  is_directory: boolean;
 }
 
 type ActionResult<T = undefined> =
@@ -60,21 +78,9 @@ export async function getSetupStatusAction(): Promise<SetupStatus> {
 
   return {
     paths: {
-      vault: {
-        value: cfg.paths.vault,
-        resolved: vaultResolved,
-        exists: vaultResolved ? existsSync(vaultResolved) : false,
-      },
-      hive_mind: {
-        value: cfg.paths.hive_mind,
-        resolved: hiveMindResolved,
-        exists: hiveMindResolved ? existsSync(hiveMindResolved) : false,
-      },
-      my_voice: {
-        value: cfg.paths.my_voice ?? "",
-        resolved: myVoiceResolved,
-        exists: myVoiceResolved ? existsSync(myVoiceResolved) : false,
-      },
+      vault: pathEntry(cfg.paths.vault, vaultResolved),
+      hive_mind: pathEntry(cfg.paths.hive_mind, hiveMindResolved),
+      my_voice: pathEntry(cfg.paths.my_voice ?? "", myVoiceResolved),
     },
     api_keys: {
       anthropic: { set: nonEmpty(process.env["ANTHROPIC_API_KEY"]) },
@@ -89,8 +95,30 @@ export async function getSetupStatusAction(): Promise<SetupStatus> {
       configured_path: hiveMindServerPath,
       built: hiveMindServerPath ? existsSync(hiveMindServerPath) : false,
     },
+    config_local: {
+      path: configLocalPath,
+      exists: existsSync(configLocalPath),
+    },
     config_local_path: configLocalPath,
   };
+}
+
+function pathEntry(value: string, resolved: string): PathEntry {
+  if (!resolved) {
+    return { value, resolved, exists: false, is_directory: false };
+  }
+  if (!existsSync(resolved)) {
+    return { value, resolved, exists: false, is_directory: false };
+  }
+  let isDir = false;
+  try {
+    isDir = statSync(resolved).isDirectory();
+  } catch {
+    // permissions or transient FS error — treat as missing rather than
+    // crashing the whole wizard load.
+    return { value, resolved, exists: false, is_directory: false };
+  }
+  return { value, resolved, exists: true, is_directory: isDir };
 }
 
 interface PathsPatch {

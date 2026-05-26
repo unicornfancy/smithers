@@ -63,11 +63,54 @@ export function SetupWizard({ initialStatus }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
+      <FirstRunBanner status={status} />
       <PathsSection status={status} setStatus={setStatus} />
       <ApiKeysSection status={status} setStatus={setStatus} />
       <McpsSection status={status} setStatus={setStatus} />
       <OAuthSection />
-      <ReloadNotice configLocalPath={status.config_local_path} />
+      <ReloadNotice
+        configLocalPath={status.config_local.path}
+        configLocalExists={status.config_local.exists}
+      />
+    </div>
+  );
+}
+
+function FirstRunBanner({ status }: { status: SetupStatus }) {
+  // Heuristic: show the banner only when config.local.yaml doesn't
+  // exist yet AND essentials are missing. We don't want this nagging
+  // returning users with a fully-configured setup.
+  const essentialsMissing =
+    !status.paths.vault.exists ||
+    !status.paths.vault.is_directory ||
+    !status.api_keys.anthropic.set;
+  if (status.config_local.exists && !essentialsMissing) return null;
+
+  const lines: string[] = [];
+  if (!status.config_local.exists) {
+    lines.push(
+      "No config.local.yaml yet — saving any field below creates it. Falling back to config.example.yaml defaults until then.",
+    );
+  }
+  if (!status.paths.vault.exists || !status.paths.vault.is_directory) {
+    lines.push(
+      "Set the Vault path to a directory of markdown notes. Smithers reads and writes there.",
+    );
+  }
+  if (!status.api_keys.anthropic.set) {
+    lines.push(
+      "Add an ANTHROPIC_API_KEY so the AI affordances (drafts, top-3, weekly update) can run.",
+    );
+  }
+
+  return (
+    <div className="bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-100 border-amber-200 dark:border-amber-900/50 flex flex-col gap-1 rounded-md border px-4 py-3 text-sm">
+      <p className="font-medium">Finish setup to use Smithers</p>
+      <ul className="text-amber-800/85 dark:text-amber-100/80 list-disc space-y-0.5 pl-5 text-xs">
+        {lines.map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -127,6 +170,7 @@ function PathRow({
 
   const configured = entry.value.trim() !== "";
   const exists = entry.exists;
+  const wrongKind = exists && !entry.is_directory;
 
   async function handleSave() {
     setPending(true);
@@ -158,12 +202,20 @@ function PathRow({
           state={
             !configured
               ? "missing"
-              : exists
-                ? "ok"
-                : "warn"
+              : wrongKind
+                ? "warn"
+                : exists
+                  ? "ok"
+                  : "warn"
           }
           okLabel="Found"
-          warnLabel={configured ? "Path not found" : "Not set"}
+          warnLabel={
+            !configured
+              ? "Not set"
+              : wrongKind
+                ? "Not a directory"
+                : "Path not found"
+          }
         />
       </div>
       <div className="flex gap-2">
@@ -415,6 +467,18 @@ function HiveMindBuildHint({
   hiveMindPath: string;
 }) {
   if (!enabled) return null;
+  if (!hiveMindPath) {
+    return (
+      <p className="pl-6 text-xs text-amber-700 dark:text-amber-400">
+        <AlertTriangle className="mr-1 inline size-3" />
+        Set the Hive Mind path above. Clone{" "}
+        <code className="bg-muted rounded px-1 py-0.5 font-mono">
+          a8cteam51/Team51-Hive-Mind
+        </code>{" "}
+        first if you don&rsquo;t have it locally.
+      </p>
+    );
+  }
   if (built) {
     return (
       <p className="pl-6 text-xs text-emerald-700 dark:text-emerald-400">
@@ -423,13 +487,12 @@ function HiveMindBuildHint({
       </p>
     );
   }
-  const pathHint = hiveMindPath || "<paths.hive_mind>";
   return (
     <p className="pl-6 text-xs text-amber-700 dark:text-amber-400">
       <AlertTriangle className="mr-1 inline size-3" />
       Server not built. Run{" "}
       <code className="bg-muted rounded px-1 py-0.5 font-mono">
-        cd {pathHint}/mcp/server && npm run build
+        cd {hiveMindPath}/mcp/server && npm install && npm run build
       </code>
       . Falls back to mock until built.
     </p>
@@ -456,7 +519,13 @@ function OAuthSection() {
   );
 }
 
-function ReloadNotice({ configLocalPath }: { configLocalPath: string }) {
+function ReloadNotice({
+  configLocalPath,
+  configLocalExists,
+}: {
+  configLocalPath: string;
+  configLocalExists: boolean;
+}) {
   return (
     <div className="bg-muted/40 border-muted-foreground/15 rounded-md border p-3 text-xs">
       <p className="text-foreground/90">
@@ -469,8 +538,8 @@ function ReloadNotice({ configLocalPath }: { configLocalPath: string }) {
         Writes go to{" "}
         <code className="bg-muted rounded px-1 py-0.5 font-mono">
           {configLocalPath}
-        </code>{" "}
-        and{" "}
+        </code>
+        {configLocalExists ? null : " (will be created on first save)"} and{" "}
         <code className="bg-muted rounded px-1 py-0.5 font-mono">
           apps/web/.env.local
         </code>
