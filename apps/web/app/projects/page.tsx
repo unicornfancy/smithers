@@ -1,9 +1,12 @@
 import Link from "next/link";
 
+import type { ProjectStatus } from "@smithers/vault";
+
 import { AppHeader } from "@/components/app-header";
 import { EmptyState, VaultMissingNotice } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
 import { ProjectCard } from "@/components/project-card";
+import { ProjectsFilterBar } from "@/components/projects-filter-bar";
 import { Button } from "@/components/ui/button";
 import { getVault } from "@/lib/server/vault";
 
@@ -14,7 +17,14 @@ export const metadata = {
 // Don't cache while we're iterating; vault edits should show up immediately.
 export const dynamic = "force-dynamic";
 
-export default async function ProjectsPage() {
+export default async function ProjectsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; archived?: string }>;
+}) {
+  const { status: filterStatus, archived } = await searchParams;
+  const showArchived = archived === "1";
+
   const vault = await getVault();
   const status = vault.status();
 
@@ -28,9 +38,25 @@ export default async function ProjectsPage() {
     }
   }
 
-  const partnerCount = projects.filter((p) => p.kind === "partner").length;
-  const teamCount = projects.filter((p) => p.kind === "team").length;
-  const personalCount = projects.filter((p) => p.kind === "personal").length;
+  // Count per status across the unfiltered list so the dropdown can show
+  // counts and only offer statuses that have projects.
+  const statusCounts: Partial<Record<ProjectStatus, number>> = {};
+  for (const p of projects) {
+    statusCounts[p.status] = (statusCounts[p.status] ?? 0) + 1;
+  }
+
+  const visibleProjects = projects.filter((p) => {
+    if (!showArchived && p.status === "archived") return false;
+    if (filterStatus && filterStatus !== "all" && p.status !== filterStatus) {
+      return false;
+    }
+    return true;
+  });
+
+  const partnerCount = visibleProjects.filter((p) => p.kind === "partner").length;
+  const teamCount = visibleProjects.filter((p) => p.kind === "team").length;
+  const personalCount = visibleProjects.filter((p) => p.kind === "personal").length;
+  const filterActive = (filterStatus && filterStatus !== "all") || showArchived;
 
   return (
     <>
@@ -38,7 +64,9 @@ export default async function ProjectsPage() {
         title="Projects"
         subtitle={
           status.exists
-            ? `${projects.length} total · ${partnerCount} partner · ${teamCount} team · ${personalCount} personal`
+            ? filterActive
+              ? `${visibleProjects.length} of ${projects.length} · ${partnerCount} partner · ${teamCount} team · ${personalCount} personal`
+              : `${visibleProjects.length} · ${partnerCount} partner · ${teamCount} team · ${personalCount} personal`
             : "Vault not configured yet"
         }
         actions={
@@ -63,6 +91,14 @@ export default async function ProjectsPage() {
           </div>
         ) : null}
 
+        {status.exists && !listError && projects.length > 0 ? (
+          <ProjectsFilterBar
+            currentStatus={filterStatus ?? "all"}
+            showArchived={showArchived}
+            counts={statusCounts}
+          />
+        ) : null}
+
         {status.exists && !listError && projects.length === 0 ? (
           <EmptyState
             title="No projects yet"
@@ -70,9 +106,15 @@ export default async function ProjectsPage() {
           />
         ) : null}
 
-        {projects.length > 0 ? (
+        {projects.length > 0 && visibleProjects.length === 0 ? (
+          <p className="text-muted-foreground text-sm italic">
+            No projects match the current filter.
+          </p>
+        ) : null}
+
+        {visibleProjects.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            {projects.map((p) => (
+            {visibleProjects.map((p) => (
               <ProjectCard key={p.slug} project={p} />
             ))}
           </div>

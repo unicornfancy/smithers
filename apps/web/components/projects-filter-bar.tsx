@@ -1,0 +1,112 @@
+"use client";
+
+import { useRouter, useSearchParams } from "next/navigation";
+import { useTransition } from "react";
+import { Loader2 } from "lucide-react";
+
+import type { ProjectStatus } from "@smithers/vault";
+
+import { cn } from "@/lib/utils";
+
+interface Props {
+  currentStatus: string;
+  showArchived: boolean;
+  /** Counts per status across the unfiltered project list. */
+  counts: Partial<Record<ProjectStatus, number>>;
+}
+
+const STATUS_ORDER: ProjectStatus[] = [
+  "hot",
+  "active",
+  "at-risk",
+  "secondary",
+  "cold",
+  "research",
+  "planning",
+  "launched",
+  "archived",
+];
+
+export function ProjectsFilterBar({
+  currentStatus,
+  showArchived,
+  counts,
+}: Props) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [pending, startTransition] = useTransition();
+
+  // Only offer statuses that actually have projects, in the rank order above.
+  const availableStatuses = STATUS_ORDER.filter((s) => (counts[s] ?? 0) > 0);
+
+  function pushWith(updates: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [k, v] of Object.entries(updates)) {
+      if (v === null || v === "") params.delete(k);
+      else params.set(k, v);
+    }
+    const qs = params.toString();
+    startTransition(() => {
+      router.push(qs ? `/projects?${qs}` : "/projects");
+    });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-sm">
+      <label className="flex items-center gap-2">
+        <span className="text-muted-foreground text-xs uppercase tracking-wide">
+          Status
+        </span>
+        <select
+          value={currentStatus}
+          onChange={(e) => pushWith({ status: e.target.value === "all" ? null : e.target.value })}
+          disabled={pending}
+          className="rounded-md border bg-background px-2 py-1 text-sm"
+        >
+          <option value="all">All</option>
+          {availableStatuses.map((s) => (
+            <option key={s} value={s}>
+              {s} ({counts[s]})
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex items-center gap-1.5 text-xs">
+        <input
+          type="checkbox"
+          checked={showArchived}
+          onChange={(e) =>
+            pushWith({ archived: e.target.checked ? "1" : null })
+          }
+          disabled={pending}
+          className="accent-foreground"
+        />
+        Show archived
+        {(counts.archived ?? 0) > 0 ? (
+          <span className="text-muted-foreground tabular-nums">
+            ({counts.archived})
+          </span>
+        ) : null}
+      </label>
+
+      {pending ? (
+        <Loader2 className="text-muted-foreground size-3.5 animate-spin" />
+      ) : null}
+
+      {currentStatus !== "all" || showArchived ? (
+        <button
+          type="button"
+          onClick={() => pushWith({ status: null, archived: null })}
+          disabled={pending}
+          className={cn(
+            "text-muted-foreground hover:text-foreground ml-auto text-xs underline-offset-2 hover:underline",
+            pending && "opacity-50",
+          )}
+        >
+          Clear filters
+        </button>
+      ) : null}
+    </div>
+  );
+}
