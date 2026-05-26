@@ -29,7 +29,7 @@ New to Smithers? Start with [**ONBOARDING.md**](ONBOARDING.md) for the first-tim
    │  packages/vault   │       │ packages/         │
    │  read/write MD    │       │   mcp-client      │
    │  + frontmatter    │       │ ContextA8C ·      │
-   │  + chokidar       │       │ Hive Mind · Fathom│
+   │  + atomic writes  │       │ Hive Mind · Fathom│
    └─────────┬─────────┘       └─────────┬─────────┘
              │                           │
              └───────┬───────────────────┘

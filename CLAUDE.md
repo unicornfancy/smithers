@@ -26,7 +26,7 @@ Load-bearing or easy-to-misread files:
 ```
 pnpm install
 cp config.example.yaml config.local.yaml          # then edit paths.vault
-echo "ANTHROPIC_API_KEY=sk-..." >> .env.local      # at repo root, not apps/web
+echo "ANTHROPIC_API_KEY=sk-..." >> apps/web/.env.local   # Next reads from apps/web, NOT repo root
 pnpm dev                                           # next dev on :3000
 ```
 
