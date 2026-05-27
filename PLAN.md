@@ -12,13 +12,9 @@ The call-transcript-prompt + follow-up automation cards shipped 2026-05-26. Stil
 
 ## Background job scheduling — remaining jobs
 
-The daily briefing pre-warm + in-process scheduler + launchd template shipped 2026-05-26. Remaining jobs from the original list, none scoped yet:
-- **Ping monitor** — periodic refresh of the Pings to Action actioned-status cache (currently a manual Refresh button on /today).
-- **Fathom sync** — pull new recordings into the cache hourly so /calls is fresh without opening it.
-- **Hive Mind sync** — periodic `git pull` against the Hive Mind clone so collaborative edits land without manual git work.
-- **Learning queue drain** — when learn-from-archives moves to async, drain queued archives in the background instead of fire-and-forget on archive.
-
-The pattern from the daily briefing — config opts in, `instrumentation-node.ts` registers a hand-rolled timer, a `/api/agents/<job>` endpoint wraps the work so manual + cron + launchd all share one path — is the template for each of these.
+Daily briefing, ping monitor, Fathom sync, and Hive Mind sync all shipped 2026-05-26→27. Remaining:
+- **Learning queue drain** — when `/api/learn-from-archive` moves from fire-and-forget to a real queue, drain it in the background instead of awaiting on archive. Out of scope until the queue actually exists.
+- **Auto-draft nudge when a follow-up crosses the escalate threshold** — the thresholds are now user-configurable (`stall_thresholds.*`); the next slice is wiring the auto-draft trigger. Distinct from scheduling but shares the "fire on a schedule" infrastructure.
 
 ---
 

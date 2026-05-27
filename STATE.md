@@ -1,8 +1,27 @@
 # STATE.md — Smithers (snapshot)
 
-_Updated 2026-05-26_
+_Updated 2026-05-27_
 
-## Just completed (2026-05-26 — migration finish, handoff readiness, /agendas editor, Zendesk summary, project hardening, settings + scheduler)
+## Just completed (2026-05-27 — three more background jobs round out the scheduler)
+
+### Ping monitor + Fathom sync + Hive Mind sync (c7e0f12)
+
+Closes the four-job scheduler roadmap from PLAN.md. Each new job follows the daily-briefing template (config opts in → `instrumentation-node` registers a hand-rolled timer → `/api/jobs/<name>` wraps the work for manual + cron + launchd triggers).
+
+- **Ping monitor** (`schedule.ping_monitor.{enabled, interval_minutes}`, default 15 min) — reruns `recomputeActioned` against the current `listPings` feed and writes verdicts to the `ping_actioned` cache. Makes the manual Refresh button on `/today` obsolete when enabled.
+- **Fathom sync** (`schedule.fathom_sync.*`, default 60 min) — warms the recordings cache via `mcp.fathom.listRecordings` so `/calls` + Recent Calls on `/today` surface new meetings without an explicit fetch.
+- **Hive Mind sync** (`schedule.hive_mind_sync.*`, default 30 min) — runs `git pull --ff-only` against `cfg.paths.hive_mind` via `child_process`. Bails on a dirty working tree (logs "skipped" rather than fighting conflicts).
+
+Wiring:
+- New `lib/server/scheduler-jobs.ts` owns the three helpers. Each catches errors and returns `{ ok, summary | error, duration_ms }` — never throws, so a flaky MCP doesn't kill the cron.
+- `instrumentation-node.ts` gains `scheduleInterval` (setTimeout chain so an overrunning job doesn't pile up) alongside the existing `scheduleDaily`, and registers each job per its config.
+- Generic `IntervalJobCard` component instantiated three times in `/settings` (enable toggle, interval input, Run now button with live result display).
+- `updateIntervalJobAction` in `settings/actions.ts` patches one job at a time; non-positive intervals are rejected.
+- Three launchd plist templates in `scripts/launchd/` for firing each job via curl when `pnpm dev` isn't running.
+
+Smoke-verified live: `/api/jobs/ping-monitor` → "no pings to check" (matches `/today` Inbox-zero state), `/api/jobs/fathom-sync` → "fetched 6 recording(s)" in ~2s, `/api/jobs/hive-mind-sync` → "already up to date" in ~2s.
+
+## Previously (2026-05-26 — migration finish, handoff readiness, /agendas editor, Zendesk summary, project hardening, settings + scheduler)
 
 ### `/settings` cards + daily briefing scheduler (39d59ac)
 
@@ -181,7 +200,7 @@ In rough priority order:
 1. **Hand off to other TAMs** — README + ONBOARDING + identity card on `/setup` + vault-missing redirect + settings cards all landed 2026-05-26. Next step is sharing the repo with colleagues and watching for issues that ONBOARDING.md doesn't yet cover.
 2. **Personal Digest (v2)** — newly added to PLAN.md. Weekly highlight prompt + personal development tracker. Needs a design conversation before scoping.
 3. **Project briefs — attach affordance + skill integration** — discovered while reviewing Body Dao (brief lives at `brief.md`, helper reads `briefs/project-brief.md`). PLAN.md captures the attach UX + `/create-brief` skill integration questions.
-4. **Remaining scheduler jobs** — daily briefing pre-warm shipped 2026-05-26; ping monitor, Fathom sync, Hive Mind sync, and learning queue drain still pending. Pattern is set: config opts in → `instrumentation-node.ts` registers timer → `/api/agents/<job>` endpoint wraps the work.
+4. **Learning queue drain** — last scheduler job from the original roadmap. Only matters once `/api/learn-from-archive` moves from fire-and-forget to a real queue; out of scope until that happens. (Daily briefing + ping monitor + Fathom sync + Hive Mind sync all shipped.)
 5. **`/today` view focus** — design discussion needed; queued in PLAN.md. Polish items (day-specific banners, AFK / weekend / no-data states) plus open questions about opinionated section visibility, "what changed since you last opened this," calendar integration surface, For-You-Today confidence.
 6. **H6 — workbench Pinned context card** — manage pins outside of a draft flow.
 7. **`/weekly-updates/[YYYY-WN]` editor** — stub.
@@ -191,6 +210,9 @@ In rough priority order:
 
 ## Recent decisions (with the why)
 
+- **`scheduleInterval` uses a `setTimeout` chain, not `setInterval`** (2026-05-27) — re-queues the next tick only after the current job's Promise settles. If an interval job ever runs longer than its cadence (e.g. Fathom sync stalls past 60 min), the next fire stacks naturally behind it instead of piling up.
+- **Hive Mind sync bails on a dirty working tree** (2026-05-27) — `git status --porcelain` first; non-empty means uncommitted local changes, and the safe choice is to skip rather than try to rebase/merge unattended. Logs "skipped (dirty working tree)" so the user sees it in the schedule-card's Last-run line.
+- **Job runner shape: `{ ok, summary | error, duration_ms }` returned, never thrown** (2026-05-27) — chosen so a flaky MCP can't kill the cron. The `instrumentation-node` wrapper logs the result regardless; the API route surfaces it to the UI via the Run-now button.
 - **Hand-rolled `setTimeout` for the daily briefing instead of node-cron** (2026-05-26) — node-cron's ESM build imports `node:crypto` in a way that trips webpack's `UnhandledSchemeError` even with `serverExternalPackages`. "Daily at HH:MM" is trivial to compute (next fire-time, setTimeout, recurse), and the hand-rolled version survives DST shifts because each iteration recomputes against the wall clock. If we ever need full cron expressions, the scheduler module is the only thing to swap.
 - **Split instrumentation across `instrumentation.ts` + `instrumentation-node.ts`** (2026-05-26) — Next compiles `instrumentation.ts` for BOTH runtimes (Node + Edge). Anything touching `node:*` modules (incl. our `lib/server/config.ts`) must be behind a `NEXT_RUNTIME === "nodejs"` guard AND in a separate module that's only imported in that branch, or webpack will try to bundle it for Edge and blow up. The two-file pattern is now documented in the file header for the next person who reaches for instrumentation.
 - **Briefing endpoint fans out via internal `fetch` to existing routes** (2026-05-26) — `/api/agents/briefing` calls `/api/agents/top-three` and `/api/agents/realistic-shape` over localhost instead of duplicating their generation logic. Costs one self-HTTP round-trip per branch but preserves a single source of truth for caching, daily-note writeback, and the regenerate-with-force flag. Acceptable trade.
