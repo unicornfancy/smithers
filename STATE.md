@@ -2,7 +2,16 @@
 
 _Updated 2026-05-26_
 
-## Just completed (2026-05-26 — migration finish, handoff readiness, /agendas editor, Zendesk summary, project hardening)
+## Just completed (2026-05-26 — migration finish, handoff readiness, /agendas editor, Zendesk summary, project hardening, settings + scheduler)
+
+### `/settings` cards + daily briefing scheduler (39d59ac)
+
+- **Call transcript prompt card** — textarea on `/settings` overrides the bundled `analyze-call-transcript` `SYSTEM_PROMPT` via `agents.analyze_call_transcript_prompt` in `config.local.yaml`. Shows the bundled default in a collapsible block + offers "load default" / "clear" buttons. Per-run "Additional instructions" still layers on top. New `getDefaultAnalyzeCallTranscriptPrompt()` export from `@smithers/agents` so the UI has the canonical default without duplication. Both `analyzeCallTranscript` call sites (Process Call on workbench + team-call processing on /calls) read the override from config.
+- **Follow-up automation card** — four `stall_thresholds.*` inputs (nudge / escalate / force-decide / next-nudge lookahead) plus `follow_ups.default_window_days` for the To-do → Follow-up conversion pre-fill. Non-negative validation, persists on save.
+- **Daily briefing schedule card** — toggleable HH:MM that pre-warms `/today`'s Top 3 + Realistic Shape generation. "Run now" button hits the new `/api/agents/briefing` endpoint synchronously. New `schedule.daily_briefing.{enabled, time}` config block.
+- **In-process scheduler** — `instrumentation.ts` (runtime guard) → `instrumentation-node.ts` (node-only side). Hand-rolled `setTimeout`-to-next-HH:MM chains a new timer per fire; survives DST. Logs `[scheduler] daily briefing ...` on register + fire. Schedule changes require a dev-server restart to take effect (the timer is computed once on register).
+- **`/api/agents/briefing`** — server-side wrapper for `runDailyBriefing()`. Fans out to the existing `/api/agents/top-three` and `/api/agents/realistic-shape` routes via internal fetch — no logic duplication, single source of truth for caching + daily-note writeback. Smoke-verified: ~22s end-to-end, both branches `ok:true`.
+- **Optional launchd plist template** — `scripts/launchd/com.smithers.briefing.plist.example` for firing the briefing via curl when `pnpm dev` isn't running. ONBOARDING gets a one-line gotcha addendum.
 
 ### Migration to Hive-Mind — closed out (13a676b)
 
@@ -169,17 +178,24 @@ _Nothing active. Branch is clean and ready for next pickup._
 
 In rough priority order:
 
-1. **Hand off to other TAMs** — README + ONBOARDING + identity card on `/setup` + vault-missing redirect all landed 2026-05-26. Next step is sharing the repo with colleagues and watching for issues that ONBOARDING.md doesn't yet cover.
+1. **Hand off to other TAMs** — README + ONBOARDING + identity card on `/setup` + vault-missing redirect + settings cards all landed 2026-05-26. Next step is sharing the repo with colleagues and watching for issues that ONBOARDING.md doesn't yet cover.
 2. **Personal Digest (v2)** — newly added to PLAN.md. Weekly highlight prompt + personal development tracker. Needs a design conversation before scoping.
 3. **Project briefs — attach affordance + skill integration** — discovered while reviewing Body Dao (brief lives at `brief.md`, helper reads `briefs/project-brief.md`). PLAN.md captures the attach UX + `/create-brief` skill integration questions.
-4. **`/today` view focus** — design discussion needed; queued in PLAN.md. Polish items (day-specific banners, AFK / weekend / no-data states) plus open questions about opinionated section visibility, "what changed since you last opened this," calendar integration surface, For-You-Today confidence.
-5. **H6 — workbench Pinned context card** — manage pins outside of a draft flow.
-6. **`/weekly-updates/[YYYY-WN]` editor** — stub.
-7. **Remaining AI affordances** — Verify @handles before posting, Find related context. (Summarize Zendesk thread shipped 2026-05-26.)
-8. **Bell icon + unresolved-issues count** — vault-watcher events.
+4. **Remaining scheduler jobs** — daily briefing pre-warm shipped 2026-05-26; ping monitor, Fathom sync, Hive Mind sync, and learning queue drain still pending. Pattern is set: config opts in → `instrumentation-node.ts` registers timer → `/api/agents/<job>` endpoint wraps the work.
+5. **`/today` view focus** — design discussion needed; queued in PLAN.md. Polish items (day-specific banners, AFK / weekend / no-data states) plus open questions about opinionated section visibility, "what changed since you last opened this," calendar integration surface, For-You-Today confidence.
+6. **H6 — workbench Pinned context card** — manage pins outside of a draft flow.
+7. **`/weekly-updates/[YYYY-WN]` editor** — stub.
+8. **Remaining AI affordances** — Verify @handles before posting, Find related context. (Summarize Zendesk thread shipped 2026-05-26.)
+9. **Bell icon + unresolved-issues count** — vault-watcher events.
+10. **Auto-draft nudge when follow-up crosses escalate threshold** — the thresholds are now user-configurable; the next slice is wiring the auto-draft trigger.
 
 ## Recent decisions (with the why)
 
+- **Hand-rolled `setTimeout` for the daily briefing instead of node-cron** (2026-05-26) — node-cron's ESM build imports `node:crypto` in a way that trips webpack's `UnhandledSchemeError` even with `serverExternalPackages`. "Daily at HH:MM" is trivial to compute (next fire-time, setTimeout, recurse), and the hand-rolled version survives DST shifts because each iteration recomputes against the wall clock. If we ever need full cron expressions, the scheduler module is the only thing to swap.
+- **Split instrumentation across `instrumentation.ts` + `instrumentation-node.ts`** (2026-05-26) — Next compiles `instrumentation.ts` for BOTH runtimes (Node + Edge). Anything touching `node:*` modules (incl. our `lib/server/config.ts`) must be behind a `NEXT_RUNTIME === "nodejs"` guard AND in a separate module that's only imported in that branch, or webpack will try to bundle it for Edge and blow up. The two-file pattern is now documented in the file header for the next person who reaches for instrumentation.
+- **Briefing endpoint fans out via internal `fetch` to existing routes** (2026-05-26) — `/api/agents/briefing` calls `/api/agents/top-three` and `/api/agents/realistic-shape` over localhost instead of duplicating their generation logic. Costs one self-HTTP round-trip per branch but preserves a single source of truth for caching, daily-note writeback, and the regenerate-with-force flag. Acceptable trade.
+- **Schedule changes require dev-server restart** (2026-05-26) — `instrumentation-node.ts` registers the timer once on server boot from `loadConfig()`'s cached value. Live-reload would require either watching `config.local.yaml` or cancelling/re-registering on a config-change event; that polish was out of scope. The Save toast warns the user to restart.
+- **Call-transcript system-prompt override lives in `config.local.yaml`, not the vault** (2026-05-26) — the agent runs server-side so the config path is the natural place; matches the `weekly_update.format_template` pattern that already shipped. The bundled default is exported from `@smithers/agents` (`getDefaultAnalyzeCallTranscriptPrompt`) so /settings can show it without duplicating the string.
 - **Prefix the vault slug with the partner when the HM project slug is generic** (2026-05-26) — `Phase 2`, `redesign`, `rebuild`, etc. as a project slug poisons follow-up matching: `filterFollowUpsForProject` substring-matches any row containing "phase 2" so the per-project surface shows every partner's Phase 2 follow-ups. Auto-prefix at import (and warn in the UI when the user types one in the Set Up dialog) instead of widening the filter, because the slug being specific is also better for URLs and humans reading filenames.
 - **One Slack channel field per project, not two** (2026-05-26) — `team_slack_channel` was always empty in practice; `primary_slack_channel` was the only one carrying data. Merged into `slack_channel`. Migration walked existing vault files.
 - **`readProject` falls back to frontmatter slug when filename slugified doesn't match** (2026-05-26) — a renamed file in Obsidian shouldn't 404 the URL. Filename + frontmatter slug can drift; lookup is forgiving.
