@@ -39,6 +39,12 @@ export interface SmithersConfig {
     api_key_env: string;
     model: string;
     effort: "low" | "medium" | "high" | "xhigh" | "max";
+    /**
+     * Optional override for the analyze-call-transcript agent's system
+     * prompt. When set, replaces the bundled default. Edited via /settings.
+     * Empty / unset = use the bundled default.
+     */
+    analyze_call_transcript_prompt?: string;
   };
   transcription: {
     provider: "fathom" | "granola" | "manual" | "whisper" | "gemini";
@@ -67,6 +73,25 @@ export interface SmithersConfig {
     follow_up_force_decide_days: number;
     /** Days before a project's `next_nudge` date to surface a reminder. */
     next_nudge_lookahead_days: number;
+  };
+  follow_ups?: {
+    /**
+     * Default lookahead window when converting a To-do into a Follow-up:
+     * "+N days" from today seeds the `follow_up_by` field. Surfaces in the
+     * conversion modal as the pre-filled value.
+     */
+    default_window_days?: number;
+  };
+  schedule?: {
+    /**
+     * In-process daily briefing job: pre-warms the Top 3 / Realistic
+     * Shape generation so /today opens with fresh cached output.
+     */
+    daily_briefing?: {
+      enabled: boolean;
+      /** HH:MM in 24-hour, local time. Defaults to working_rhythm.briefing_time. */
+      time?: string;
+    };
   };
 }
 
@@ -103,6 +128,12 @@ const DEFAULTS: SmithersConfig = {
     follow_up_escalate_days: 21,
     follow_up_force_decide_days: 30,
     next_nudge_lookahead_days: 14,
+  },
+  follow_ups: {
+    default_window_days: 7,
+  },
+  schedule: {
+    daily_briefing: { enabled: false },
   },
 };
 
@@ -221,5 +252,21 @@ function mergeWithDefaults(
       ...DEFAULTS.stall_thresholds,
       ...partial.stall_thresholds,
     },
+    follow_ups: {
+      ...DEFAULTS.follow_ups,
+      ...partial.follow_ups,
+    },
+    schedule: {
+      daily_briefing: {
+        enabled:
+          partial.schedule?.daily_briefing?.enabled ??
+          DEFAULTS.schedule?.daily_briefing?.enabled ??
+          false,
+        time:
+          partial.schedule?.daily_briefing?.time ??
+          DEFAULTS.schedule?.daily_briefing?.time,
+      },
+    },
+    weekly_update: partial.weekly_update,
   };
 }

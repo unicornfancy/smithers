@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd plist for the Smithers daily briefing pre-warm.
+
+  Hits POST http://localhost:3000/api/agents/briefing on the configured
+  schedule. Fires whether or not `pnpm dev` is running — when dev is
+  down the curl will fail silently (logged to /tmp/smithers-briefing.log)
+  and the in-process cron registered in instrumentation.ts will pick
+  up the next morning's run once dev is restarted.
+
+  To install:
+    1. cp this file to ~/Library/LaunchAgents/com.smithers.briefing.plist
+       (drop the .example suffix)
+    2. Edit Hour/Minute below to match your /settings daily-briefing time.
+    3. launchctl load ~/Library/LaunchAgents/com.smithers.briefing.plist
+
+  To uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.smithers.briefing.plist
+    rm ~/Library/LaunchAgents/com.smithers.briefing.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.smithers.briefing</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/curl</string>
+        <string>-sS</string>
+        <string>-X</string>
+        <string>POST</string>
+        <string>--max-time</string>
+        <string>120</string>
+        <string>http://localhost:3000/api/agents/briefing</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <!-- EDIT: match your /settings briefing time (24-hour). -->
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/smithers-briefing.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/smithers-briefing.log</string>
+
+    <!-- RunAtLoad: true would also fire it the moment launchctl loads
+         the plist — handy for testing. Leave false for the normal case. -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

@@ -44,6 +44,7 @@ import {
 } from "@smithers/vault";
 
 import { getAgentRuntime } from "@/lib/server/agents";
+import { loadConfig } from "@/lib/server/config";
 import { getMcpClient } from "@/lib/server/mcp";
 import { loadStyleReference } from "@/lib/server/style";
 import { getVault } from "@/lib/server/vault";
@@ -657,6 +658,9 @@ export async function analyzeCallAction(
   }
 
   const style = (await loadStyleReference()) ?? undefined;
+  const cfg = await loadConfig();
+  const systemPromptOverride =
+    cfg.agents.analyze_call_transcript_prompt?.trim() || undefined;
 
   try {
     const result = await analyzeCallTranscript(runtime, {
@@ -665,6 +669,7 @@ export async function analyzeCallAction(
       call: { recording_id: recordingId, url },
       style,
       additionalInstructions: opts?.additionalInstructions,
+      systemPromptOverride,
     });
     // Write to Hive Mind call-transcripts/ as the primary record.
     const hmPartnerSlug = project.hive_mind_partner_slug ?? project.partner ?? project.slug;

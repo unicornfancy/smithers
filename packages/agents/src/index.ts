@@ -71,6 +71,7 @@ export {
 
 export {
   analyzeCallTranscript,
+  getDefaultAnalyzeCallTranscriptPrompt,
   type AnalyzeCallTranscriptInput,
   type AnalyzeCallTranscriptOutput,
   type CallActionItem,

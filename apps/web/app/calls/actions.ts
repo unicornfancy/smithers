@@ -8,6 +8,7 @@ import {
 } from "@smithers/agents";
 
 import { getAgentRuntime } from "@/lib/server/agents";
+import { loadConfig } from "@/lib/server/config";
 import { getMcpClient } from "@/lib/server/mcp";
 import { loadStyleReference } from "@/lib/server/style";
 import { getVault } from "@/lib/server/vault";
@@ -110,6 +111,9 @@ export async function analyzeTeamCallAction(input: {
   }
 
   const style = (await loadStyleReference()) ?? undefined;
+  const cfg = await loadConfig();
+  const systemPromptOverride =
+    cfg.agents.analyze_call_transcript_prompt?.trim() || undefined;
 
   try {
     const result = await analyzeCallTranscript(runtime, {
@@ -122,6 +126,7 @@ export async function analyzeTeamCallAction(input: {
         url: input.url ?? null,
       },
       style,
+      systemPromptOverride,
     });
     const saved = await vault.saveCallNotes({
       recording: {

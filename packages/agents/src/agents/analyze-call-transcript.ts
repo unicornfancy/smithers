@@ -31,6 +31,22 @@ export interface AnalyzeCallTranscriptInput {
    * Not persisted anywhere. Example: "focus on action items for Katie".
    */
   additionalInstructions?: string;
+  /**
+   * Global system-prompt override. When set, replaces the bundled default
+   * entirely. Loaded from `agents.analyze_call_transcript_prompt` in
+   * config.local.yaml via the /settings page. `additionalInstructions`
+   * still layers on top of whatever the base prompt is.
+   */
+  systemPromptOverride?: string;
+}
+
+/**
+ * The default system prompt as bundled. Exported so the /settings page
+ * can show it (and use it as the "reset to default" target) without
+ * duplicating the string in the web app.
+ */
+export function getDefaultAnalyzeCallTranscriptPrompt(): string {
+  return SYSTEM_PROMPT;
 }
 
 export interface CallActionItem {
@@ -179,9 +195,13 @@ export async function analyzeCallTranscript(
   runtime: AgentRuntimeOptions,
   input: AnalyzeCallTranscriptInput,
 ): Promise<AgentResult<AnalyzeCallTranscriptOutput>> {
+  const basePrompt =
+    input.systemPromptOverride?.trim()
+      ? input.systemPromptOverride.trim()
+      : SYSTEM_PROMPT;
   const system = input.additionalInstructions?.trim()
-    ? `${SYSTEM_PROMPT}\n\nAdditional instructions for this run: ${input.additionalInstructions.trim()}`
-    : SYSTEM_PROMPT;
+    ? `${basePrompt}\n\nAdditional instructions for this run: ${input.additionalInstructions.trim()}`
+    : basePrompt;
   return runAgent(runtime, {
     agent: "analyze-call-transcript",
     system,
