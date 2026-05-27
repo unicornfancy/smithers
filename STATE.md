@@ -1,8 +1,52 @@
 # STATE.md — Smithers (snapshot)
 
-_Updated 2026-05-08_
+_Updated 2026-05-26_
 
-## Just completed (2026-05-08 PM — /today v2, weekly updates, ping-actioned, picker H5, call cleanup)
+## Just completed (2026-05-26 — migration finish, handoff readiness, /agendas editor, Zendesk summary, project hardening)
+
+### Migration to Hive-Mind — closed out (13a676b)
+
+- **`migrate-finish-hm.mjs` one-shot script** at `packages/vault/scripts/`. Two steps: (1) for every vault project with `hive_mind_partner_slug` set, build and write HM `follow-ups.md` (mirrors the dual-write path in `[slug]/actions.ts`) then commit; (2) strip `zendesk_tickets` + `zendesk_search_terms` from the vault file via gray-matter parse + atomic write so HM `zendesk.md` is the single source of truth.
+- Result: **11 HM `follow-ups.md`** files written across connected projects, **6 vault files** stripped (Pocket NYC, Body Dao, Design Matters - Phase 2, IFFS.Earth, Neighborhood Nip, Shareable). Script kept in `scripts/` as a template for future TAMs.
+- Caveat: script commits to whichever HM branch the local clone is on at run time. Rerun on `trunk` to land copies there if needed.
+
+### Handoff readiness — docs + first-run polish (2a82c3a, 8fb2768, 9dab210, a15f014)
+
+- **`README.md` rewritten** — replaces inaccurate "pre-alpha" framing and the wizard-step list that promised features the wizard didn't implement. Now: prereqs (Node 20+, pnpm 9+, optional Hive-Mind clone), accurate quickstart, links to ONBOARDING + TROUBLESHOOTING. Architecture diagram dropped the stale `chokidar` reference.
+- **`ONBOARDING.md` (new, ~200 lines)** — first-time walkthrough for a fresh TAM: prereqs, clone, HM build, dev-server start, each `/setup` wizard card with expected output, troubleshooting table for the ten most common errors, where-things-live cheat-sheet, and up-front gotchas (mock mode is the safety net, env at `apps/web/.env.local` not repo root, restart after config edits, OAuth popup flow).
+- **`/setup` wizard polish** — first-run banner surfacing what's missing when essential config absent; `PathEntry` gains `is_directory` so "exists but not a directory" is a distinct warning; HM build hint corrected to `npm install && npm run build` (the HM MCP server has its own lockfile, not pnpm); `config_local.exists` distinguishes a real local-config from `config.example.yaml` fallback. `VaultMissingNotice` link now points to `/setup`.
+- **Identity card on `/setup`** — name / email / github_handle / slack_handle inputs that write to `config.local.yaml`. These power the Pings-to-Action filters on `/today` (drop your own self-authored notifications) and were previously hand-edit only.
+- **`requireConfiguredVault()` redirect** — `/` and `/today` redirect to `/setup` when vault path is empty, doesn't exist, or isn't a directory. Other pages keep their inline empty-state notices so a user mid-config can navigate around without being bounced.
+- **CLAUDE.md fixed** — `ANTHROPIC_API_KEY` location corrected to `apps/web/.env.local` (was wrongly listed as repo root).
+
+### `/agendas/[slug]` editor (8bfc40a)
+
+- Fills the long-running stub. `/agendas` index lists every `Agendas/<Name>.md` with open/checked/archived counts. `/agendas/[slug]` editor: Open Items as checkboxes (optimistic toggle via `toggleAgendaItemAction`), textarea to append new items (Cmd+Enter submits), and "Archive N checked" button that moves checked rows into a fresh `## YYYY-MM-DD` section below the `---` divider. Archived sections render below as read-only markdown.
+- New `@smithers/vault` helpers in `agendas.ts`: `readAgenda` (parses Open Items + archived sections, deterministic ids per row), `addAgendaItem` (creates the file/section if missing), `setAgendaItemChecked` (toggles by row id), `archiveCheckedAgendaItems` (moves all `[x]` rows into a fresh dated section). Atomic writes throughout.
+
+### Summarize Zendesk thread AI affordance (06f9de6 + 35bb792 merge)
+
+- New `summarize-zendesk-thread` agent — system prompt + JSON schema + validator producing `{ summary, next_step }` from an ordered comment thread.
+- `summarizeZendeskThreadAction(slug, ticketId)` fetches the thread via ContextA8C (best-effort, degrades on session expiry) and runs the agent. Discriminated-union result shape.
+- `SummarizeZendeskThreadButton` opens `AiDraftDialog` with the summary; copy-only flow (no save-as-draft, no subject, no frontmatter persistence). Button slots into `ZendeskRow` so it's available on both active and closed (dim) rows for post-hoc catch-up.
+
+### `/projects` — status filter + hide-archived default (b96702b)
+
+- New `ProjectsFilterBar` client component: status dropdown showing only statuses that have ≥1 project, each with its count. "Show archived" checkbox — archived projects are hidden by default until the user opts in. State lives in `?status=` and `?archived=` search params, filtered in the RSC page before render so counts + cards reflect the filter without a client refetch.
+- Subtitle becomes "N of M" while a filter is active; otherwise the original "N total · partner · team · personal" stays.
+
+### Project hardening — generic-slug guard, slack merge, slug fallback (1e4dc79)
+
+- **Generic-slug guard** — new `isGenericSlug` helper in `@smithers/vault` flags `phase-N`, `redesign`, `rebuild`, `migration`, `new-site`, `v1/v2`, etc. When the HM project slug is generic, `importFromHiveMindAction` / batch import / `setupProjectFromLinearAction` prefix the vault slug with the partner so follow-up matching doesn't over-match (root cause: `Phase 2` slug was matching every `Phase 2` row in `Follow-ups.md` across the vault). Set Up + Connect dialogs show inline help text and a live amber warning showing the auto-prefixed result.
+- **Slug fallback** — `readProject` now falls back to frontmatter `slug:` when the filename slugified doesn't match. Filename and frontmatter can drift without 404ing (root cause: a user-renamed file lost its URL routing).
+- **Slack field merge** — `primary_slack_channel` + `team_slack_channel` collapsed into one `slack_channel` field across vault types, mcp-client refs, workbench page + actions, project metadata modal, new-project form, today/weekly fan-out helpers, and project-create lib. One vault file migrated in-place.
+
+### Linear bugs surfaced during migration (15c43e5)
+
+- **`getProjectIssues` UUID bug** — `issues(filter: { project: { id: { eq: $projectId } } })` requires `ID!` and rejected the short slug `8ca0b5d6870e` as "not a UUID", silently returning empty. Fixed by switching to the `project(id: String!) { issues }` connection — same lookup `getProject` and `getProjectUpdates` use, accepts both forms.
+- **Live activity cache poisoning** — long-running dev server's ContextA8C cache stuck on empty arrays even after upstream healed; restart cleared it. Added `probe-pocket-activity.mjs` script alongside the existing `probe-fathom-list.mjs` for future MCP diagnostics.
+
+## Previously (2026-05-08 PM — /today v2, weekly updates, ping-actioned, picker H5, call cleanup)
 
 ### `/today` v2 — 3-tier layout, importance scoring, velocity, flex (T1, T2, T3, T7)
 
@@ -119,22 +163,29 @@ Picker dialog grows a Suggestions section between Preview and Pinned: 7-day-wind
 
 ## In flight
 
-- **Migration to Hive-Mind format** — Decisions captured 2026-05-06. 2 forward (Neighborhood Nip, Shareable: vault → HM via Connect dialog), 9 reverse imports queued in /projects/onboard (TAM only imports the projects they're actively working on, not all of them). Pocket NYC + body-dao already linked. Ready to execute when you want.
+_Nothing active. Branch is clean and ready for next pickup._
 
 ## Open TODOs
 
 In rough priority order:
 
-1. **Run the migration** — Neighborhood Nip + Shareable Connect; Import any HM projects you're actively working on (only what you're working on, not all of them) from /projects/onboard.
-2. **`/today` view focus** — design discussion needed; queued in PLAN.md. Polish items (day-specific banners, AFK / weekend / no-data states) plus open questions about opinionated section visibility, "what changed since you last opened this," calendar integration surface, For-You-Today confidence.
-3. **Phase H follow-ups** — H5 (suggestion engine in the picker) + H6 (workbench Pinned context card) — both queued in PLAN.md.
-4. **`/agendas/[project]` editor** — 23-line stub.
-5. **`/weekly-updates/[YYYY-WN]` editor** — stub.
-6. **More AI affordances** — Summarize Zendesk thread, Verify @handles, Find related context.
-7. **Bell icon + unresolved-issues count** — vault-watcher events.
+1. **Hand off to other TAMs** — README + ONBOARDING + identity card on `/setup` + vault-missing redirect all landed 2026-05-26. Next step is sharing the repo with colleagues and watching for issues that ONBOARDING.md doesn't yet cover.
+2. **Personal Digest (v2)** — newly added to PLAN.md. Weekly highlight prompt + personal development tracker. Needs a design conversation before scoping.
+3. **Project briefs — attach affordance + skill integration** — discovered while reviewing Body Dao (brief lives at `brief.md`, helper reads `briefs/project-brief.md`). PLAN.md captures the attach UX + `/create-brief` skill integration questions.
+4. **`/today` view focus** — design discussion needed; queued in PLAN.md. Polish items (day-specific banners, AFK / weekend / no-data states) plus open questions about opinionated section visibility, "what changed since you last opened this," calendar integration surface, For-You-Today confidence.
+5. **H6 — workbench Pinned context card** — manage pins outside of a draft flow.
+6. **`/weekly-updates/[YYYY-WN]` editor** — stub.
+7. **Remaining AI affordances** — Verify @handles before posting, Find related context. (Summarize Zendesk thread shipped 2026-05-26.)
+8. **Bell icon + unresolved-issues count** — vault-watcher events.
 
 ## Recent decisions (with the why)
 
+- **Prefix the vault slug with the partner when the HM project slug is generic** (2026-05-26) — `Phase 2`, `redesign`, `rebuild`, etc. as a project slug poisons follow-up matching: `filterFollowUpsForProject` substring-matches any row containing "phase 2" so the per-project surface shows every partner's Phase 2 follow-ups. Auto-prefix at import (and warn in the UI when the user types one in the Set Up dialog) instead of widening the filter, because the slug being specific is also better for URLs and humans reading filenames.
+- **One Slack channel field per project, not two** (2026-05-26) — `team_slack_channel` was always empty in practice; `primary_slack_channel` was the only one carrying data. Merged into `slack_channel`. Migration walked existing vault files.
+- **`readProject` falls back to frontmatter slug when filename slugified doesn't match** (2026-05-26) — a renamed file in Obsidian shouldn't 404 the URL. Filename + frontmatter slug can drift; lookup is forgiving.
+- **`/projects` filter: single dropdown + 'Show archived' checkbox, not chips** (2026-05-26) — chip strip considered (T4 pattern) and rejected because the schema has 9 statuses and chips become visual noise. Dropdown is compact, server-side filter via search params avoids the T4 cache-busting issue.
+- **Auto-redirect to `/setup` only from `/` and `/today`** (2026-05-26) — other pages keep their inline `VaultMissingNotice` so a user mid-config can still navigate around without being bounced. The "hijack URLs while exploring" concern is real for partial config; full-redirect only on the entry points.
+- **HM project commits land on the local branch the user is checked out on** (2026-05-26, observed via `migrate-finish-hm.mjs`) — script doesn't switch branches itself. Caller is responsible for `git checkout trunk` in the HM clone before running if they want commits on trunk.
 - **Pinned context lives in Hive-Mind, not vault** (2026-05-07) — `pinned-context.md` is per-project and team-shareable so a second TAM working on the same project sees the same context set. Pin body is NOT persisted — only ref + label + type — and re-fetched live so the agent never sees stale Slack/GitHub content.
 - **Picker gates Generate behind explicit review** (2026-05-07) — every draft affordance opens a context picker first; Generate is disabled until the user attaches ≥1 item or explicitly checks "No extra context". Prevents the agent from running on assumed defaults when context is available but unselected.
 - **Agents pull voice from my-voice/, not vault root** (2026-05-07) — SKILL + PARTNER_COMMS + INTERNAL_STYLE_GUIDE + EXTERNAL_STYLE_GUIDE + REPORT_STRUCTURE concatenated. Previously read only the vault root style guide, which meant auto-learn-from-archive was write-only — agents never saw appended learnings.
