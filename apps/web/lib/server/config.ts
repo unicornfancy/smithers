@@ -92,6 +92,35 @@ export interface SmithersConfig {
       /** HH:MM in 24-hour, local time. Defaults to working_rhythm.briefing_time. */
       time?: string;
     };
+    /**
+     * Ping monitor: re-runs the "did Katie already reply?" detector
+     * against the current Pings to Action feed and writes verdicts to
+     * the ping_actioned cache. Replaces the manual Refresh button on
+     * /today when enabled.
+     */
+    ping_monitor?: {
+      enabled: boolean;
+      /** Minutes between fires. */
+      interval_minutes?: number;
+    };
+    /**
+     * Fathom sync: warms the Fathom recordings cache so /calls + Recent
+     * Calls on /today show new meetings without opening the page.
+     */
+    fathom_sync?: {
+      enabled: boolean;
+      interval_minutes?: number;
+    };
+    /**
+     * Hive Mind sync: `git pull` against the Hive Mind clone so
+     * collaborative edits from other TAMs land without manual git work.
+     * Skips on a dirty working tree (logs + returns rather than fighting
+     * conflicts).
+     */
+    hive_mind_sync?: {
+      enabled: boolean;
+      interval_minutes?: number;
+    };
   };
 }
 
@@ -134,6 +163,9 @@ const DEFAULTS: SmithersConfig = {
   },
   schedule: {
     daily_briefing: { enabled: false },
+    ping_monitor: { enabled: false, interval_minutes: 15 },
+    fathom_sync: { enabled: false, interval_minutes: 60 },
+    hive_mind_sync: { enabled: false, interval_minutes: 30 },
   },
 };
 
@@ -265,6 +297,36 @@ function mergeWithDefaults(
         time:
           partial.schedule?.daily_briefing?.time ??
           DEFAULTS.schedule?.daily_briefing?.time,
+      },
+      ping_monitor: {
+        enabled:
+          partial.schedule?.ping_monitor?.enabled ??
+          DEFAULTS.schedule?.ping_monitor?.enabled ??
+          false,
+        interval_minutes:
+          partial.schedule?.ping_monitor?.interval_minutes ??
+          DEFAULTS.schedule?.ping_monitor?.interval_minutes ??
+          15,
+      },
+      fathom_sync: {
+        enabled:
+          partial.schedule?.fathom_sync?.enabled ??
+          DEFAULTS.schedule?.fathom_sync?.enabled ??
+          false,
+        interval_minutes:
+          partial.schedule?.fathom_sync?.interval_minutes ??
+          DEFAULTS.schedule?.fathom_sync?.interval_minutes ??
+          60,
+      },
+      hive_mind_sync: {
+        enabled:
+          partial.schedule?.hive_mind_sync?.enabled ??
+          DEFAULTS.schedule?.hive_mind_sync?.enabled ??
+          false,
+        interval_minutes:
+          partial.schedule?.hive_mind_sync?.interval_minutes ??
+          DEFAULTS.schedule?.hive_mind_sync?.interval_minutes ??
+          30,
       },
     },
     weekly_update: partial.weekly_update,

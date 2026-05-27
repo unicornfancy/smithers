@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd plist for the Smithers Ping Monitor.
+
+  Hits POST http://localhost:3000/api/jobs/ping-monitor on the configured
+  interval. Fires whether or not `pnpm dev` is running — when dev is down
+  the curl will fail silently (logged to /tmp/smithers-ping-monitor.log).
+  The in-process scheduler in instrumentation-node.ts picks up the cron
+  again on the next dev-server start.
+
+  To install:
+    1. cp this file to ~/Library/LaunchAgents/com.smithers.ping-monitor.plist
+       (drop the .example suffix)
+    2. Edit StartInterval below to match your /settings interval (in seconds).
+    3. launchctl load ~/Library/LaunchAgents/com.smithers.ping-monitor.plist
+
+  To uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.smithers.ping-monitor.plist
+    rm ~/Library/LaunchAgents/com.smithers.ping-monitor.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.smithers.ping-monitor</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/curl</string>
+        <string>-sS</string>
+        <string>-X</string>
+        <string>POST</string>
+        <string>--max-time</string>
+        <string>60</string>
+        <string>http://localhost:3000/api/jobs/ping-monitor</string>
+    </array>
+
+    <!-- Seconds between fires. 900 = 15 min. Match your /settings interval. -->
+    <key>StartInterval</key>
+    <integer>900</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/smithers-ping-monitor.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/smithers-ping-monitor.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

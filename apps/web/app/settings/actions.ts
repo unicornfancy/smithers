@@ -156,6 +156,50 @@ export async function updateFollowUpAutomationAction(input: {
  * the next scheduled tick (or restart the dev server to reset the
  * cron registration).
  */
+/**
+ * Patch one of the interval-based background jobs in
+ * `schedule.{ping_monitor,fathom_sync,hive_mind_sync}.{enabled,
+ * interval_minutes}`. Schedule changes require a dev-server restart
+ * to register the new timer.
+ */
+export async function updateIntervalJobAction(input: {
+  job: "ping_monitor" | "fathom_sync" | "hive_mind_sync";
+  enabled?: boolean;
+  interval_minutes?: number;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    const path = configLocalPath();
+    const current = await readYamlFile(path);
+    const next = structuredClone(current) as Record<string, unknown>;
+    const scheduleBlock = isObject(next["schedule"])
+      ? (next["schedule"] as Record<string, unknown>)
+      : {};
+    const jobBlock = isObject(scheduleBlock[input.job])
+      ? (scheduleBlock[input.job] as Record<string, unknown>)
+      : {};
+    if (input.enabled !== undefined) {
+      jobBlock["enabled"] = Boolean(input.enabled);
+    }
+    if (input.interval_minutes !== undefined) {
+      const n = Number(input.interval_minutes);
+      if (!Number.isFinite(n) || n < 1) {
+        return { ok: false, reason: "interval_minutes must be >= 1" };
+      }
+      jobBlock["interval_minutes"] = Math.round(n);
+    }
+    scheduleBlock[input.job] = jobBlock;
+    next["schedule"] = scheduleBlock;
+    await writeYamlAtomic(path, next);
+    revalidatePath("/settings");
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "write failed",
+    };
+  }
+}
+
 export async function updateScheduleAction(input: {
   daily_briefing_enabled?: boolean;
   daily_briefing_time?: string;

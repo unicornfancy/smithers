@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd plist for the Smithers Hive Mind Sync.
+
+  Hits POST http://localhost:3000/api/jobs/hive-mind-sync on the configured
+  interval. Runs `git pull --ff-only` against the configured hive_mind
+  path. Skips on a dirty working tree.
+
+  To install:
+    1. cp this file to ~/Library/LaunchAgents/com.smithers.hive-mind-sync.plist
+       (drop the .example suffix)
+    2. Edit StartInterval below to match your /settings interval (in seconds).
+    3. launchctl load ~/Library/LaunchAgents/com.smithers.hive-mind-sync.plist
+
+  To uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.smithers.hive-mind-sync.plist
+    rm ~/Library/LaunchAgents/com.smithers.hive-mind-sync.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.smithers.hive-mind-sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/curl</string>
+        <string>-sS</string>
+        <string>-X</string>
+        <string>POST</string>
+        <string>--max-time</string>
+        <string>120</string>
+        <string>http://localhost:3000/api/jobs/hive-mind-sync</string>
+    </array>
+
+    <!-- Seconds between fires. 1800 = 30 min. Match your /settings interval. -->
+    <key>StartInterval</key>
+    <integer>1800</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/smithers-hive-mind-sync.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/smithers-hive-mind-sync.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

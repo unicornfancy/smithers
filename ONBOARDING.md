@@ -187,7 +187,7 @@ More diagnostic recipes in [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 - **Restart after config edits.** Next.js caches `config.local.yaml` and env vars once at boot. Save in `/setup`, restart, then refresh.
 - **Vault writes are atomic** (`writeFileAtomic`). You won't see half-written files. But config and env changes need a restart to take effect.
 - **OAuth popups need to be allowed for `localhost:3000`** the first time ContextA8C or Fathom is called. Tokens cache at `~/.mcp-auth` after that.
-- **Background scheduler is opt-in.** `/settings → Daily briefing schedule` enables an in-process cron that pre-warms the `/today` Top 3 + Realistic Shape cards at your configured time. Only fires while `pnpm dev` is up; for firing when dev is down, see [`scripts/launchd/com.smithers.briefing.plist.example`](scripts/launchd/com.smithers.briefing.plist.example) — copy to `~/Library/LaunchAgents/com.smithers.briefing.plist`, edit `Hour`/`Minute` to match your settings, then `launchctl load` it. Other recurring jobs are still tracked in `PLAN.md`.
+- **Background scheduler is opt-in.** `/settings` has four scheduler cards: Daily briefing (HH:MM), Ping monitor (every N min), Fathom sync, Hive Mind sync. Each only fires while `pnpm dev` is up; for firing when dev is down, see the matching `scripts/launchd/com.smithers.<job>.plist.example` — copy to `~/Library/LaunchAgents/com.smithers.<job>.plist`, edit the interval to match your settings, then `launchctl load` it. Schedule edits require a dev-server restart to re-register timers.
 - **Don't auto-post anywhere.** Every AI affordance produces a draft you review before sending. `Save as draft` writes to your vault (and to Hive Mind for linked partner projects); nothing sends.
 
 ---
