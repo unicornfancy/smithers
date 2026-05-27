@@ -13,7 +13,7 @@ export default async function SetupPage() {
     <>
       <AppHeader
         title="Setup"
-        subtitle="Configure Smithers for your environment"
+        subtitle="First-run essentials. After this, ongoing tuning lives in /settings."
       />
       <PageShell>
         <SetupWizard initialStatus={status} />

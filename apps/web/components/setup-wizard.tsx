@@ -74,7 +74,31 @@ export function SetupWizard({ initialStatus }: Props) {
         configLocalPath={status.config_local.path}
         configLocalExists={status.config_local.exists}
       />
+      <SettingsContinueCard />
     </div>
+  );
+}
+
+function SettingsContinueCard() {
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-2 py-3">
+        <p className="text-foreground text-sm font-medium">
+          Done with first-run?
+        </p>
+        <p className="text-muted-foreground text-xs">
+          Everything above is also editable in{" "}
+          <a
+            href="/settings#setup"
+            className="text-foreground underline-offset-2 hover:underline"
+          >
+            /settings → Setup
+          </a>
+          . That's the canonical home for ongoing tuning — agent prompts,
+          follow-up thresholds, schedules, diagnostics, and more.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -119,7 +143,7 @@ function FirstRunBanner({ status }: { status: SetupStatus }) {
 
 // --- Sections -----------------------------------------------------------
 
-function PathsSection({
+export function PathsSection({
   status,
   setStatus,
 }: {
@@ -287,7 +311,7 @@ const IDENTITY_FIELDS: { key: IdentityKey; label: string; hint: string; placehol
   },
 ];
 
-function IdentitySection({
+export function IdentitySection({
   status,
   setStatus,
 }: {
@@ -380,7 +404,7 @@ function IdentitySection({
   );
 }
 
-function ApiKeysSection({
+export function ApiKeysSection({
   status,
   setStatus,
 }: {
@@ -504,7 +528,7 @@ function ApiKeyRow({
   );
 }
 
-function McpsSection({
+export function McpsSection({
   status,
   setStatus,
 }: {
