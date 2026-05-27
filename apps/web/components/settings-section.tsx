@@ -1,7 +1,7 @@
 import * as React from "react";
 
 interface Props {
-  /** Anchor target. Must match the `id` field of one of SettingsLayout's sections. */
+  /** Stable id; matches the SettingsTabs entry that displays this section. */
   id: string;
   title: string;
   description?: string;
@@ -9,14 +9,12 @@ interface Props {
 }
 
 /**
- * Wraps a settings section with an anchored heading. The `id` is what
- * the left-rail nav scrolls to; `scroll-mt` reserves space so the
- * heading lands below the app's sticky header rather than tucked
- * under it.
+ * Wraps a tab's content with a heading + description block above the
+ * cards. Each tab in SettingsTabs renders one of these.
  */
 export function SettingsSection({ id, title, description, children }: Props) {
   return (
-    <section id={id} className="scroll-mt-20 space-y-4">
+    <section id={id} className="space-y-4">
       <header className="space-y-1">
         <h2 className="text-foreground text-lg font-semibold leading-tight">
           {title}

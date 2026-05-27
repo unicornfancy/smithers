@@ -10,9 +10,9 @@ import { IntervalJobCard } from "@/components/interval-job-card";
 import { McpHealthCard } from "@/components/mcp-health-card";
 import { PageShell, PlaceholderCard } from "@/components/page-shell";
 import { ScheduleCard } from "@/components/schedule-card";
-import { SettingsLayout } from "@/components/settings-layout";
 import { SettingsSection } from "@/components/settings-section";
 import { SettingsSetupGroup } from "@/components/settings-setup-group";
+import { SettingsTabs, type SettingsTab } from "@/components/settings-tabs";
 import { WeeklyUpdateFormatCard } from "@/components/weekly-update-format-card";
 import { loadConfig } from "@/lib/server/config";
 
@@ -22,7 +22,7 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-const NAV_SECTIONS = [
+const TABS: SettingsTab[] = [
   { id: "workflow", label: "Workflow" },
   { id: "setup", label: "Setup" },
   { id: "diagnostics", label: "Diagnostics" },
@@ -47,7 +47,7 @@ export default async function SettingsPage() {
         subtitle="Tune what Smithers does, where it reads from, and how it fires background work."
       />
       <PageShell>
-        <SettingsLayout sections={NAV_SECTIONS}>
+        <SettingsTabs tabs={TABS} defaultTabId="workflow">
           <SettingsSection
             id="workflow"
             title="Workflow"
@@ -158,7 +158,7 @@ export default async function SettingsPage() {
               description="Stub for a tiny info card: version, repo link, README + ONBOARDING shortcuts, identity of the running Anthropic model. Low priority — fill in when it bothers you."
             />
           </SettingsSection>
-        </SettingsLayout>
+        </SettingsTabs>
       </PageShell>
     </>
   );
