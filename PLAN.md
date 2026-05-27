@@ -4,26 +4,21 @@ _Living doc for features discussed but not yet built. Add entries here when scop
 
 ---
 
-## Settings page (`/settings`)
+## Settings page — remaining items
 
-Not yet built. When it is, these features should live there:
+The call-transcript-prompt + follow-up automation cards shipped 2026-05-26. Still deferred:
+- **Future follow-up automations** — auto-draft a nudge when a follow-up crosses the escalate threshold. Settings already exposes the threshold day counts; the auto-draft trigger is the next slice.
+- **Long-scroll sticky-nav redesign** — merge Identity / Paths / MCPs from `/setup` into `/settings` once `/setup` graduates from first-run wizard. The PlaceholderCard at the bottom of `/settings` lists the intended section order.
 
-### Call transcript prompt customization
-- Allow the user to adjust the global system prompt used by `analyze-call-transcript` (and the new chat-about-this-call feature) from a UI field in `/settings`, persisted to config or vault.
-- The per-run "additional instructions" field in the Process Call regenerate flow feeds into that same prompt as a one-off override, layered on top of the global setting.
+## Background job scheduling — remaining jobs
 
-### Follow-up automation settings
-- User-configurable thresholds for stall detection (nudge / escalate / force-decide day counts) — currently hard-coded in `config.yaml` stall_thresholds.
-- Option to configure default follow-up fields pre-filled when converting a To-do → Follow-up (e.g. default follow_up_by window like "+14 days").
-- Future: trigger automations (e.g. auto-draft nudge when a follow-up crosses escalate threshold).
+The daily briefing pre-warm + in-process scheduler + launchd template shipped 2026-05-26. Remaining jobs from the original list, none scoped yet:
+- **Ping monitor** — periodic refresh of the Pings to Action actioned-status cache (currently a manual Refresh button on /today).
+- **Fathom sync** — pull new recordings into the cache hourly so /calls is fresh without opening it.
+- **Hive Mind sync** — periodic `git pull` against the Hive Mind clone so collaborative edits land without manual git work.
+- **Learning queue drain** — when learn-from-archives moves to async, drain queued archives in the background instead of fire-and-forget on archive.
 
----
-
-## Background job scheduling
-
-**Deferred — target this week.** Will build after `/style-guide` + learning loop are working.
-
-Scope: launchd plists + node-cron in-process for recurring jobs: briefing, ping monitor, Fathom sync, Hive Mind sync, and eventually learning queue drain. The `/api/learn-from-archive` lightweight approach is a sufficient stand-in until then — nothing needs rearchitecting when the scheduler arrives.
+The pattern from the daily briefing — config opts in, `instrumentation-node.ts` registers a hand-rolled timer, a `/api/agents/<job>` endpoint wraps the work so manual + cron + launchd all share one path — is the template for each of these.
 
 ---
 
