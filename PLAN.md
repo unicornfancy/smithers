@@ -72,20 +72,10 @@ Two questions to resolve before building:
 - **Attach UI**: how does a user point Smithers at a brief that doesn't live at the canonical path? Options: link a file (path picker), set a frontmatter `brief_path` override, or move/rename the file to the canonical location.
 - **Project brief skill**: how does `/create-brief` (the existing skill) interact with Smithers when generating a brief into Hive-Mind? Should Smithers offer a "Generate brief" button on the workbench that invokes the skill end-to-end (skill → write to canonical path → commit → render)?
 
-## Projects screen — status filter + hide archived
-
-Two related changes on `/projects`:
-- **Filter chips by status** at the top of the list (active, paused, completed, archived).
-- **Hide archived by default** — currently all statuses render together, which buries active work as the archive grows.
-
-Implementation likely shares the same chip-based filter primitive considered (and reverted) on `/today` T4. If we re-attempt chips here, we need server-side filtering, not just visual hiding, so cache busting through `router.replace` is solved before shipping.
-
 ## Other deferred items
 
 - **v1.5 Linear ↔ Hive Mind ↔ Smithers sync** — deeper field standardization. Deferred until user signals priority.
 - **Change-project-kind wizard** — Team/Personal ↔ Partner copy/unlink flow. Preserves `project_id`.
-- **`/agendas/[project]` editor** — currently a stub.
 - **In-flight indicator on auto-learn-from-archive** — currently fire-and-forget with a success toast on completion. Plan called for a small "learning…" pill near the archive button until the toast fires; deferred as a polish item.
 - **H6 — workbench "Pinned context" affordance** — a small card on the project page for managing pins outside of a draft flow. Pinning currently happens via the picker's "Pin permanently" checkbox.
-- **Migration: Neighborhood Nip + Shareable to Hive-Mind** — both vault projects have `hive_mind_partner_slug` set but haven't actually pushed their Open Items / Zendesk metadata into HM. Plus the 9 reverse imports queued in the original Phase F (a8c-creators, awaken-the-world, etc.) — still pending.
-- **More AI affordances** — Summarize Zendesk thread, Verify @handles before posting, Find related context. Each is a self-contained small slice.
+- **More AI affordances** — Verify @handles before posting, Find related context. Each is a self-contained small slice (Summarize Zendesk thread shipped 2026-05-26).
