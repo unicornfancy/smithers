@@ -767,22 +767,86 @@ export class RealContextA8CTransport implements ContextA8CClient {
   async fetchZendeskTicketSummary(
     ticketRef: string,
   ): Promise<ZendeskTicketSummary | null> {
-    // The upstream MCP doesn't expose any single-ticket fetch tool —
-    // we probed `ticket`, `tickets`, `show_ticket`, `get_ticket`, etc.
-    // and all returned "Tool not found". The only reliable path to
-    // ticket metadata is `search`, which is best-used in batch via
-    // fetchZendeskTicketSummaries below. This single-ref method
-    // therefore returns a degraded row by default.
     const ticketId = extractTicketId(ticketRef);
     if (!ticketId) return null;
+
+    // First try a single-ticket fetch tool. We previously probed and
+    // got "Tool not found" but the provider has evolved (e.g. the
+    // get-ticket-comments swap), so try the most likely names first
+    // and fall through silently if none exist.
+    for (const tool of ["get-ticket", "ticket", "show-ticket"]) {
+      const summary = await this.tryFetchZendeskTicketTool(tool, ticketId).catch(
+        () => null,
+      );
+      if (summary) return summary;
+    }
+
+    // Fall back to deriving a subject from the first comment's
+    // plain_body — get-ticket-comments is the only confirmed-working
+    // endpoint. Subject derived this way is just the first line / 80
+    // chars; status stays null until a search-driven refresh runs.
+    const derivedSubject = await this.deriveSubjectFromComments(ticketId).catch(
+      () => null,
+    );
     return {
       id: ticketId,
-      subject: null,
+      subject: derivedSubject,
       status: null,
       priority: null,
       updated_at: null,
       url: zendeskTicketUrl(ticketId),
     };
+  }
+
+  private async tryFetchZendeskTicketTool(
+    tool: string,
+    ticketId: string,
+  ): Promise<ZendeskTicketSummary | null> {
+    const result = await this.mcp.callJsonTool<ZendeskTicketResult>(
+      "context-a8c-execute-tool",
+      {
+        provider: "zendesk",
+        tool,
+        params: { ticketId: Number(ticketId) },
+      },
+    );
+    const t = result?.ticket ?? result?.result;
+    if (!t) return null;
+    const rawId = t.id ?? t.ticket_id;
+    const id = typeof rawId === "number" ? String(rawId) : typeof rawId === "string" ? rawId : ticketId;
+    return {
+      id,
+      subject: typeof t.subject === "string" ? t.subject : null,
+      status: typeof t.status === "string" ? t.status : null,
+      priority: typeof t.priority === "string" ? t.priority : null,
+      updated_at: typeof t.updated_at === "string" ? t.updated_at : null,
+      url: zendeskTicketUrl(id),
+    };
+  }
+
+  private async deriveSubjectFromComments(
+    ticketId: string,
+  ): Promise<string | null> {
+    const result = await this.mcp.callJsonTool<ZendeskCommentsResult>(
+      "context-a8c-execute-tool",
+      {
+        provider: "zendesk",
+        tool: "get-ticket-comments",
+        params: { ticketId: Number(ticketId), includePrivate: false },
+      },
+    );
+    const comments = asArray<ZendeskComment>(result?.comments ?? result?.result);
+    if (comments.length === 0) return null;
+    // Comments come back oldest-first; the first one is usually the
+    // partner's original email. plain_body has the body without headers,
+    // so derive a one-line subject from it.
+    const first = comments[0]!;
+    const body = decodeHtmlEntities(first.plain_body ?? first.body ?? "");
+    const firstLine = body.split(/\n/).find((l) => l.trim().length > 0)?.trim();
+    if (!firstLine) return null;
+    return firstLine.length > 80
+      ? firstLine.slice(0, 79).trimEnd() + "…"
+      : firstLine;
   }
 
   async fetchZendeskTicketSummaries(

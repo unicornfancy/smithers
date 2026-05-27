@@ -184,33 +184,41 @@ export async function attachZendeskTicketAction(
   const result = await vault.addProjectZendeskTicket(slug, arg);
 
   revalidatePath(`/projects/${slug}`);
+  await syncZendeskToHiveMind(slug);
+  return { added: result.added, total: result.zendesk_tickets.length };
+}
 
-  // Dual-write: sync zendesk.md in Hive Mind when connected.
-  const project = await vault.readProject(slug).catch(() => null);
-  if (project?.hive_mind_partner_slug) {
+/**
+ * Push the project's current vault zendesk_tickets to Hive-Mind's
+ * `zendesk.md`. Called whenever vault frontmatter changes (attach,
+ * refresh-metadata, etc.) so the workbench — which reads from HM when
+ * connected — stays in sync. No-op when the project isn't HM-linked.
+ * Failures are silent: HM sync is non-fatal, vault remains correct.
+ */
+async function syncZendeskToHiveMind(slug: string): Promise<void> {
+  try {
+    const vault = await getVault();
+    const project = await vault.readProject(slug);
+    if (!project?.hive_mind_partner_slug) return;
     const hmPartner = project.hive_mind_partner_slug;
     const hmProject = project.hive_mind_project_slug ?? project.slug;
-    try {
-      const allTickets = result.zendesk_tickets;
-      const content = serializeHMZendesk({
-        search_terms: project.zendesk_search_terms ?? [],
-        last_refreshed: new Date().toISOString().slice(0, 10),
-        tickets: allTickets.map((t) => ({
-          ticket_id: parseInt(t.id, 10),
-          subject: t.subject ?? "",
-          status: t.status ?? "",
-          url: `https://automattic.zendesk.com/agent/tickets/${t.id}`,
-        })),
-      });
-      const mcp = await getMcpClient();
-      await mcp.hiveMind.writeProjectFile(hmPartner, hmProject, "zendesk.md", content);
-      await mcp.hiveMind.commit(`zendesk: sync ticket list for ${hmPartner}/${hmProject}`);
-    } catch {
-      // HM sync failure is non-fatal.
-    }
+    const tickets = project.zendesk_tickets ?? [];
+    const content = serializeHMZendesk({
+      search_terms: project.zendesk_search_terms ?? [],
+      last_refreshed: new Date().toISOString().slice(0, 10),
+      tickets: tickets.map((t) => ({
+        ticket_id: parseInt(t.id, 10),
+        subject: t.subject ?? "",
+        status: t.status ?? "",
+        url: `https://automattic.zendesk.com/agent/tickets/${t.id}`,
+      })),
+    });
+    const mcp = await getMcpClient();
+    await mcp.hiveMind.writeProjectFile(hmPartner, hmProject, "zendesk.md", content);
+    await mcp.hiveMind.commit(`zendesk: sync ticket list for ${hmPartner}/${hmProject}`);
+  } catch {
+    /* HM sync failure is non-fatal — vault is the source of truth. */
   }
-
-  return { added: result.added, total: result.zendesk_tickets.length };
 }
 
 /**
@@ -283,6 +291,10 @@ export async function refreshZendeskMetadataAction(
     Array.from(seen.values()),
   );
   revalidatePath(`/projects/${slug}`);
+  // Push the full updated vault state to HM zendesk.md — even tickets
+  // the search didn't touch get re-serialized so a previously-attached
+  // ticket with null HM metadata picks up its vault subject/status.
+  await syncZendeskToHiveMind(slug);
   return { updated: result.updated, total: refs.length };
 }
 
