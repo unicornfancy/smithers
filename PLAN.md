@@ -6,9 +6,10 @@ _Living doc for features discussed but not yet built. Add entries here when scop
 
 ## Settings page — remaining items
 
-The call-transcript-prompt + follow-up automation cards shipped 2026-05-26. Still deferred:
+The call-transcript-prompt + follow-up automation cards shipped 2026-05-26, the long-scroll sticky-nav redesign shipped 2026-05-27. Still deferred:
 - **Future follow-up automations** — auto-draft a nudge when a follow-up crosses the escalate threshold. Settings already exposes the threshold day counts; the auto-draft trigger is the next slice.
-- **Long-scroll sticky-nav redesign** — merge Identity / Paths / MCPs from `/setup` into `/settings` once `/setup` graduates from first-run wizard. The PlaceholderCard at the bottom of `/settings` lists the intended section order.
+- **Skills section** — `/create-brief` skill registration (also tracked under "Project briefs" below) is the first concrete card to land in the Skills section. Future skills register here too.
+- **About section** — version, repo link, README + ONBOARDING shortcuts, running model id. Low priority polish.
 
 ## Background job scheduling — remaining jobs
 

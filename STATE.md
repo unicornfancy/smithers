@@ -2,7 +2,16 @@
 
 _Updated 2026-05-27_
 
-## Just completed (2026-05-27 — three more background jobs round out the scheduler)
+## Just completed (2026-05-27 — three scheduler jobs + /settings long-scroll redesign)
+
+### `/settings` long-scroll page with sticky left-rail nav (b433976)
+
+Reorganizes `/settings` from a flat card stack into five anchored sections with a sticky left-rail nav and scroll-spy active-section highlight. Closes the placeholder that's sat at the bottom of the page since launch.
+
+- **Section structure** (top to bottom): Workflow (Weekly updates · Call transcripts · Follow-ups · Schedules) → Setup (Identity · Paths · API keys · MCPs) → Diagnostics (MCP health · HM reconcile · Activity log) → Skills (placeholder) → About (placeholder).
+- **Setup section reuses `/setup`'s 4 cards** via a new `SettingsSetupGroup` wrapper that holds the shared `SetupStatus` state. setup-wizard.tsx exports PathsSection / IdentitySection / ApiKeysSection / McpsSection so both pages render from one source.
+- **Shell components:** `SettingsLayout` (sticky aside + content, stacks below `lg`), `SettingsNav` (IntersectionObserver scroll-spy with `-15% / -70%` rootMargin so the active flip happens when the new section is genuinely on screen — anchor links smooth-scroll, URL hash replaced rather than pushed on click), `SettingsSection` (anchored heading with `scroll-mt-20` to clear the sticky app header).
+- **`/setup` stays as the first-run wizard** but gains a "Done with first-run?" footer card pointing to `/settings#setup`. Subtitle updated to "First-run essentials. After this, ongoing tuning lives in /settings."
 
 ### Ping monitor + Fathom sync + Hive Mind sync (c7e0f12)
 
@@ -210,6 +219,8 @@ In rough priority order:
 
 ## Recent decisions (with the why)
 
+- **`/settings` scroll-spy uses a top-skewed rootMargin (`-15% / -70%`), not center-threshold** (2026-05-27) — centering the trigger would flip the active highlight too late; a section feels "the one you're reading" the moment its heading crosses the top quarter of the viewport. `-15%` top means "fire when within 15% of top," `-70%` bottom means "ignore content below the middle." Together: active flips when a new heading lands in the comfortable reading zone.
+- **`/settings` and `/setup` share the four setup section components, not copies** (2026-05-27) — setup-wizard.tsx exports PathsSection / IdentitySection / ApiKeysSection / McpsSection; `/settings → Setup` renders them via a thin `SettingsSetupGroup` wrapper that holds the shared `SetupStatus` state. Duplicating these into a "/settings only" version would have created a long-term sync problem (every field added to /setup would need to be added to /settings).
 - **`scheduleInterval` uses a `setTimeout` chain, not `setInterval`** (2026-05-27) — re-queues the next tick only after the current job's Promise settles. If an interval job ever runs longer than its cadence (e.g. Fathom sync stalls past 60 min), the next fire stacks naturally behind it instead of piling up.
 - **Hive Mind sync bails on a dirty working tree** (2026-05-27) — `git status --porcelain` first; non-empty means uncommitted local changes, and the safe choice is to skip rather than try to rebase/merge unattended. Logs "skipped (dirty working tree)" so the user sees it in the schedule-card's Last-run line.
 - **Job runner shape: `{ ok, summary | error, duration_ms }` returned, never thrown** (2026-05-27) — chosen so a flaky MCP can't kill the cron. The `instrumentation-node` wrapper logs the result regardless; the API route surfaces it to the UI via the Run-now button.
