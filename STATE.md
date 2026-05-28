@@ -1,17 +1,22 @@
 # STATE.md — Smithers (snapshot)
 
-_Updated 2026-05-27_
+_Updated 2026-05-28_
 
-## Just completed (2026-05-27 — three scheduler jobs + /settings long-scroll redesign)
+## Just completed (2026-05-28 — /settings switched to top-tab layout)
 
-### `/settings` long-scroll page with sticky left-rail nav (b433976)
+### `/settings` top-tab refactor (cee4699)
 
-Reorganizes `/settings` from a flat card stack into five anchored sections with a sticky left-rail nav and scroll-spy active-section highlight. Closes the placeholder that's sat at the bottom of the page since launch.
+Replaces the previous-day's left-rail-with-scroll-spy approach with a top tab strip that swaps the visible section. Same five sections; different control affordance.
 
-- **Section structure** (top to bottom): Workflow (Weekly updates · Call transcripts · Follow-ups · Schedules) → Setup (Identity · Paths · API keys · MCPs) → Diagnostics (MCP health · HM reconcile · Activity log) → Skills (placeholder) → About (placeholder).
-- **Setup section reuses `/setup`'s 4 cards** via a new `SettingsSetupGroup` wrapper that holds the shared `SetupStatus` state. setup-wizard.tsx exports PathsSection / IdentitySection / ApiKeysSection / McpsSection so both pages render from one source.
-- **Shell components:** `SettingsLayout` (sticky aside + content, stacks below `lg`), `SettingsNav` (IntersectionObserver scroll-spy with `-15% / -70%` rootMargin so the active flip happens when the new section is genuinely on screen — anchor links smooth-scroll, URL hash replaced rather than pushed on click), `SettingsSection` (anchored heading with `scroll-mt-20` to clear the sticky app header).
-- **`/setup` stays as the first-run wizard** but gains a "Done with first-run?" footer card pointing to `/settings#setup`. Subtitle updated to "First-run essentials. After this, ongoing tuning lives in /settings."
+- **Underline tab strip** at the top, click swaps the visible section. Only the active section renders to the visible DOM (the others sit in the RSC payload so tab switches are instant client-side, no server roundtrip).
+- **URL state via `?tab=<id>`** (not hash) so deep links survive Next's SSR path and shared URLs / browser back-forward work. Bogus tab ids fall through to the default (Workflow) rather than 404.
+- **Removed** `SettingsLayout` + `SettingsNav` (left-rail shell + IntersectionObserver scroll-spy from 2026-05-27). `SettingsSection` stays — each tab still benefits from its heading + description block. `SettingsTabs` (new) is the only nav component now.
+
+## Previously (2026-05-27 — three scheduler jobs + /settings long-scroll attempt)
+
+### `/settings` long-scroll page with sticky left-rail nav (b433976, superseded same-day by cee4699)
+
+First attempt at the /settings redesign — left-rail nav with scroll-spy, all sections visible in one long page. User feedback: position was wrong; preferred swap-content tabs over scroll-everything. Replaced 2026-05-28 by cee4699 (see above). The Setup / Diagnostics / Skills / About section split + the SettingsSetupGroup wrapper sharing `SetupStatus` across the four /setup cards both carried forward to the tab refactor.
 
 ### Ping monitor + Fathom sync + Hive Mind sync (c7e0f12)
 
@@ -219,7 +224,8 @@ In rough priority order:
 
 ## Recent decisions (with the why)
 
-- **`/settings` scroll-spy uses a top-skewed rootMargin (`-15% / -70%`), not center-threshold** (2026-05-27) — centering the trigger would flip the active highlight too late; a section feels "the one you're reading" the moment its heading crosses the top quarter of the viewport. `-15%` top means "fire when within 15% of top," `-70%` bottom means "ignore content below the middle." Together: active flips when a new heading lands in the comfortable reading zone.
+- **`/settings` uses top tabs that swap content, not a long-scroll page with left-rail nav** (2026-05-28) — left-rail-plus-scroll-spy shipped 2026-05-27 (b433976) and was reverted same day. Reason: tabs that hide non-active content give a clearer "single-purpose view per click" feel and avoid the scroll-spy timing tradeoffs entirely. Tab state lives in `?tab=<id>` (not URL hash) so deep links survive Next's SSR path.
+- **All tab bodies render in the RSC payload, only one displays** (2026-05-28) — pre-rendered children mean client-side tab switches are instant (no server roundtrip). Trade: every page load pays for rendering all five sections' content. Acceptable because the sections are mostly small forms; if a section ever gets heavy, we move to route-based tabs (`/settings/<tab>`) for true lazy loading.
 - **`/settings` and `/setup` share the four setup section components, not copies** (2026-05-27) — setup-wizard.tsx exports PathsSection / IdentitySection / ApiKeysSection / McpsSection; `/settings → Setup` renders them via a thin `SettingsSetupGroup` wrapper that holds the shared `SetupStatus` state. Duplicating these into a "/settings only" version would have created a long-term sync problem (every field added to /setup would need to be added to /settings).
 - **`scheduleInterval` uses a `setTimeout` chain, not `setInterval`** (2026-05-27) — re-queues the next tick only after the current job's Promise settles. If an interval job ever runs longer than its cadence (e.g. Fathom sync stalls past 60 min), the next fire stacks naturally behind it instead of piling up.
 - **Hive Mind sync bails on a dirty working tree** (2026-05-27) — `git status --porcelain` first; non-empty means uncommitted local changes, and the safe choice is to skip rather than try to rebase/merge unattended. Logs "skipped (dirty working tree)" so the user sees it in the schedule-card's Last-run line.
