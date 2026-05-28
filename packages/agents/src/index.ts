@@ -70,6 +70,12 @@ export {
 } from "./agents/summarize-zendesk-thread";
 
 export {
+  runHiveMindSkill,
+  type RunSkillInput,
+  type RunSkillOutput,
+} from "./agents/run-skill";
+
+export {
   analyzeCallTranscript,
   getDefaultAnalyzeCallTranscriptPrompt,
   type AnalyzeCallTranscriptInput,

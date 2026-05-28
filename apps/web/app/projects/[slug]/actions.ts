@@ -9,6 +9,7 @@ import {
   composeFollowUpNudge,
   draftP2Update,
   draftZendeskReply,
+  runHiveMindSkill,
   suggestNextStep,
   summarizeZendeskThread,
   type AnalyzeCallTranscriptOutput,
@@ -19,6 +20,7 @@ import {
   type ComposeNudgeOutput,
   type DraftP2UpdateOutput,
   type DraftZendeskReplyOutput,
+  type RunSkillOutput,
   type SummarizeZendeskThreadComment,
   type SummarizeZendeskThreadOutput,
   type SuggestNextStepOutput,
@@ -45,6 +47,7 @@ import {
 
 import { getAgentRuntime } from "@/lib/server/agents";
 import { loadConfig } from "@/lib/server/config";
+import { buildPartnerKnowledgeFrontmatterUpdate } from "@/lib/server/hive-mind-frontmatter";
 import { getMcpClient } from "@/lib/server/mcp";
 import { loadStyleReference } from "@/lib/server/style";
 import { getVault } from "@/lib/server/vault";
@@ -2001,4 +2004,299 @@ ${decisionsBlock}
 
 ${keyQuotesBlock}
 `;
+}
+
+// ---------------------------------------------------------------------------
+// Brief generation — runs the /create-brief Hive Mind skill from the workbench.
+// ---------------------------------------------------------------------------
+
+export interface GenerateBriefInput {
+  /** Vault project slug. */
+  slug: string;
+  /** HM-root-relative paths of transcripts to include. */
+  transcript_paths: string[];
+  /** Discovery Doc — URL or pasted content. */
+  discovery_doc: { kind: "url" | "content"; value: string };
+  /** Domain registrar (e.g. "Squarespace Domains"). */
+  domain_registrar: string;
+  /** DNS provider; can be the same as registrar. */
+  dns_provider: string;
+}
+
+export type GenerateBriefResult =
+  | { ok: true; data: RunSkillOutput }
+  | { ok: false; reason: "not-configured" | "skill-missing" | "no-sources" | "error"; message?: string };
+
+/**
+ * Run the create-brief skill from the workbench. Loads the skill's
+ * SKILL.md + declared dependency files from HM, gathers project /
+ * partner context + the inputs above, calls the run-skill agent.
+ *
+ * Does NOT write the brief to disk — that happens in
+ * saveProjectBriefAction after the user reviews. Persists the
+ * inputs to HM frontmatter (discovery_doc_url + registrar/dns) on
+ * success so re-generates pre-fill correctly.
+ */
+export async function generateProjectBriefAction(
+  input: GenerateBriefInput,
+): Promise<GenerateBriefResult> {
+  if (
+    input.transcript_paths.length === 0 &&
+    !input.discovery_doc.value.trim()
+  ) {
+    return { ok: false, reason: "no-sources" };
+  }
+  const vault = await getVault();
+  const project = await vault.readProject(input.slug);
+  if (!project) {
+    return { ok: false, reason: "error", message: `Project "${input.slug}" not found` };
+  }
+  const partnerSlug = project.hive_mind_partner_slug ?? project.partner;
+  const projectSlug = project.hive_mind_project_slug ?? project.slug;
+  if (!partnerSlug) {
+    return { ok: false, reason: "error", message: "Project is not connected to Hive Mind" };
+  }
+
+  const runtime = await getAgentRuntime();
+  if (!runtime) return { ok: false, reason: "not-configured" };
+
+  const cfg = await loadConfig();
+  if (!cfg.paths.hive_mind) {
+    return { ok: false, reason: "not-configured", message: "hive_mind path not set" };
+  }
+
+  const skillContent = await vault.getHiveMindSkillContent("create-brief");
+  if (!skillContent) {
+    return { ok: false, reason: "skill-missing" };
+  }
+
+  // Resolve transcript file contents.
+  const { readFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const transcripts: { path: string; body: string }[] = [];
+  for (const rel of input.transcript_paths) {
+    try {
+      const abs = join(cfg.paths.hive_mind, rel);
+      const body = await readFile(abs, "utf-8");
+      transcripts.push({ path: rel, body });
+    } catch {
+      // skip missing transcripts; the agent will still get the rest
+    }
+  }
+
+  const hmPartner = await vault.getHiveMindPartner(partnerSlug);
+  const hmProject = await vault.getHiveMindProject(partnerSlug, projectSlug);
+
+  const inputsMarkdown = renderBriefInputsMarkdown({
+    partnerSlug,
+    projectSlug,
+    project,
+    hmPartner,
+    hmProject,
+    transcripts,
+    discoveryDoc: input.discovery_doc,
+    registrar: input.domain_registrar,
+    dns: input.dns_provider,
+  });
+
+  try {
+    const result = await runHiveMindSkill(runtime, {
+      skill_slug: "create-brief",
+      skill_prompt: skillContent.system_prompt,
+      dependency_files: skillContent.files,
+      inputs_markdown: inputsMarkdown,
+    });
+
+    // Persist inputs so re-generates pre-fill correctly. Best-effort —
+    // failures don't block the generated brief from coming back.
+    void persistBriefInputs({
+      partnerSlug,
+      projectSlug,
+      hiveMindPath: cfg.paths.hive_mind,
+      discoveryDocUrl:
+        input.discovery_doc.kind === "url" ? input.discovery_doc.value : "",
+      registrar: input.domain_registrar,
+      dns: input.dns_provider,
+    });
+
+    return { ok: true, data: result.output };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Brief generation failed",
+    };
+  }
+}
+
+/**
+ * Save the reviewed brief markdown to <HM>/knowledge/partners/<partner>/
+ * <project>/brief.md (the path the /create-brief skill writes to today).
+ * Commits via MCP and revalidates the workbench so the brief card
+ * re-renders with the new content.
+ */
+export async function saveProjectBriefAction(input: {
+  slug: string;
+  markdown: string;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!input.markdown.trim()) {
+    return { ok: false, reason: "Brief content is empty" };
+  }
+  const vault = await getVault();
+  const project = await vault.readProject(input.slug);
+  if (!project) return { ok: false, reason: "Project not found" };
+  const partnerSlug = project.hive_mind_partner_slug ?? project.partner;
+  const projectSlug = project.hive_mind_project_slug ?? project.slug;
+  if (!partnerSlug) return { ok: false, reason: "Project is not connected to Hive Mind" };
+
+  const mcp = await getMcpClient();
+  try {
+    await mcp.hiveMind.writeProjectFile(
+      partnerSlug,
+      projectSlug,
+      "brief.md",
+      input.markdown,
+    );
+    await mcp.hiveMind.commit(
+      `brief: regenerate via Smithers for ${partnerSlug}/${projectSlug}`,
+    );
+    revalidatePath(`/projects/${input.slug}`);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "HM write failed",
+    };
+  }
+}
+
+async function persistBriefInputs(args: {
+  partnerSlug: string;
+  projectSlug: string;
+  hiveMindPath: string;
+  discoveryDocUrl: string;
+  registrar: string;
+  dns: string;
+}): Promise<void> {
+  const mcp = await getMcpClient();
+  try {
+    // discovery_doc_url → project info.md via the direct MCP tool.
+    if (args.discoveryDocUrl.trim()) {
+      await mcp.hiveMind.updateProjectInfo(args.partnerSlug, args.projectSlug, {
+        discovery_doc_url: args.discoveryDocUrl.trim(),
+      });
+    }
+    // domain_registrar + dns_provider → partner-knowledge.md frontmatter
+    // via read-modify-write (no dedicated MCP tool).
+    if (args.registrar.trim() || args.dns.trim()) {
+      const updated = await buildPartnerKnowledgeFrontmatterUpdate(
+        args.hiveMindPath,
+        args.partnerSlug,
+        {
+          domain_registrar: args.registrar.trim() || undefined,
+          dns_provider: args.dns.trim() || undefined,
+        },
+      );
+      if (updated?.changed) {
+        await mcp.hiveMind.writePartnerFile(
+          args.partnerSlug,
+          "partner-knowledge.md",
+          updated.content,
+        );
+      }
+    }
+    await mcp.hiveMind.commit(
+      `brief: persist inputs for ${args.partnerSlug}/${args.projectSlug}`,
+    );
+  } catch {
+    // best-effort; persistence failures don't surface to the user
+  }
+}
+
+function renderBriefInputsMarkdown(args: {
+  partnerSlug: string;
+  projectSlug: string;
+  project: { name: string; partner?: string };
+  hmPartner: { title?: string; description?: string; body: string } | null;
+  hmProject:
+    | { title?: string; description?: string; discovery_doc_url?: string; body: string }
+    | null;
+  transcripts: { path: string; body: string }[];
+  discoveryDoc: { kind: "url" | "content"; value: string };
+  registrar: string;
+  dns: string;
+}): string {
+  const lines: string[] = [];
+  lines.push(`Partner slug: \`${args.partnerSlug}\``);
+  lines.push(`Project slug: \`${args.projectSlug}\``);
+  lines.push("");
+
+  lines.push("## Partner");
+  if (args.hmPartner) {
+    lines.push(`Title: ${args.hmPartner.title ?? args.partnerSlug}`);
+    if (args.hmPartner.description) {
+      lines.push(`Description: ${args.hmPartner.description}`);
+    }
+    if (args.hmPartner.body.trim()) {
+      lines.push("Partner knowledge body:");
+      lines.push("```markdown");
+      lines.push(args.hmPartner.body);
+      lines.push("```");
+    }
+  } else {
+    lines.push("(no partner-knowledge.md found)");
+  }
+  lines.push("");
+
+  lines.push("## Project");
+  if (args.hmProject) {
+    lines.push(`Title: ${args.hmProject.title ?? args.project.name}`);
+    if (args.hmProject.description) {
+      lines.push(`Description: ${args.hmProject.description}`);
+    }
+    if (args.hmProject.body.trim()) {
+      lines.push("Project info body:");
+      lines.push("```markdown");
+      lines.push(args.hmProject.body);
+      lines.push("```");
+    }
+  } else {
+    lines.push(`Project name (from vault): ${args.project.name}`);
+  }
+  lines.push("");
+
+  lines.push("## Domain");
+  lines.push(`Registrar: ${args.registrar.trim() || "(not provided)"}`);
+  lines.push(`DNS provider: ${args.dns.trim() || "(same as registrar or not provided)"}`);
+  lines.push("");
+
+  lines.push("## Discovery Doc");
+  if (args.discoveryDoc.kind === "url" && args.discoveryDoc.value.trim()) {
+    lines.push(`URL: ${args.discoveryDoc.value.trim()}`);
+    lines.push("(content not fetched — refer to the URL if a body is needed)");
+  } else if (args.discoveryDoc.kind === "content" && args.discoveryDoc.value.trim()) {
+    lines.push("Pasted content:");
+    lines.push("```markdown");
+    lines.push(args.discoveryDoc.value.trim());
+    lines.push("```");
+  } else {
+    lines.push("(none provided)");
+  }
+  lines.push("");
+
+  lines.push("## Call transcripts");
+  if (args.transcripts.length === 0) {
+    lines.push("(none provided)");
+  } else {
+    for (const t of args.transcripts) {
+      lines.push(`### \`${t.path}\``);
+      lines.push("");
+      lines.push("```markdown");
+      lines.push(t.body);
+      lines.push("```");
+      lines.push("");
+    }
+  }
+
+  return lines.join("\n");
 }

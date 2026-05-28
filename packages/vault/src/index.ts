@@ -121,6 +121,7 @@ import {
   getHiveMindPartner,
   getHiveMindPinnedContext,
   getHiveMindProject,
+  getHiveMindSkillContent,
   getHiveMindZendesk,
   listHiveMindSkills,
   serializeHiveMindPinnedContext,
@@ -134,6 +135,7 @@ import {
   type HiveMindPinnedContextRow,
   type HiveMindPinnedContextType,
   type HiveMindSkill,
+  type HiveMindSkillContent,
   type HiveMindProject,
   type HiveMindZendeskData,
 } from "./hive-mind";
@@ -213,6 +215,7 @@ export type {
   HiveMindPinnedContextType,
   HiveMindProject,
   HiveMindSkill,
+  HiveMindSkillContent,
   HiveMindZendeskData,
 } from "./hive-mind";
 export {
@@ -226,6 +229,7 @@ export {
   getHiveMindPartner,
   getHiveMindPinnedContext,
   getHiveMindProject,
+  getHiveMindSkillContent,
   getHiveMindZendesk,
   listHiveMindSkills,
   serializeHiveMindPinnedContext,
@@ -479,6 +483,9 @@ export interface Vault {
     projectSlug: string,
   ) => ReturnType<typeof getHiveMindBrief>;
   listHiveMindSkills: () => ReturnType<typeof listHiveMindSkills>;
+  getHiveMindSkillContent: (
+    slug: string,
+  ) => ReturnType<typeof getHiveMindSkillContent>;
   watch: (handler: VaultEventHandler) => ReturnType<typeof watchVault>;
 }
 
@@ -578,6 +585,7 @@ export function createVault(options: VaultOptions): Vault {
     getHiveMindBrief: (partnerSlug, projectSlug) =>
       getHiveMindBrief(resolved, partnerSlug, projectSlug),
     listHiveMindSkills: () => listHiveMindSkills(resolved),
+    getHiveMindSkillContent: (slug) => getHiveMindSkillContent(resolved, slug),
     watch: (handler) => watchVault(resolved, handler),
   };
 }

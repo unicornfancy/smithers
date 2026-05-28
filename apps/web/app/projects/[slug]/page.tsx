@@ -110,6 +110,7 @@ export default async function ProjectWorkbenchPage({
     hiveMindZendesk,
     hiveMindFollowUps,
     hiveMindBrief,
+    hiveMindProject,
   ] = await Promise.all([
       vault.listDrafts().catch(() => []),
       vault
@@ -159,6 +160,7 @@ export default async function ProjectWorkbenchPage({
       vault.getHiveMindZendesk(hmPartnerSlug, hmProjectSlug).catch(() => null),
       vault.getHiveMindFollowUps(hmPartnerSlug, hmProjectSlug).catch(() => null),
       vault.getHiveMindBrief(hmPartnerSlug, hmProjectSlug).catch(() => null),
+      vault.getHiveMindProject(hmPartnerSlug, hmProjectSlug).catch(() => null),
     ]);
 
   // Find the active phase (first started issue) and fetch its subtasks.
@@ -434,6 +436,12 @@ export default async function ProjectWorkbenchPage({
     });
   }
 
+  const briefTranscriptOptions = callTranscripts.map((t) => ({
+    path: `knowledge/partners/${hmPartnerSlug}/${hmProjectSlug}/call-transcripts/${t.filename}`,
+    title: t.frontmatter.title ?? t.filename.replace(/\.md$/i, ""),
+    date: t.frontmatter.date ?? null,
+  }));
+
   sections.push({
     id: "project-brief",
     title: "Project brief",
@@ -445,6 +453,12 @@ export default async function ProjectWorkbenchPage({
             ? `file://${hiveMindBrief.source_path}`
             : hmBriefFallbackPath
         }
+        projectSlug={detail.slug}
+        canGenerate={hmIsConfigured}
+        transcripts={briefTranscriptOptions}
+        initialDiscoveryDocUrl={hiveMindProject?.discovery_doc_url ?? ""}
+        initialRegistrar={hiveMindPartner?.domain_registrar ?? ""}
+        initialDns={hiveMindPartner?.dns_provider ?? ""}
       />
     ),
   });

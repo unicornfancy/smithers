@@ -2,13 +2,34 @@ import { ExternalLink, FileText } from "lucide-react";
 import type { HiveMindBrief } from "@smithers/vault";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Markdown } from "@/components/markdown";
+import {
+  GenerateBriefButton,
+  type TranscriptOption,
+} from "@/components/generate-brief-button";
 
 interface Props {
   brief: HiveMindBrief | null;
   editPath: string | null;
+  projectSlug: string;
+  /** True when the project is HM-linked and brief generation is possible. */
+  canGenerate: boolean;
+  /** All project call transcripts available in HM. */
+  transcripts: TranscriptOption[];
+  initialDiscoveryDocUrl: string;
+  initialRegistrar: string;
+  initialDns: string;
 }
 
-export function ProjectBriefSection({ brief, editPath }: Props) {
+export function ProjectBriefSection({
+  brief,
+  editPath,
+  projectSlug,
+  canGenerate,
+  transcripts,
+  initialDiscoveryDocUrl,
+  initialRegistrar,
+  initialDns,
+}: Props) {
   if (!brief) {
     return (
       <Card>
@@ -16,15 +37,26 @@ export function ProjectBriefSection({ brief, editPath }: Props) {
           <CardTitle className="flex items-center gap-2 text-base">
             <FileText className="size-4 text-muted-foreground" />
             Project brief
+            {canGenerate ? (
+              <span className="ml-auto">
+                <GenerateBriefButton
+                  projectSlug={projectSlug}
+                  transcripts={transcripts}
+                  initialDiscoveryDocUrl={initialDiscoveryDocUrl}
+                  initialRegistrar={initialRegistrar}
+                  initialDns={initialDns}
+                  label="Generate brief"
+                  size="sm"
+                />
+              </span>
+            ) : null}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground text-sm italic">
-            No project brief yet — generate one with{" "}
-            <code className="bg-muted rounded px-1 py-0.5 text-[11px]">
-              /create-brief
-            </code>{" "}
-            in Hive-Mind.
+            {canGenerate
+              ? "No project brief yet — gather inputs and Smithers will run the /create-brief skill for you."
+              : "Connect this project to Hive Mind to enable brief generation."}
           </p>
         </CardContent>
       </Card>
@@ -37,25 +69,39 @@ export function ProjectBriefSection({ brief, editPath }: Props) {
         <CardTitle className="flex items-center gap-2 text-base">
           <FileText className="size-4 text-muted-foreground" />
           Project brief
-          {brief.google_doc_url ? (
-            <a
-              href={brief.google_doc_url}
-              target="_blank"
-              rel="noreferrer"
-              className="text-muted-foreground hover:text-foreground ml-auto flex items-center gap-1 text-xs font-normal"
-            >
-              <ExternalLink className="size-3" />
-              Open in Google Docs
-            </a>
-          ) : editPath ? (
-            <a
-              href={editPath}
-              className="text-muted-foreground hover:text-foreground ml-auto flex items-center gap-1 text-xs font-normal"
-            >
-              <ExternalLink className="size-3" />
-              Edit brief
-            </a>
-          ) : null}
+          <div className="ml-auto flex items-center gap-3">
+            {canGenerate ? (
+              <GenerateBriefButton
+                projectSlug={projectSlug}
+                transcripts={transcripts}
+                initialDiscoveryDocUrl={initialDiscoveryDocUrl}
+                initialRegistrar={initialRegistrar}
+                initialDns={initialDns}
+                label="Regenerate"
+                size="sm"
+                variant="ghost"
+              />
+            ) : null}
+            {brief.google_doc_url ? (
+              <a
+                href={brief.google_doc_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs font-normal"
+              >
+                <ExternalLink className="size-3" />
+                Open in Google Docs
+              </a>
+            ) : editPath ? (
+              <a
+                href={editPath}
+                className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs font-normal"
+              >
+                <ExternalLink className="size-3" />
+                Edit brief
+              </a>
+            ) : null}
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent>

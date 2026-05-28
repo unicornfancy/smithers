@@ -25,10 +25,71 @@ export interface HiveMindSkill {
   allowed_tools: string[];
   /** From frontmatter `user-invocable`. Defaults to true when absent. */
   user_invocable: boolean;
+  /**
+   * From frontmatter `dependencies` — list of HM-root-relative file
+   * paths the skill expects to read at runtime (templates, knowledge
+   * files, reference briefs). Smithers loads these alongside SKILL.md
+   * when running the skill from the workbench. Empty array when the
+   * skill declares no deps or the field is absent.
+   */
+  dependencies: string[];
   /** Absolute path to the skill folder (the `.claude/skills/<slug>/` dir). */
   location: string;
   /** Absolute path to the SKILL.md file. */
   source_path: string;
+}
+
+export interface HiveMindSkillContent {
+  /** Skill metadata from the SKILL.md frontmatter. */
+  skill: HiveMindSkill;
+  /**
+   * Body of the SKILL.md (frontmatter stripped). Use this as the
+   * system prompt when running the skill from Smithers.
+   */
+  system_prompt: string;
+  /**
+   * Map of `<hm-relative-path>` → file content for the supporting
+   * files this skill declared under its `dependencies` frontmatter.
+   * Keys are relative to the Hive-Mind root. Missing files are
+   * silently omitted (no exception).
+   */
+  files: Record<string, string>;
+}
+
+/**
+ * Load a skill's full content from the Hive Mind clone: the SKILL.md
+ * body (as a system prompt) plus every file listed in the skill's
+ * `dependencies` frontmatter. Returns `null` when HM isn't configured
+ * or the skill doesn't exist.
+ *
+ * Smithers runs the skill as-is — the SKILL.md is the source of
+ * truth for what the brief looks like. If the prompt evolves in HM,
+ * Smithers picks up the change on the next call.
+ */
+export async function getHiveMindSkillContent(
+  opts: ResolvedVaultOptions,
+  slug: string,
+): Promise<HiveMindSkillContent | null> {
+  const all = await listHiveMindSkills(opts);
+  const skill = all.find((s) => s.slug === slug);
+  if (!skill) return null;
+  const raw = await tryReadFile(skill.source_path);
+  if (!raw) return null;
+  const parsed = parseMarkdown(raw);
+
+  const files: Record<string, string> = {};
+  if (opts.hiveMindPath) {
+    for (const rel of skill.dependencies) {
+      const content = await tryReadFile(join(opts.hiveMindPath, rel));
+      if (content !== null) files[rel] = content;
+    }
+  }
+
+  return {
+    skill,
+    system_prompt: parsed.content.trim(),
+    files,
+  };
 }
 
 /**
@@ -54,6 +115,14 @@ export async function listHiveMindSkills(
     const allowedTools = asString(data["allowed-tools"]);
     const userInvocable =
       data["user-invocable"] === undefined ? true : Boolean(data["user-invocable"]);
+    // `dependencies` is an optional YAML list — HM-root-relative paths the
+    // skill reads at runtime (templates, knowledge files, reference briefs).
+    // Smithers loads these alongside SKILL.md when running the skill.
+    const dependencies = Array.isArray(data.dependencies)
+      ? data.dependencies
+          .map((d) => (typeof d === "string" ? d.trim() : ""))
+          .filter(Boolean)
+      : [];
     skills.push({
       slug,
       name: asString(data.name) ?? slug,
@@ -62,6 +131,7 @@ export async function listHiveMindSkills(
         ? allowedTools.split(",").map((s) => s.trim()).filter(Boolean)
         : [],
       user_invocable: userInvocable,
+      dependencies,
       location: folder,
       source_path: sourcePath,
     });
@@ -76,6 +146,10 @@ export interface HiveMindPartner {
   nda?: boolean;
   tags?: string[];
   description?: string;
+  /** From frontmatter `domain_registrar` (added 2026-05-28 for brief inputs). */
+  domain_registrar?: string;
+  /** From frontmatter `dns_provider` (added 2026-05-28 for brief inputs). */
+  dns_provider?: string;
   body: string;
 }
 
@@ -98,6 +172,8 @@ export async function getHiveMindPartner(
     nda: asBool(data.nda),
     tags: asStringArray(data.tags),
     description: asString(data.description),
+    domain_registrar: asString(data.domain_registrar),
+    dns_provider: asString(data.dns_provider),
     body: content.trim(),
   };
 }
@@ -109,6 +185,8 @@ export interface HiveMindProject {
   owner?: string;
   platform?: string;
   description?: string;
+  /** From frontmatter `discovery_doc_url` (added 2026-05-28 for brief inputs). */
+  discovery_doc_url?: string;
   body: string;
 }
 
@@ -133,6 +211,7 @@ export async function getHiveMindProject(
     owner: asString(data.owner),
     platform: asString(data.platform),
     description: asString(data.description),
+    discovery_doc_url: asString(data.discovery_doc_url),
     body: content.trim(),
   };
 }
