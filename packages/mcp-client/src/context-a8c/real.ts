@@ -97,6 +97,8 @@ interface LinearIssue {
 interface LinearIssuesResult {
   count?: number;
   issues?: LinearIssue[];
+  /** Some context-a8c response shapes wrap data here. */
+  result?: LinearIssue[] | { issues?: LinearIssue[] };
 }
 
 interface GithubCommit {
@@ -287,6 +289,9 @@ export class RealContextA8CTransport implements ContextA8CClient {
     if (allow("slack") && query.refs.slack_channel) {
       tasks.push(this.fetchSlackMessages(query));
     }
+    if (allow("p2") && query.refs.p2_url) {
+      tasks.push(this.fetchP2Comments(query));
+    }
     if (allow("zendesk") && (query.refs.zendesk_tickets ?? []).length > 0) {
       // One task per ticket so each thread caches independently and a
       // 404 on one ticket doesn't poison the others.
@@ -361,8 +366,17 @@ export class RealContextA8CTransport implements ContextA8CClient {
               },
             },
           );
+          const issues = extractLinearIssues(result);
+          if (issues.length === 0) {
+            // One-liner so the user can sanity-check whether the MCP
+            // returned no data vs returned an unexpected shape. Includes
+            // the top-level keys so a shape change is visible.
+            console.warn(
+              `[context_a8c.linear] 0 issues for project=${projectKey} keys=${result ? Object.keys(result).join(",") : "null"}`,
+            );
+          }
           return mapLinearIssuesToActivity(
-            asArray(result?.issues),
+            issues,
             query.project_slug,
             this.opts.internalEmailDomains,
           );
@@ -522,6 +536,91 @@ export class RealContextA8CTransport implements ContextA8CClient {
         },
       },
     );
+  }
+
+  /**
+   * Fetch comments on the configured P2 post. p2_url is a full
+   * WP.com URL like `https://<site>/YYYY/MM/DD/<slug>/`. Tries
+   * context-a8c's `p2` provider first (intended path for internal P2s
+   * that require auth), then falls back to the WP.com REST API for
+   * public P2s. Returns [] silently when neither source has data —
+   * a missing P2 source shouldn't break the rest of the feed.
+   */
+  private async fetchP2Comments(
+    query: ProjectActivityQuery,
+  ): Promise<SourceResult<ActivityEvent[]>> {
+    const url = query.refs.p2_url!;
+    const parsed = parseP2Url(url);
+    if (!parsed) {
+      return failedResult(
+        "context_a8c.p2",
+        "invalid",
+        `Couldn't parse p2_url "${url}" — expected https://<site>/YYYY/MM/DD/<slug>/`,
+      );
+    }
+    return runIsolated(
+      { cache: this.cache, health: this.health },
+      {
+        source: "context_a8c.p2",
+        cacheKey: `real:context_a8c:project_activity:p2:${parsed.site}/${parsed.slug}`,
+        ttl: ACTIVITY_TTL,
+        fetcher: async () => {
+          // First try context-a8c's p2 provider — the intended path for
+          // internal P2s. If the tool doesn't exist (or the session is
+          // unauthenticated for the site), fall through to public WP.com.
+          const comments = await this.fetchP2CommentsViaMcp(parsed).catch(
+            () => [] as RawP2Comment[],
+          );
+          let pool = comments;
+          if (pool.length === 0) {
+            pool = await fetchP2CommentsViaPublicApi(parsed).catch(
+              () => [] as RawP2Comment[],
+            );
+          }
+          if (pool.length === 0) {
+            console.warn(
+              `[context_a8c.p2] 0 comments for ${parsed.site}/${parsed.slug} — context-a8c P2 tool may not be available or post is private + REST is unauthenticated`,
+            );
+          }
+          return mapP2CommentsToActivity(
+            pool,
+            url,
+            query.project_slug,
+            this.opts.internalEmailDomains,
+          );
+        },
+      },
+    );
+  }
+
+  private async fetchP2CommentsViaMcp(
+    parsed: P2UrlParts,
+  ): Promise<RawP2Comment[]> {
+    // Speculative — try a couple of likely tool names and shapes. If
+    // none match, callers fall through to the public REST API path.
+    const candidateTools = ["comments", "post-comments", "replies"] as const;
+    for (const tool of candidateTools) {
+      try {
+        const result = await this.mcp.callJsonTool<P2CommentsResult>(
+          "context-a8c-execute-tool",
+          {
+            provider: "p2",
+            tool,
+            params: {
+              site: parsed.site,
+              slug: parsed.slug,
+              postUrl: parsed.url,
+              limit: 20,
+            },
+          },
+        );
+        const comments = extractP2Comments(result);
+        if (comments.length > 0) return comments;
+      } catch {
+        /* try next tool */
+      }
+    }
+    return [];
   }
 
   private async fetchSlackMessages(
@@ -1844,6 +1943,149 @@ function asArray<T>(maybe: unknown): T[] {
  * has historically been inconsistent — some entries store the URL,
  * others the slug.
  */
+/**
+ * Pull the issues array out of whichever response shape the
+ * context-a8c Linear tool happens to use. We've seen `{ issues: [...] }`,
+ * `{ result: [...] }`, and `{ result: { issues: [...] } }` in the wild
+ * for different providers; try them all rather than guess.
+ */
+function extractLinearIssues(result: LinearIssuesResult | null): LinearIssue[] {
+  if (!result) return [];
+  if (Array.isArray(result.issues)) return result.issues;
+  if (Array.isArray(result.result)) return result.result;
+  if (result.result && typeof result.result === "object" && Array.isArray((result.result as { issues?: LinearIssue[] }).issues)) {
+    return (result.result as { issues: LinearIssue[] }).issues;
+  }
+  return [];
+}
+
+// --- P2 ----------------------------------------------------------------
+
+interface RawP2Comment {
+  ID?: number | string;
+  content?: string;
+  date?: string;
+  URL?: string;
+  short_URL?: string;
+  author?: {
+    name?: string;
+    login?: string;
+    email?: string;
+    avatar_URL?: string;
+  };
+}
+
+interface P2CommentsResult {
+  comments?: RawP2Comment[];
+  result?: RawP2Comment[] | { comments?: RawP2Comment[] };
+}
+
+interface P2UrlParts {
+  site: string;
+  slug: string;
+  url: string;
+}
+
+/**
+ * Parse a P2 post URL into its site host and post slug. Accepts the
+ * standard WP.com pattern `https://<site>/YYYY/MM/DD/<slug>/` with or
+ * without trailing slash, and ignores any anchor / query string.
+ */
+function parseP2Url(raw: string): P2UrlParts | null {
+  try {
+    const u = new URL(raw);
+    const segments = u.pathname.split("/").filter(Boolean);
+    // Expect: [YYYY, MM, DD, slug] — 4 segments after the leading /.
+    if (segments.length < 4) return null;
+    if (!/^\d{4}$/.test(segments[0]!)) return null;
+    if (!/^\d{1,2}$/.test(segments[1]!)) return null;
+    if (!/^\d{1,2}$/.test(segments[2]!)) return null;
+    const slug = segments[3]!;
+    return { site: u.hostname, slug, url: raw };
+  } catch {
+    return null;
+  }
+}
+
+function extractP2Comments(result: P2CommentsResult | null): RawP2Comment[] {
+  if (!result) return [];
+  if (Array.isArray(result.comments)) return result.comments;
+  if (Array.isArray(result.result)) return result.result;
+  if (result.result && typeof result.result === "object" && Array.isArray((result.result as { comments?: RawP2Comment[] }).comments)) {
+    return (result.result as { comments: RawP2Comment[] }).comments;
+  }
+  return [];
+}
+
+/**
+ * Anonymous fallback fetch via the public WP.com REST API. Works for
+ * public-ish P2s; private sites 401 and we degrade silently. Two-step:
+ * resolve the post id from slug, then fetch replies.
+ */
+async function fetchP2CommentsViaPublicApi(
+  parsed: P2UrlParts,
+): Promise<RawP2Comment[]> {
+  const siteEnc = encodeURIComponent(parsed.site);
+  const slugEnc = encodeURIComponent(parsed.slug);
+  // Resolve post by slug. v1.1 supports `slug:` prefix.
+  const postRes = await fetch(
+    `https://public-api.wordpress.com/rest/v1.1/sites/${siteEnc}/posts/slug:${slugEnc}?fields=ID`,
+  );
+  if (!postRes.ok) return [];
+  const post = (await postRes.json()) as { ID?: number };
+  if (!post.ID) return [];
+  const repliesRes = await fetch(
+    `https://public-api.wordpress.com/rest/v1.1/sites/${siteEnc}/posts/${post.ID}/replies/?number=20&order=DESC&order_by=date`,
+  );
+  if (!repliesRes.ok) return [];
+  const body = (await repliesRes.json()) as { comments?: RawP2Comment[] };
+  return Array.isArray(body.comments) ? body.comments : [];
+}
+
+function mapP2CommentsToActivity(
+  comments: RawP2Comment[],
+  postUrl: string,
+  projectSlug: string,
+  internalDomains: readonly string[],
+): ActivityEvent[] {
+  const out: ActivityEvent[] = [];
+  for (const c of comments) {
+    if (!c.date) continue;
+    const idRaw = c.ID;
+    const id =
+      typeof idRaw === "number" || typeof idRaw === "string"
+        ? `p2:${String(idRaw)}`
+        : `p2:${postUrl}#${c.date}`;
+    const body = (c.content ?? "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const authorName = c.author?.name ?? c.author?.login ?? "P2";
+    const authorHandle = c.author?.email ?? c.author?.login;
+    out.push({
+      id,
+      source: "p2",
+      kind: "p2-comment",
+      timestamp: c.date,
+      actor: {
+        name: authorName,
+        handle: authorHandle,
+        is_external: isExternalEmail(c.author?.email, internalDomains),
+      },
+      title: body.slice(0, 80) || "P2 comment",
+      excerpt: body,
+      url: c.URL ?? c.short_URL ?? postUrl,
+      project_match: {
+        project_slug: projectSlug,
+        matched_by: "p2_url",
+      },
+      is_mock: false,
+    });
+  }
+  return out;
+}
+
 function normalizeGithubRepo(raw: string): [string | undefined, string | undefined] {
   if (!raw) return [undefined, undefined];
   const trimmed = raw.trim().replace(/\.git$/i, "");
