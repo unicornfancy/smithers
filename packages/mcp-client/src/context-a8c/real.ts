@@ -375,7 +375,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
     query: ProjectActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>> {
     const repo = query.refs.github_repo!;
-    const [owner, name] = repo.split("/");
+    const [owner, name] = normalizeGithubRepo(repo);
     if (!owner || !name) {
       return failedResult(
         "context_a8c.github",
@@ -413,7 +413,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
     query: ProjectActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>> {
     const repo = query.refs.github_repo!;
-    const [owner, name] = repo.split("/");
+    const [owner, name] = normalizeGithubRepo(repo);
     if (!owner || !name) {
       return failedResult(
         "context_a8c.github",
@@ -458,7 +458,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
     query: ProjectActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>> {
     const repo = query.refs.github_repo!;
-    const [owner, name] = repo.split("/");
+    const [owner, name] = normalizeGithubRepo(repo);
     if (!owner || !name) {
       return failedResult(
         "context_a8c.github",
@@ -608,7 +608,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
 
     const results = await Promise.allSettled(
       repos.map(async (repo) => {
-        const [owner, name] = repo.split("/");
+        const [owner, name] = normalizeGithubRepo(repo);
         if (!owner || !name) return [] as Ping[];
         const url = `https://api.github.com/repos/${owner}/${name}/issues?state=open&mentions=${handle}&per_page=10`;
         const res = await fetch(url, {
@@ -1833,4 +1833,25 @@ function truncateText(s: string, max: number): string {
  */
 function asArray<T>(maybe: unknown): T[] {
   return Array.isArray(maybe) ? (maybe as T[]) : [];
+}
+
+/**
+ * Accept either the bare `owner/repo` form or a full
+ * `https://github.com/owner/repo[/...]` URL (with optional trailing
+ * `.git`, branch, or path) and return `[owner, repo]`. Returns
+ * `[undefined, undefined]` when neither form matches so callers keep
+ * their existing degradation branch. Reason: project frontmatter
+ * has historically been inconsistent — some entries store the URL,
+ * others the slug.
+ */
+function normalizeGithubRepo(raw: string): [string | undefined, string | undefined] {
+  if (!raw) return [undefined, undefined];
+  const trimmed = raw.trim().replace(/\.git$/i, "");
+  const urlMatch = /^https?:\/\/(?:www\.)?github\.com\/([^/\s]+)\/([^/\s]+)/i.exec(trimmed);
+  if (urlMatch) return [urlMatch[1]!, urlMatch[2]!];
+  const parts = trimmed.split("/");
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    return [parts[0], parts[1]];
+  }
+  return [undefined, undefined];
 }
