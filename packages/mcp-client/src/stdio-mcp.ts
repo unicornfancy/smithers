@@ -80,6 +80,19 @@ export class StdioMcpClient {
       return JSON.parse(text) as T;
     } catch {
       // Plain-text responses (usually upstream errors): caller decides.
+      // Log once per (tool, prefix) so we can see what the MCP is
+      // actually saying — null-on-non-JSON otherwise silently swallows
+      // "Tool not found" / "Permission denied" / "Project not found".
+      const preview = text.slice(0, 200).replace(/\s+/g, " ").trim();
+      console.warn(
+        `[mcp ${this.opts.label}] tool "${name}" returned plain text: ${preview}`,
+      );
+      // Auth-required errors are user-actionable, not "no data" —
+      // bubble them up so the activity feed shows a visible degraded
+      // notice with the connect URL instead of silently rendering empty.
+      if (/please connect your .+ account at https?:\/\//i.test(text)) {
+        throw new Error(text.trim());
+      }
       return null;
     }
   }

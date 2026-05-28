@@ -366,17 +366,8 @@ export class RealContextA8CTransport implements ContextA8CClient {
               },
             },
           );
-          const issues = extractLinearIssues(result);
-          if (issues.length === 0) {
-            // One-liner so the user can sanity-check whether the MCP
-            // returned no data vs returned an unexpected shape. Includes
-            // the top-level keys so a shape change is visible.
-            console.warn(
-              `[context_a8c.linear] 0 issues for project=${projectKey} keys=${result ? Object.keys(result).join(",") : "null"}`,
-            );
-          }
           return mapLinearIssuesToActivity(
-            issues,
+            extractLinearIssues(result),
             query.project_slug,
             this.opts.internalEmailDomains,
           );
@@ -496,7 +487,9 @@ export class RealContextA8CTransport implements ContextA8CClient {
               {
                 provider: "github",
                 tool: "issues",
-                params: { owner, repo: name, state: "all", perPage: 10 },
+                // Provider rejects "all" / lowercase — needs "OPEN" or
+                // "CLOSED". Open issues are the activity-feed signal.
+                params: { owner, repo: name, state: "OPEN", perPage: 10 },
               },
             );
             const raw = asArray<GithubIssue>(result?.result);
@@ -565,21 +558,17 @@ export class RealContextA8CTransport implements ContextA8CClient {
         cacheKey: `real:context_a8c:project_activity:p2:${parsed.site}/${parsed.slug}`,
         ttl: ACTIVITY_TTL,
         fetcher: async () => {
-          // First try context-a8c's p2 provider — the intended path for
-          // internal P2s. If the tool doesn't exist (or the session is
-          // unauthenticated for the site), fall through to public WP.com.
-          const comments = await this.fetchP2CommentsViaMcp(parsed).catch(
+          // context-a8c's `wpcom` provider exposes user-profile,
+          // posts-text, reader, etc. — but no per-post comments tool
+          // (probed empirically). Use the public WP.com REST API
+          // directly; works for public P2s, 401s on private/internal
+          // P2s (where we degrade silently to []).
+          const pool = await fetchP2CommentsViaPublicApi(parsed).catch(
             () => [] as RawP2Comment[],
           );
-          let pool = comments;
-          if (pool.length === 0) {
-            pool = await fetchP2CommentsViaPublicApi(parsed).catch(
-              () => [] as RawP2Comment[],
-            );
-          }
           if (pool.length === 0) {
             console.warn(
-              `[context_a8c.p2] 0 comments for ${parsed.site}/${parsed.slug} — context-a8c P2 tool may not be available or post is private + REST is unauthenticated`,
+              `[context_a8c.p2] 0 comments for ${parsed.site}/${parsed.slug} — post is probably private; context-a8c wpcom doesn't expose per-post comments`,
             );
           }
           return mapP2CommentsToActivity(
@@ -591,36 +580,6 @@ export class RealContextA8CTransport implements ContextA8CClient {
         },
       },
     );
-  }
-
-  private async fetchP2CommentsViaMcp(
-    parsed: P2UrlParts,
-  ): Promise<RawP2Comment[]> {
-    // Speculative — try a couple of likely tool names and shapes. If
-    // none match, callers fall through to the public REST API path.
-    const candidateTools = ["comments", "post-comments", "replies"] as const;
-    for (const tool of candidateTools) {
-      try {
-        const result = await this.mcp.callJsonTool<P2CommentsResult>(
-          "context-a8c-execute-tool",
-          {
-            provider: "p2",
-            tool,
-            params: {
-              site: parsed.site,
-              slug: parsed.slug,
-              postUrl: parsed.url,
-              limit: 20,
-            },
-          },
-        );
-        const comments = extractP2Comments(result);
-        if (comments.length > 0) return comments;
-      } catch {
-        /* try next tool */
-      }
-    }
-    return [];
   }
 
   private async fetchSlackMessages(
@@ -1975,11 +1934,6 @@ interface RawP2Comment {
   };
 }
 
-interface P2CommentsResult {
-  comments?: RawP2Comment[];
-  result?: RawP2Comment[] | { comments?: RawP2Comment[] };
-}
-
 interface P2UrlParts {
   site: string;
   slug: string;
@@ -2005,16 +1959,6 @@ function parseP2Url(raw: string): P2UrlParts | null {
   } catch {
     return null;
   }
-}
-
-function extractP2Comments(result: P2CommentsResult | null): RawP2Comment[] {
-  if (!result) return [];
-  if (Array.isArray(result.comments)) return result.comments;
-  if (Array.isArray(result.result)) return result.result;
-  if (result.result && typeof result.result === "object" && Array.isArray((result.result as { comments?: RawP2Comment[] }).comments)) {
-    return (result.result as { comments: RawP2Comment[] }).comments;
-  }
-  return [];
 }
 
 /**
