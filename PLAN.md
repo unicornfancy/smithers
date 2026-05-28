@@ -55,17 +55,22 @@ Defer concrete design until weekly-updates settles and this can be properly scop
 
 ---
 
-## Project briefs — skill integration
+## Skill integration — remaining queue
 
-Brief path lookup shipped 2026-05-28: `getHiveMindBrief` now tries canonical → `info.md` `brief_path` frontmatter override → `brief.md` at the project root, so non-canonical briefs (like Body Dao's) surface in the workbench Project brief card without migration.
+`/create-brief` integration shipped 2026-05-28 via Option 3 (runtime skill loader + `run-skill` agent + brief wizard). The foundation is reusable; remaining skills follow the same pattern.
 
-Still deferred — the bigger question: how does Smithers actually generate a brief?
+- **`/project-handoff`** — workbench affordance to generate a handoff report when passing a partner to another TAM. Same shape as brief: load the handoff skill's SKILL.md + dependencies, gather inputs (which project + recipient TAM + any hand-off notes), run via `runHiveMindSkill`, write the artifact to HM. Smaller than brief because the inputs are simpler.
+- **`/update-knowledge`** — closes the read-only loop on partner-knowledge cards. Bigger UI lift than the other two (needs a real markdown editor for partner-knowledge.md). The brief wizard's partner-knowledge frontmatter writer is reusable for the metadata; the body editor is new work.
+- **`/search-knowledge`** — global HM search via command palette (`Cmd-K`) or a `/search` page. Not a skill in the runtime-prompt sense; the HM MCP's `search-knowledge` tool already exists and Smithers just needs to call it + render results.
 
-- **Option: mirror the skill.** Build a Smithers-native `generate-brief` agent in `packages/agents/` that replicates `/create-brief`'s behavior — same template, same prompt structure. Smithers's "Generate brief" button on the workbench runs the agent and dual-writes to HM. Pros: works without Claude Code. Cons: duplicates prompt logic that already lives in HM's `.claude/skills/create-brief/SKILL.md`; drift risk over time.
-- **Option: link only.** Skills tab already lists `/create-brief` (shipped 2026-05-28). Workbench's Project brief card could grow a "Run in Claude Code" hint pointing at the skill. Smithers doesn't execute anything; the user runs the skill in their HM Claude Code session, then refreshes the workbench. Pros: zero duplication; HM stays authoritative. Cons: extra context switch.
-- **Option: shell out.** Smithers spawns `claude` with the skill invocation. Possible but messy — needs Claude Code installed, an OAuth flow, and would block the dev server during the run. Probably not worth it.
+## Hive Mind side — recommendations for v1.5 (not blocking)
 
-Worth Katie's input on which direction before building. The skill is interactive (asks for transcript path, registrar info, etc.), which complicates the "Smithers-native" option meaningfully.
+Surfaced while building the brief integration:
+
+- **Skill prompt phrasing** — `/create-brief`'s SKILL.md is written for interactive Claude Code ("Ask the user for…", "Stop and pause"). Smithers wraps it with a framing note that says "all inputs pre-gathered, skip the asks." Works fine, but if you ever want a cleaner skill, rewriting prompts as input-agnostic ("Read these inputs (provided below or fetched). If a required input is missing, list it under follow-up questions.") would let any runner consume them without the wrapper.
+- **Brief output path canonicalization** — skill writes to `<project>/brief.md`; CLAUDE.md and Phase 1 docs originally said `briefs/project-brief.md`. Smithers fallback handles both today. A small HM migration would make the canonical path mean something.
+- **Two more reusable skill frontmatter fields** that would help Smithers + future runners: `output_path` (where the artifact lands — e.g. `brief.md` for /create-brief) and `requires_partner: true` / `requires_project: true` (so the workbench can know whether a skill needs context before offering it).
+- **`temp/brief-final-partner.md` location** — referenced in the skill as the canonical reference brief. The `temp/` parent suggests work-in-progress; moving to `references/` or `examples/` would be cleaner naming.
 
 ## Other deferred items
 

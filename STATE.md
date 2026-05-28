@@ -2,7 +2,27 @@
 
 _Updated 2026-05-28_
 
-## Just completed (2026-05-28 — /settings top-tab refactor + brief path fallback + Skills registry)
+## Just completed (2026-05-28 — /settings top-tab refactor + brief path fallback + Skills registry + brief generation workbench affordance)
+
+### Generate-brief workbench affordance via runtime skill loader (9039c16)
+
+Full end-to-end `/create-brief` integration following Option 3 (the runtime-loaded approach): Smithers loads the skill's SKILL.md + declared dependency files from Hive Mind at runtime and runs the prompt directly via Claude, so HM stays the source of truth while Smithers provides the native one-button workflow.
+
+**Foundation (reusable for `/project-handoff`, `/update-knowledge` later):**
+- `@smithers/vault` gains `getHiveMindSkillContent(slug)` returning `{ skill, system_prompt, files }`. `files` is keyed by HM-root-relative path and populated from the skill's frontmatter `dependencies` list.
+- `HiveMindSkill` grows `dependencies: string[]`, parsed from the new SKILL.md frontmatter field.
+- New `run-skill` agent in `packages/agents/`: framing wrapper that takes the skill body as system prompt and a structured user message with all pre-gathered inputs + dependency-file contents. Returns `{ markdown, questions }` — questions for things the skill would normally ask the user about.
+
+**Brief-specific wiring:**
+- `generateProjectBriefAction` gathers transcripts + Discovery Doc + registrar/dns + project/partner context, calls `runHiveMindSkill`, persists inputs (discovery_doc_url via `updateProjectInfo`; registrar/dns via new `buildPartnerKnowledgeFrontmatterUpdate` + `writePartnerFile`).
+- `saveProjectBriefAction` writes `brief.md` to HM via `writeProjectFile` + commit, revalidates the workbench.
+- `BriefGeneratorDialog`: 4-section input phase (transcripts multi-select, Discovery Doc url/paste toggle, registrar + dns inputs) → generating spinner → review phase with editable markdown + preview toggle + flagged-questions banner → "Save to Hive Mind."
+- `GenerateBriefButton` slots into both empty + populated states of `ProjectBriefSection`.
+
+**Hive Mind side (same-day):**
+- `.claude/skills/create-brief/SKILL.md` gains `dependencies:` frontmatter listing `templates/project-brief.md`, `knowledge/integrations.md`, `temp/brief-final-partner.md`.
+- `templates/partner-knowledge.md` gets `domain_registrar` + `dns_provider` scaffolding.
+- `templates/project-info.md` gets `discovery_doc_url` scaffolding.
 
 ### Brief path fallback + HM Skills registry (11f4dde)
 
@@ -231,6 +251,10 @@ In rough priority order:
 
 ## Recent decisions (with the why)
 
+- **Skill dependencies live in SKILL.md frontmatter, not a Smithers-side registry** (2026-05-28) — Skills declare which files they read at runtime via a `dependencies:` YAML list. Smithers' `getHiveMindSkillContent` loads them. Alternative considered: hardcode per-skill in Smithers (`SKILL_DEPENDENCIES["create-brief"] = [...]`). Rejected because HM is the source of truth for skill metadata; embedding it in Smithers creates drift when the skill evolves. Trade: needs cross-repo coordination when adding a new dep, which is the right discipline anyway.
+- **`run-skill` is a generic agent, not `generate-brief`** (2026-05-28) — Same agent handles `/project-handoff`, `/update-knowledge`, and any future skill that produces a single markdown artifact. The skill-specific shape is in the user prompt (gathered inputs + dependency files), not the agent code. Trade: one shared contract means brief-specific output schema validation isn't possible (output is "markdown string + question list" regardless of skill); skills that need richer structured output would warrant their own agent.
+- **Brief wizard has explicit phases (inputs → generating → review → saving), not AiDraftDialog reuse** (2026-05-28) — AiDraftDialog would have lost the questions banner + the "back to inputs" navigation. The brief flow's review phase needs the questions list above the markdown so Katie sees what the skill flagged before saving. Custom dialog is ~250 lines but maps to the actual workflow.
+- **Skill prompt wrapped with "all inputs pre-gathered" framing, not rewritten upstream** (2026-05-28) — `/create-brief`'s SKILL.md is written for interactive Claude Code ("Ask the user for…", "Stop and pause"). Rather than ask HM to rewrite the skill for batch mode, Smithers prepends a small framing note that tells the model "Skip any 'ask the user' steps — treat the inputs as provided. Surface unknowns under `questions`." Same approach will work for `/project-handoff` and `/update-knowledge` without HM skill changes.
 - **Brief path lookup tries three paths, doesn't migrate data** (2026-05-28) — the canonical schema is `briefs/project-brief.md`, but zero partners in the current HM clone actually use it; everyone has `brief.md` at the project root. Migrating files would have been days of coordination across multiple TAMs. Code change makes Smithers tolerant instead. The `brief_path` frontmatter override exists for the rare case where a partner team wants their brief somewhere else explicitly.
 - **Skills registry reads the HM `.claude/skills/` dir directly, not a Smithers-side config** (2026-05-28) — HM is the source of truth for which skills exist; replicating that into a Smithers config would create sync drift. The trade is that disabling individual skills from Smithers' UI isn't trivially possible (the registry is read-only); when that's wanted, we add a Smithers-side overlay rather than a parallel registry.
 - **`/settings` uses top tabs that swap content, not a long-scroll page with left-rail nav** (2026-05-28) — left-rail-plus-scroll-spy shipped 2026-05-27 (b433976) and was reverted same day. Reason: tabs that hide non-active content give a clearer "single-purpose view per click" feel and avoid the scroll-spy timing tradeoffs entirely. Tab state lives in `?tab=<id>` (not URL hash) so deep links survive Next's SSR path.
