@@ -26,7 +26,6 @@ export type ActivitySourceFilter =
   | "github"
   | "linear"
   | "zendesk"
-  | "p2"
   | "wpcom";
 
 export interface ProjectActivityRefs {
@@ -35,7 +34,6 @@ export interface ProjectActivityRefs {
   linear_project_id?: string;
   /** Raw IDs or full URLs; first is the primary thread. */
   zendesk_tickets?: string[];
-  p2_url?: string;
   slack_channel?: string;
   partner?: string;
 }

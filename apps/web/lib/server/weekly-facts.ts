@@ -186,7 +186,6 @@ async function fetchActivity(
         linear_project_id: project.linear_project_id,
         linear_project_slug: project.linear_project_slug,
         zendesk_tickets: project.zendesk_tickets?.map((t) => t.id),
-        p2_url: project.p2_url,
         slack_channel: project.slack_channel,
         partner: project.partner,
       },

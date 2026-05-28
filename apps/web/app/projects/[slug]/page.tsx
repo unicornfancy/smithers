@@ -125,7 +125,6 @@ export default async function ProjectWorkbenchPage({
           linear_project_id: detail.linear_project_id,
           linear_project_slug: detail.linear_project_slug,
           zendesk_tickets: detail.zendesk_tickets?.map((t) => t.id),
-          p2_url: detail.p2_url,
           slack_channel: detail.slack_channel,
           partner: detail.partner,
         },
@@ -368,11 +367,6 @@ export default async function ProjectWorkbenchPage({
         (detail.zendesk_tickets ?? []).length > 0
           ? undefined
           : "no tickets configured",
-    },
-    {
-      label: "P2",
-      configured: Boolean(detail.p2_url),
-      reason: !detail.p2_url ? "no post URL configured" : undefined,
     },
   ];
 

@@ -70,13 +70,6 @@ const LINEAR_TITLES = [
   "Move milestones to deadlines.md",
 ];
 
-const P2_TITLES = [
-  "Partner check-in: notes from this week",
-  "Launch readiness — outstanding items",
-  "Review: phase 2 site map",
-  "Decision: archive the old microsite?",
-];
-
 const ZENDESK_SUBJECTS = [
   "Question about content publishing flow",
   "Donation receipts not delivering",
@@ -480,30 +473,6 @@ export class MockContextA8CTransport implements ContextA8CClient {
       }
     }
 
-    if (query.refs.p2_url && allow("p2")) {
-      const hoursAgo = 4 + Math.floor(rng() * 3 * 24);
-      const title = pickN(rng, P2_TITLES, 1)[0]!;
-      const actor = pickN(rng, INTERNAL_PEOPLE, 1)[0]!;
-      events.push({
-        id: `p2:${query.project_slug}`,
-        source: "p2",
-        kind: rng() < 0.5 ? "p2-post" : "p2-comment",
-        timestamp: new Date(now - hoursAgo * 60 * 60_000).toISOString(),
-        actor: {
-          name: actor.name,
-          handle: actor.handle,
-          is_external: false,
-        },
-        title,
-        url: query.refs.p2_url,
-        excerpt: `New activity on ${new URL(query.refs.p2_url).hostname}`,
-        project_match: {
-          project_slug: query.project_slug,
-          matched_by: "p2_url",
-        },
-        is_mock: true,
-      });
-    }
 
     const tickets = query.refs.zendesk_tickets ?? [];
     if (tickets.length > 0 && allow("zendesk")) {
