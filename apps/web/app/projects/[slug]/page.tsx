@@ -83,7 +83,12 @@ export default async function ProjectWorkbenchPage({
   const hmPartnerKnowledgePath = vault.options.hiveMindPath
     ? `file://${vault.options.hiveMindPath}/knowledge/partners/${hmPartnerSlug}/partner-knowledge.md`
     : null;
-  const hmBriefPath = vault.options.hiveMindPath
+  // Fallback edit path when no brief exists yet — opens the canonical
+  // location so a freshly-generated brief from /create-brief lands
+  // somewhere predictable. When a brief is found, we prefer the
+  // brief's own source_path (resolved via getHiveMindBrief's fallback
+  // chain) so the link points at the actual file on disk.
+  const hmBriefFallbackPath = vault.options.hiveMindPath
     ? `file://${vault.options.hiveMindPath}/knowledge/partners/${hmPartnerSlug}/${hmProjectSlug}/briefs/project-brief.md`
     : null;
   const hmIsConfigured = Boolean(detail.hive_mind_partner_slug);
@@ -432,7 +437,16 @@ export default async function ProjectWorkbenchPage({
   sections.push({
     id: "project-brief",
     title: "Project brief",
-    node: <ProjectBriefSection brief={hiveMindBrief} editPath={hmBriefPath} />,
+    node: (
+      <ProjectBriefSection
+        brief={hiveMindBrief}
+        editPath={
+          hiveMindBrief?.source_path
+            ? `file://${hiveMindBrief.source_path}`
+            : hmBriefFallbackPath
+        }
+      />
+    ),
   });
 
   sections.push({

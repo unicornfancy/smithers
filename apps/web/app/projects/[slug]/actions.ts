@@ -1159,24 +1159,29 @@ export async function resolveFollowUpAction(
   followUpId: string,
   note?: string,
 ): Promise<{ changed: boolean }> {
-  if (!slug) throw new Error("slug is required");
   if (!followUpId) throw new Error("followUpId is required");
 
   const vault = await getVault();
   const result = await vault.resolveFollowUp(followUpId, note);
 
-  revalidatePath(`/projects/${slug}`);
+  revalidatePath("/follow-ups");
+  if (slug) revalidatePath(`/projects/${slug}`);
 
-  // Dual-write: sync follow-ups.md in Hive Mind when connected.
-  const proj = await vault.readProject(slug).catch(() => null);
-  if (proj?.hive_mind_partner_slug) {
-    const hmPartner = proj.hive_mind_partner_slug;
-    const hmProject = proj.hive_mind_project_slug ?? proj.slug;
-    try {
-      const mcp = await getMcpClient();
-      await syncFollowUpsToHiveMind(vault, mcp, slug, proj.name, hmPartner, hmProject);
-    } catch {
-      // Non-fatal.
+  // Dual-write: sync follow-ups.md in Hive Mind when the project is
+  // connected. Empty slug → /follow-ups call, skip dual-write (the
+  // global page doesn't know which project the row belonged to;
+  // the next render will pull fresh state from vault anyway).
+  if (slug) {
+    const proj = await vault.readProject(slug).catch(() => null);
+    if (proj?.hive_mind_partner_slug) {
+      const hmPartner = proj.hive_mind_partner_slug;
+      const hmProject = proj.hive_mind_project_slug ?? proj.slug;
+      try {
+        const mcp = await getMcpClient();
+        await syncFollowUpsToHiveMind(vault, mcp, slug, proj.name, hmPartner, hmProject);
+      } catch {
+        // Non-fatal.
+      }
     }
   }
 
@@ -1349,6 +1354,58 @@ export async function convertFollowUpToTaskAction(
  * inline edit form on the /follow-ups page. Patch semantics: undefined
  * leaves the cell alone; empty string clears it.
  */
+/**
+ * Remove a follow-up row from Follow-ups.md entirely. Used for entries
+ * the user added by mistake (vs. resolve, which keeps the audit trail
+ * with a ✅ status). Empty slug is fine when called from /follow-ups
+ * — the action revalidates the global page and skips the project
+ * revalidation.
+ */
+export async function deleteFollowUpAction(
+  projectSlug: string,
+  followUpId: string,
+): Promise<{ ok: true; deleted: boolean } | { ok: false; reason: "error"; message?: string }> {
+  if (!followUpId) throw new Error("followUpId is required");
+  try {
+    const vault = await getVault();
+    const result = await vault.deleteFollowUp(followUpId);
+
+    revalidatePath("/follow-ups");
+    if (projectSlug) revalidatePath(`/projects/${projectSlug}`);
+
+    // Dual-write follow-ups.md in Hive Mind when the project is
+    // connected, so the removed row disappears from HM too.
+    if (projectSlug) {
+      const proj = await vault.readProject(projectSlug).catch(() => null);
+      if (proj?.hive_mind_partner_slug) {
+        const hmPartner = proj.hive_mind_partner_slug;
+        const hmProject = proj.hive_mind_project_slug ?? proj.slug;
+        try {
+          const mcp = await getMcpClient();
+          await syncFollowUpsToHiveMind(
+            vault,
+            mcp,
+            projectSlug,
+            proj.name,
+            hmPartner,
+            hmProject,
+          );
+        } catch {
+          /* HM sync is non-fatal */
+        }
+      }
+    }
+
+    return { ok: true, deleted: result.deleted };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export async function updateFollowUpAction(
   _projectSlug: string,
   followUpId: string,

@@ -13,8 +13,10 @@ import { ScheduleCard } from "@/components/schedule-card";
 import { SettingsSection } from "@/components/settings-section";
 import { SettingsSetupGroup } from "@/components/settings-setup-group";
 import { SettingsTabs, type SettingsTab } from "@/components/settings-tabs";
+import { SkillsRegistryCard } from "@/components/skills-registry-card";
 import { WeeklyUpdateFormatCard } from "@/components/weekly-update-format-card";
 import { loadConfig } from "@/lib/server/config";
+import { getVault } from "@/lib/server/vault";
 
 export const metadata = {
   title: "Settings · Smithers",
@@ -31,14 +33,17 @@ const TABS: SettingsTab[] = [
 ];
 
 export default async function SettingsPage() {
-  const [cfg, setupStatus] = await Promise.all([
+  const vault = await getVault();
+  const [cfg, setupStatus, skills] = await Promise.all([
     loadConfig(),
     getSetupStatusAction(),
+    vault.listHiveMindSkills().catch(() => []),
   ]);
   const briefingTime =
     cfg.schedule?.daily_briefing?.time ??
     cfg.working_rhythm.briefing_time ??
     "07:30";
+  const hiveMindPath = vault.options.hiveMindPath ?? null;
 
   return (
     <>
@@ -135,16 +140,11 @@ export default async function SettingsPage() {
           <SettingsSection
             id="skills"
             title="Skills"
-            description="Skills that Smithers can invoke. The project-brief skill lands before v1; this is where future skills register."
+            description="Slash-command skills Smithers knows about. v1 reads the registry from Hive Mind's .claude/skills/ folder; invocation still happens in a Claude Code session pointed at the HM clone."
           >
-            <PlaceholderCard
-              title="Skills registry"
-              description="Once the /create-brief skill is wired through Smithers (PLAN.md: project briefs — attach affordance + skill integration), this card lists every registered skill with last-run status."
-              todo={[
-                "Wire /create-brief skill into the workbench brief card.",
-                "Capture skill registration in config so toggles can disable individual skills.",
-                "Add 'Run skill manually' affordance per row.",
-              ]}
+            <SkillsRegistryCard
+              skills={skills}
+              hiveMindPath={hiveMindPath}
             />
           </SettingsSection>
 

@@ -9,6 +9,67 @@ function hiveMindPartnersDir(opts: ResolvedVaultOptions): string | null {
   return join(opts.hiveMindPath, "knowledge", "partners");
 }
 
+function hiveMindSkillsDir(opts: ResolvedVaultOptions): string | null {
+  if (!opts.hiveMindPath) return null;
+  return join(opts.hiveMindPath, ".claude", "skills");
+}
+
+export interface HiveMindSkill {
+  /** Folder name under .claude/skills/ — also the invocation slash-command. */
+  slug: string;
+  /** From SKILL.md frontmatter `name`; falls back to slug. */
+  name: string;
+  /** From frontmatter `description`. */
+  description: string;
+  /** From frontmatter `allowed-tools` (split on comma). */
+  allowed_tools: string[];
+  /** From frontmatter `user-invocable`. Defaults to true when absent. */
+  user_invocable: boolean;
+  /** Absolute path to the skill folder (the `.claude/skills/<slug>/` dir). */
+  location: string;
+  /** Absolute path to the SKILL.md file. */
+  source_path: string;
+}
+
+/**
+ * List every `.claude/skills/<slug>/SKILL.md` in the configured Hive
+ * Mind clone, parsing each one's frontmatter. Returns `[]` when
+ * Hive Mind isn't configured or the skills dir doesn't exist.
+ */
+export async function listHiveMindSkills(
+  opts: ResolvedVaultOptions,
+): Promise<HiveMindSkill[]> {
+  const dir = hiveMindSkillsDir(opts);
+  if (!dir) return [];
+  const entries = await listDir(dir);
+  const skills: HiveMindSkill[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory) continue;
+    const slug = entry.name;
+    const folder = join(dir, slug);
+    const sourcePath = join(folder, "SKILL.md");
+    const raw = await tryReadFile(sourcePath);
+    if (!raw) continue;
+    const { data } = parseMarkdown(raw);
+    const allowedTools = asString(data["allowed-tools"]);
+    const userInvocable =
+      data["user-invocable"] === undefined ? true : Boolean(data["user-invocable"]);
+    skills.push({
+      slug,
+      name: asString(data.name) ?? slug,
+      description: asString(data.description) ?? "",
+      allowed_tools: allowedTools
+        ? allowedTools.split(",").map((s) => s.trim()).filter(Boolean)
+        : [],
+      user_invocable: userInvocable,
+      location: folder,
+      source_path: sourcePath,
+    });
+  }
+  skills.sort((a, b) => a.slug.localeCompare(b.slug));
+  return skills;
+}
+
 export interface HiveMindPartner {
   title?: string;
   owner?: string;
@@ -482,10 +543,25 @@ export async function getHiveMindFollowUps(
 export interface HiveMindBrief {
   google_doc_url?: string;
   body: string;
+  /** Absolute path of the file actually read — used by the workbench
+   * to build an "Edit brief" link that opens the right file. */
+  source_path: string;
 }
 
 /**
- * Read briefs/project-brief.md for a given partner/project. Returns null if not configured or file absent.
+ * Read the project brief for a given partner/project. Tries three paths
+ * in order so older / non-conforming briefs still surface:
+ *
+ *   1. `briefs/project-brief.md` — the canonical schema documented in
+ *      Hive-Mind's CONTRIBUTING.
+ *   2. `info.md`'s `brief_path` frontmatter (relative to the project
+ *      folder), when set. Lets a partner-team point at a brief that
+ *      doesn't sit at the canonical path.
+ *   3. `brief.md` at the project root — the de-facto location for
+ *      briefs created before the canonical path was nailed down.
+ *
+ * The brief's own google_doc_url frontmatter is read regardless of
+ * which file backed the content.
  */
 export async function getHiveMindBrief(
   opts: ResolvedVaultOptions,
@@ -494,15 +570,52 @@ export async function getHiveMindBrief(
 ): Promise<HiveMindBrief | null> {
   const base = hiveMindPartnersDir(opts);
   if (!base) return null;
+  const projectRoot = join(base, partnerSlug, projectSlug);
 
-  const filePath = join(base, partnerSlug, projectSlug, "briefs", "project-brief.md");
-  const raw = await tryReadFile(filePath);
+  // 1. Canonical path.
+  const canonical = join(projectRoot, "briefs", "project-brief.md");
+  let raw = await tryReadFile(canonical);
+  let sourcePath = canonical;
+
+  // 2. info.md frontmatter override.
+  if (!raw) {
+    const infoRaw = await tryReadFile(join(projectRoot, "info.md"));
+    if (infoRaw) {
+      const infoBriefPath = asString(parseMarkdown(infoRaw).data.brief_path);
+      if (infoBriefPath) {
+        // Treat the override as project-relative for safety; an
+        // absolute path would let a stray frontmatter value read
+        // arbitrary files. Strip leading "./" too.
+        const cleaned = infoBriefPath.replace(/^\.\/+/, "");
+        if (!cleaned.startsWith("/") && !cleaned.includes("..")) {
+          const overridePath = join(projectRoot, cleaned);
+          const overrideRaw = await tryReadFile(overridePath);
+          if (overrideRaw) {
+            raw = overrideRaw;
+            sourcePath = overridePath;
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Root brief.md fallback.
+  if (!raw) {
+    const rootPath = join(projectRoot, "brief.md");
+    const rootRaw = await tryReadFile(rootPath);
+    if (rootRaw) {
+      raw = rootRaw;
+      sourcePath = rootPath;
+    }
+  }
+
   if (!raw) return null;
 
   const { data, content } = parseMarkdown(raw);
   return {
     google_doc_url: asString(data.google_doc_url),
     body: content.trim(),
+    source_path: sourcePath,
   };
 }
 

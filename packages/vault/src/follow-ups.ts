@@ -172,6 +172,67 @@ function cellByName(
   return idx >= 0 ? (cells[idx] ?? "") : "";
 }
 
+export interface DeleteFollowUpResult {
+  follow_up_id: string;
+  /** True when a row was removed from Follow-ups.md; false when no matching row existed. */
+  deleted: boolean;
+}
+
+/**
+ * Remove a follow-up row from Follow-ups.md by its deterministic id.
+ * Used by the /follow-ups Delete button for entries the user added by
+ * mistake or that don't belong in the queue at all (resolve keeps the
+ * audit trail; delete drops the row entirely).
+ *
+ * Same row-finder as `resolveFollowUp` — content-derived id matched
+ * against project + task + sent for every table row. Atomic write.
+ */
+export async function deleteFollowUp(
+  opts: ResolvedVaultOptions,
+  followUpId: string,
+): Promise<DeleteFollowUpResult> {
+  const paths = vaultPaths(opts);
+  const raw = await tryReadFile(paths.followUps);
+  if (raw === null) {
+    throw new Error(`Follow-ups.md not found at ${paths.followUps}`);
+  }
+
+  const lines = raw.split(/\r?\n/);
+  let header: string[] | null = null;
+  let foundLineIndex = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.trimStart().startsWith("|")) continue;
+    if (isSeparatorRow(line.trim())) continue;
+    const cells = splitRow(line);
+    const lower = cells.map((c) => c.toLowerCase());
+    const looksLikeHeader =
+      lower.includes("project") && lower.includes("task");
+    if (looksLikeHeader) {
+      header = lower;
+      continue;
+    }
+    if (!header) continue;
+    const project = cellByName(cells, header, "project");
+    const task = cellByName(cells, header, "task");
+    const sent = cellByName(cells, header, "sent");
+    if (!project || !task) continue;
+    const id = deterministicId(project, task, sent);
+    if (id !== followUpId) continue;
+    foundLineIndex = i;
+    break;
+  }
+
+  if (foundLineIndex < 0) {
+    return { follow_up_id: followUpId, deleted: false };
+  }
+
+  lines.splice(foundLineIndex, 1);
+  await writeFileAtomic(paths.followUps, lines.join("\n"));
+  return { follow_up_id: followUpId, deleted: true };
+}
+
 export interface SnoozeFollowUpResult {
   follow_up_id: string;
   /** The new value written into the Follow-up By cell (YYYY-MM-DD). */

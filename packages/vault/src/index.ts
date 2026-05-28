@@ -66,6 +66,7 @@ import {
 } from "./drafts";
 import {
   appendFollowUp,
+  deleteFollowUp,
   filterFollowUpsForProject,
   listFollowUps,
   resolveFollowUp,
@@ -121,6 +122,7 @@ import {
   getHiveMindPinnedContext,
   getHiveMindProject,
   getHiveMindZendesk,
+  listHiveMindSkills,
   serializeHiveMindPinnedContext,
   type FollowUpRow,
   type HiveMindBrief,
@@ -131,6 +133,7 @@ import {
   type HiveMindPinnedContextData,
   type HiveMindPinnedContextRow,
   type HiveMindPinnedContextType,
+  type HiveMindSkill,
   type HiveMindProject,
   type HiveMindZendeskData,
 } from "./hive-mind";
@@ -209,6 +212,7 @@ export type {
   HiveMindPinnedContextRow,
   HiveMindPinnedContextType,
   HiveMindProject,
+  HiveMindSkill,
   HiveMindZendeskData,
 } from "./hive-mind";
 export {
@@ -223,6 +227,7 @@ export {
   getHiveMindPinnedContext,
   getHiveMindProject,
   getHiveMindZendesk,
+  listHiveMindSkills,
   serializeHiveMindPinnedContext,
   appendDecisionsToProject,
   appendFollowUp,
@@ -261,6 +266,7 @@ export {
   readVaultStatus,
   readWorkingWith,
   refreshProjectZendeskMetadata,
+  deleteFollowUp,
   resolveFollowUp,
   snoozeFollowUp,
   updateFollowUp,
@@ -398,6 +404,9 @@ export interface Vault {
     followUpId: string,
     note?: string,
   ) => ReturnType<typeof resolveFollowUp>;
+  deleteFollowUp: (
+    followUpId: string,
+  ) => ReturnType<typeof deleteFollowUp>;
   snoozeFollowUp: (
     followUpId: string,
     newFollowUpBy: string,
@@ -469,6 +478,7 @@ export interface Vault {
     partnerSlug: string,
     projectSlug: string,
   ) => ReturnType<typeof getHiveMindBrief>;
+  listHiveMindSkills: () => ReturnType<typeof listHiveMindSkills>;
   watch: (handler: VaultEventHandler) => ReturnType<typeof watchVault>;
 }
 
@@ -530,6 +540,7 @@ export function createVault(options: VaultOptions): Vault {
       updateProjectFrontmatter(resolved, slug, patch),
     resolveFollowUp: (followUpId, note) =>
       resolveFollowUp(resolved, followUpId, note),
+    deleteFollowUp: (followUpId) => deleteFollowUp(resolved, followUpId),
     snoozeFollowUp: (followUpId, newFollowUpBy) =>
       snoozeFollowUp(resolved, followUpId, newFollowUpBy),
     updateFollowUp: (followUpId, patch) =>
@@ -566,6 +577,7 @@ export function createVault(options: VaultOptions): Vault {
       getHiveMindFollowUps(resolved, partnerSlug, projectSlug),
     getHiveMindBrief: (partnerSlug, projectSlug) =>
       getHiveMindBrief(resolved, partnerSlug, projectSlug),
+    listHiveMindSkills: () => listHiveMindSkills(resolved),
     watch: (handler) => watchVault(resolved, handler),
   };
 }

@@ -1,10 +1,16 @@
 "use client";
 
-import { Pencil } from "lucide-react";
-import { useState } from "react";
+import { CheckCircle2, Loader2, Pencil, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
 
 import type { FollowUp } from "@smithers/vault";
 
+import {
+  deleteFollowUpAction,
+  resolveFollowUpAction,
+} from "@/app/projects/[slug]/actions";
 import { EditFollowUpForm } from "@/components/edit-follow-up-form";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +31,47 @@ interface Props {
  */
 export function EditableFollowUpRow({ followUp, showCompose, composeSlot }: Props) {
   const [editing, setEditing] = useState(false);
+  const [resolving, startResolveTransition] = useTransition();
+  const [deleting, startDeleteTransition] = useTransition();
+  const router = useRouter();
+
+  function handleResolve() {
+    startResolveTransition(async () => {
+      try {
+        const r = await resolveFollowUpAction("", followUp.follow_up_id);
+        if (r.changed) {
+          toast.success(`Marked complete: ${truncate(followUp.task, 50)}`);
+        } else {
+          toast.info("Already resolved");
+        }
+        router.refresh();
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Couldn't mark complete",
+        );
+      }
+    });
+  }
+
+  function handleDelete() {
+    // Confirm — delete drops the row from Follow-ups.md entirely and
+    // (unlike resolve) leaves no audit trail in the file.
+    const ok = window.confirm(
+      `Delete this follow-up?\n\n"${truncate(followUp.task, 80)}"\n\nThis removes the row from Follow-ups.md — there's no undo.`,
+    );
+    if (!ok) return;
+    startDeleteTransition(async () => {
+      const r = await deleteFollowUpAction("", followUp.follow_up_id);
+      if (r.ok) {
+        toast.success(
+          r.deleted ? "Deleted" : "Row had already been removed",
+        );
+        router.refresh();
+      } else {
+        toast.error(r.message ?? "Couldn't delete follow-up");
+      }
+    });
+  }
 
   const statusEl = (
     <span
@@ -81,7 +128,28 @@ export function EditableFollowUpRow({ followUp, showCompose, composeSlot }: Prop
           {showCompose && composeSlot ? composeSlot : null}
           <button
             type="button"
+            onClick={handleResolve}
+            disabled={resolving || deleting}
+            title="Mark complete (keeps audit trail in Follow-ups.md)"
+            aria-label={`Mark complete: ${followUp.task}`}
+            className={cn(
+              "inline-flex size-5 shrink-0 items-center justify-center rounded",
+              "text-muted-foreground hover:text-emerald-600 hover:bg-emerald-500/10",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity",
+              resolving && "opacity-100",
+            )}
+          >
+            {resolving ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="size-3.5" />
+            )}
+          </button>
+          <button
+            type="button"
             onClick={() => setEditing(true)}
+            disabled={resolving || deleting}
             title="Edit follow-up"
             aria-label={`Edit follow-up: ${followUp.task}`}
             className={cn(
@@ -93,8 +161,32 @@ export function EditableFollowUpRow({ followUp, showCompose, composeSlot }: Prop
           >
             <Pencil className="size-3.5" />
           </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={resolving || deleting}
+            title="Delete (removes from Follow-ups.md — no audit trail)"
+            aria-label={`Delete follow-up: ${followUp.task}`}
+            className={cn(
+              "inline-flex size-5 shrink-0 items-center justify-center rounded",
+              "text-muted-foreground hover:text-destructive hover:bg-destructive/10",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity",
+              deleting && "opacity-100",
+            )}
+          >
+            {deleting ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="size-3.5" />
+            )}
+          </button>
         </div>
       </td>
     </tr>
   );
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
