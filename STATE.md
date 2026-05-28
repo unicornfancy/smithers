@@ -2,7 +2,14 @@
 
 _Updated 2026-05-28_
 
-## Just completed (2026-05-28 — /settings switched to top-tab layout)
+## Just completed (2026-05-28 — /settings top-tab refactor + brief path fallback + Skills registry)
+
+### Brief path fallback + HM Skills registry (11f4dde)
+
+Two unblockers, both surfacing content that already existed in the HM clone but Smithers couldn't see.
+
+- **Brief path fallback** — `getHiveMindBrief` tries three paths in order: (1) canonical `briefs/project-brief.md`, (2) `info.md` frontmatter `brief_path` override (path-relative, sanity-checked to refuse `../` and absolute paths), (3) `brief.md` at the project root. Returns `{ google_doc_url, body, source_path }`; the workbench's "Edit brief" link now uses `source_path` so the `file://` URL points at the actual file rather than the canonical one. Fixes Body Dao showing the "No brief yet" empty state when a brief exists.
+- **HM Skills registry** — new `listHiveMindSkills` helper scans `<hive_mind>/.claude/skills/*/SKILL.md` and parses each one's frontmatter (`name`, `description`, `allowed-tools`, `user-invocable`) into a `HiveMindSkill[]`. New `SkillsRegistryCard` renders each entry with description + tools + a link to its `SKILL.md`. Replaces the placeholder in `/settings → Skills` — currently shows all 10 skills in Team51-Hive-Mind. v1 is read-only; invocation from Smithers is the next slice (see PLAN.md project-briefs item).
 
 ### `/settings` top-tab refactor (cee4699)
 
@@ -224,6 +231,8 @@ In rough priority order:
 
 ## Recent decisions (with the why)
 
+- **Brief path lookup tries three paths, doesn't migrate data** (2026-05-28) — the canonical schema is `briefs/project-brief.md`, but zero partners in the current HM clone actually use it; everyone has `brief.md` at the project root. Migrating files would have been days of coordination across multiple TAMs. Code change makes Smithers tolerant instead. The `brief_path` frontmatter override exists for the rare case where a partner team wants their brief somewhere else explicitly.
+- **Skills registry reads the HM `.claude/skills/` dir directly, not a Smithers-side config** (2026-05-28) — HM is the source of truth for which skills exist; replicating that into a Smithers config would create sync drift. The trade is that disabling individual skills from Smithers' UI isn't trivially possible (the registry is read-only); when that's wanted, we add a Smithers-side overlay rather than a parallel registry.
 - **`/settings` uses top tabs that swap content, not a long-scroll page with left-rail nav** (2026-05-28) — left-rail-plus-scroll-spy shipped 2026-05-27 (b433976) and was reverted same day. Reason: tabs that hide non-active content give a clearer "single-purpose view per click" feel and avoid the scroll-spy timing tradeoffs entirely. Tab state lives in `?tab=<id>` (not URL hash) so deep links survive Next's SSR path.
 - **All tab bodies render in the RSC payload, only one displays** (2026-05-28) — pre-rendered children mean client-side tab switches are instant (no server roundtrip). Trade: every page load pays for rendering all five sections' content. Acceptable because the sections are mostly small forms; if a section ever gets heavy, we move to route-based tabs (`/settings/<tab>`) for true lazy loading.
 - **`/settings` and `/setup` share the four setup section components, not copies** (2026-05-27) — setup-wizard.tsx exports PathsSection / IdentitySection / ApiKeysSection / McpsSection; `/settings → Setup` renders them via a thin `SettingsSetupGroup` wrapper that holds the shared `SetupStatus` state. Duplicating these into a "/settings only" version would have created a long-term sync problem (every field added to /setup would need to be added to /settings).

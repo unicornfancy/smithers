@@ -6,9 +6,8 @@ _Living doc for features discussed but not yet built. Add entries here when scop
 
 ## Settings page — remaining items
 
-The call-transcript-prompt + follow-up automation cards shipped 2026-05-26. /settings reorg + tab-based nav shipped 2026-05-27→28 (left-rail attempt was reverted same day in favor of top tabs). Still deferred:
+The call-transcript-prompt + follow-up automation cards shipped 2026-05-26. /settings reorg + tab-based nav shipped 2026-05-27→28. Skills registry v1 shipped 2026-05-28. Still deferred:
 - **Future follow-up automations** — auto-draft a nudge when a follow-up crosses the escalate threshold. Settings already exposes the threshold day counts; the auto-draft trigger is the next slice.
-- **Skills section** — `/create-brief` skill registration (also tracked under "Project briefs" below) is the first concrete card to land in the Skills section. Future skills register here too.
 - **About section** — version, repo link, README + ONBOARDING shortcuts, running model id. Low priority polish.
 
 ## Background job scheduling — remaining jobs
@@ -56,13 +55,17 @@ Defer concrete design until weekly-updates settles and this can be properly scop
 
 ---
 
-## Project briefs — attach affordance + skill integration
+## Project briefs — skill integration
 
-Discovered while migrating Body Dao: a project brief exists in Hive-Mind at the project root (`brief.md`) but doesn't show in the Project brief card. The card reads from `briefs/project-brief.md` (the documented schema), so any brief saved at a different path is invisible.
+Brief path lookup shipped 2026-05-28: `getHiveMindBrief` now tries canonical → `info.md` `brief_path` frontmatter override → `brief.md` at the project root, so non-canonical briefs (like Body Dao's) surface in the workbench Project brief card without migration.
 
-Two questions to resolve before building:
-- **Attach UI**: how does a user point Smithers at a brief that doesn't live at the canonical path? Options: link a file (path picker), set a frontmatter `brief_path` override, or move/rename the file to the canonical location.
-- **Project brief skill**: how does `/create-brief` (the existing skill) interact with Smithers when generating a brief into Hive-Mind? Should Smithers offer a "Generate brief" button on the workbench that invokes the skill end-to-end (skill → write to canonical path → commit → render)?
+Still deferred — the bigger question: how does Smithers actually generate a brief?
+
+- **Option: mirror the skill.** Build a Smithers-native `generate-brief` agent in `packages/agents/` that replicates `/create-brief`'s behavior — same template, same prompt structure. Smithers's "Generate brief" button on the workbench runs the agent and dual-writes to HM. Pros: works without Claude Code. Cons: duplicates prompt logic that already lives in HM's `.claude/skills/create-brief/SKILL.md`; drift risk over time.
+- **Option: link only.** Skills tab already lists `/create-brief` (shipped 2026-05-28). Workbench's Project brief card could grow a "Run in Claude Code" hint pointing at the skill. Smithers doesn't execute anything; the user runs the skill in their HM Claude Code session, then refreshes the workbench. Pros: zero duplication; HM stays authoritative. Cons: extra context switch.
+- **Option: shell out.** Smithers spawns `claude` with the skill invocation. Possible but messy — needs Claude Code installed, an OAuth flow, and would block the dev server during the run. Probably not worth it.
+
+Worth Katie's input on which direction before building. The skill is interactive (asks for transcript path, registrar info, etc.), which complicates the "Smithers-native" option meaningfully.
 
 ## Other deferred items
 
