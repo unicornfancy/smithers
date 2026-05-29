@@ -1,6 +1,7 @@
 import { getDefaultAnalyzeCallTranscriptPrompt } from "@smithers/agents";
 
 import { getSetupStatusAction } from "@/app/setup/actions";
+import { AboutCard } from "@/components/about-card";
 import { ActivityLogCard } from "@/components/activity-log-card";
 import { AppHeader } from "@/components/app-header";
 import { CallTranscriptPromptCard } from "@/components/call-transcript-prompt-card";
@@ -8,7 +9,7 @@ import { FollowUpAutomationCard } from "@/components/follow-up-automation-card";
 import { HiveMindReconcileCard } from "@/components/hive-mind-reconcile-card";
 import { IntervalJobCard } from "@/components/interval-job-card";
 import { McpHealthCard } from "@/components/mcp-health-card";
-import { PageShell, PlaceholderCard } from "@/components/page-shell";
+import { PageShell } from "@/components/page-shell";
 import { ScheduleCard } from "@/components/schedule-card";
 import { SettingsSection } from "@/components/settings-section";
 import { SettingsSetupGroup } from "@/components/settings-setup-group";
@@ -16,6 +17,7 @@ import { SettingsTabs, type SettingsTab } from "@/components/settings-tabs";
 import { SkillsRegistryCard } from "@/components/skills-registry-card";
 import { WeeklyUpdateFormatCard } from "@/components/weekly-update-format-card";
 import { loadConfig } from "@/lib/server/config";
+import { findRepoRoot } from "@/lib/server/config-write";
 import { getVault } from "@/lib/server/vault";
 
 export const metadata = {
@@ -34,11 +36,13 @@ const TABS: SettingsTab[] = [
 
 export default async function SettingsPage() {
   const vault = await getVault();
-  const [cfg, setupStatus, skills] = await Promise.all([
+  const [cfg, setupStatus, skills, version] = await Promise.all([
     loadConfig(),
     getSetupStatusAction(),
     vault.listHiveMindSkills().catch(() => []),
+    readRootPackageVersion(),
   ]);
+  const repoRoot = findRepoRoot();
   const briefingTime =
     cfg.schedule?.daily_briefing?.time ??
     cfg.working_rhythm.briefing_time ??
@@ -153,13 +157,26 @@ export default async function SettingsPage() {
             title="About"
             description="What Smithers is, where the code lives, and how to file an issue."
           >
-            <PlaceholderCard
-              title="About Smithers"
-              description="Stub for a tiny info card: version, repo link, README + ONBOARDING shortcuts, identity of the running Anthropic model. Low priority — fill in when it bothers you."
+            <AboutCard
+              version={version}
+              activeModel={cfg.agents.model}
+              repoRoot={repoRoot}
             />
           </SettingsSection>
         </SettingsTabs>
       </PageShell>
     </>
   );
+}
+
+async function readRootPackageVersion(): Promise<string> {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const raw = await readFile(join(findRepoRoot(), "package.json"), "utf-8");
+    const parsed = JSON.parse(raw) as { version?: string };
+    return parsed.version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
 }
