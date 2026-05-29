@@ -91,10 +91,17 @@ export async function generateWeeklyUpdateAction(
  * Persist the user's edited weekly update body to vault
  * `Weekly Updates/<iso_week>.md`. Idempotent — re-saves overwrite
  * with a fresh `last_saved_at`.
+ *
+ * When `original_body` is provided, it's stamped into frontmatter so
+ * the learn-from-weekly-archives loop can later compute the diff
+ * between the AI's first pass and the user's final edits. Subsequent
+ * saves of the same week leave the existing snapshot in place
+ * (pass null to explicitly clear, e.g. on regenerate).
  */
 export async function saveWeeklyUpdateAction(input: {
   iso_week: string;
   body: string;
+  original_body?: string | null;
 }): Promise<{ ok: true; relative_path: string } | { ok: false; reason: string }> {
   if (!input.iso_week) return { ok: false, reason: "iso_week is required" };
   if (!input.body.trim()) return { ok: false, reason: "body is required" };
@@ -103,6 +110,7 @@ export async function saveWeeklyUpdateAction(input: {
     const result = await vault.saveWeeklyUpdate({
       iso_week: input.iso_week,
       body: input.body,
+      original_body: input.original_body,
     });
     revalidatePath("/weekly-updates");
     revalidatePath(`/weekly-updates/${input.iso_week}`);

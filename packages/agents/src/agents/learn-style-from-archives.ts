@@ -80,7 +80,8 @@ Quality rules:
 
 Routing learnings to the correct file (for file_additions):
 - zendesk / email channel patterns → PARTNER_COMMS.md
-- p2 / weekly update patterns → INTERNAL_STYLE_GUIDE.md
+- p2 channel patterns → INTERNAL_STYLE_GUIDE.md
+- weekly-update channel patterns → WEEKLY_UPDATE_STYLE.md (the team-P2 Monday-update voice; structure, bullet density, @handle conventions, framing of last-week vs this-week sections)
 - general voice / tone patterns → SKILL.md
 - Each file_additions entry must start with a ## heading: "## Learnings from archives — YYYY-MM-DD" (use today's date).
 - Only include entries for files where you have learnings to add. Empty array is valid.

@@ -42,6 +42,13 @@ export interface WeeklyUpdateFrontmatter {
   last_saved_at?: string;
   /** Identifier for the format template used to generate (default | <custom-id>). */
   format_template?: string;
+  /**
+   * AI's first-pass output snapshotted on initial save. Stays put
+   * through subsequent edits so the learn-from-archives loop can
+   * compute the user's edit diff vs the generator. Unset on files
+   * the user hand-wrote (no AI generation step).
+   */
+  original_body?: string;
 }
 
 /**
@@ -103,6 +110,13 @@ export interface SaveWeeklyUpdateInput {
   /** Optional patches; existing frontmatter fields are preserved when omitted. */
   generated_at?: string;
   format_template?: string;
+  /**
+   * AI's first pass. Only written when the existing file has no
+   * snapshot yet (or when explicitly overwriting via a regenerate).
+   * Pass `null` to clear, `undefined` to leave the existing value
+   * untouched.
+   */
+  original_body?: string | null;
 }
 
 export async function saveWeeklyUpdate(
@@ -126,6 +140,15 @@ export async function saveWeeklyUpdate(
   };
   if (input.generated_at) fm.generated_at = input.generated_at;
   if (input.format_template) fm.format_template = input.format_template;
+  // original_body semantics: null = clear, string = overwrite,
+  // undefined = leave whatever was in the file alone. The "preserve
+  // existing through edits" behavior comes from the spread of
+  // existingFm above + treating undefined as a no-op here.
+  if (input.original_body === null) {
+    delete fm.original_body;
+  } else if (typeof input.original_body === "string") {
+    fm.original_body = input.original_body;
+  }
 
   const serialized = matter.stringify(input.body, fm as Record<string, unknown>);
   await writeFileAtomic(abs, serialized);
@@ -133,4 +156,58 @@ export async function saveWeeklyUpdate(
     relative_path: relative(opts.vaultPath, abs),
     absolute_path: abs,
   };
+}
+
+export interface WeeklyUpdateWithDiff {
+  iso_week: string;
+  /** AI's first pass (frontmatter `original_body`). */
+  original_body: string;
+  /** Current body — the user's final after edits. */
+  final_body: string;
+  /** Identifier of the format template the original was generated with. */
+  format_template?: string;
+  /** When the original was generated, ISO timestamp. */
+  generated_at?: string;
+}
+
+/**
+ * Return up to N most recent weekly-update files whose frontmatter
+ * carries both an `original_body` snapshot AND a body that diverged
+ * from it (real edits, not just open-and-save). The learn-from-archives
+ * loop only learns from divergences — saving the AI's first pass
+ * verbatim doesn't teach anything.
+ *
+ * Files without an `original_body` (hand-written, or pre-WU3 vintage)
+ * are skipped silently — they pre-date the snapshot mechanism.
+ */
+export async function listWeeklyUpdatesWithDiffs(
+  opts: ResolvedVaultOptions,
+  limit: number = 5,
+): Promise<WeeklyUpdateWithDiff[]> {
+  const paths = vaultPaths(opts);
+  const files = await listMarkdownFiles(paths.weeklyUpdates);
+  const out: WeeklyUpdateWithDiff[] = [];
+  for (const f of files) {
+    const m = WEEKLY_RE.exec(f);
+    if (!m) continue;
+    const abs = join(paths.weeklyUpdates, f);
+    const raw = await tryReadFile(abs);
+    if (raw === null) continue;
+    const parsed = matter(raw);
+    const fm = (parsed.data ?? {}) as WeeklyUpdateFrontmatter;
+    const original = fm.original_body;
+    const final = parsed.content;
+    if (typeof original !== "string" || !original.trim()) continue;
+    if (original.trim() === final.trim()) continue;
+    out.push({
+      iso_week: `${m[1]}-W${m[2]}`,
+      original_body: original,
+      final_body: final,
+      format_template: fm.format_template,
+      generated_at: fm.generated_at,
+    });
+  }
+  // Most-recent first by ISO week.
+  out.sort((a, b) => b.iso_week.localeCompare(a.iso_week));
+  return out.slice(0, limit);
 }

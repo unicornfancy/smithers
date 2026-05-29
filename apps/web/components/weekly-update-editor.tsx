@@ -28,6 +28,8 @@ interface Props {
   teamPost: TeamWeeklyPostResult;
   /** Existing saved body (if the user already drafted this week's update). */
   initialBody: string;
+  /** AI's first pass from a prior generate, snapshotted in frontmatter. */
+  initialOriginalBody: string | null;
   apiKeyConfigured: boolean;
 }
 
@@ -37,9 +39,16 @@ export function WeeklyUpdateEditor({
   weekEnd,
   teamPost,
   initialBody,
+  initialOriginalBody,
   apiKeyConfigured,
 }: Props) {
   const [body, setBody] = React.useState(initialBody);
+  // Tracks the AI's first pass for this week. Survives reloads via
+  // frontmatter, gets refreshed on Regenerate. Passed through to save
+  // so the learn-from-weekly-archives loop can compute the diff later.
+  const [originalBody, setOriginalBody] = React.useState<string | null>(
+    initialOriginalBody,
+  );
   const [facts, setFacts] = React.useState<WeeklyFacts | null>(null);
   const [generating, setGenerating] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -62,6 +71,7 @@ export function WeeklyUpdateEditor({
         return;
       }
       setBody(result.data.body);
+      setOriginalBody(result.data.body);
       setFacts(result.facts);
       toast.success(
         `Drafted from ${result.facts.projects.length} project${result.facts.projects.length === 1 ? "" : "s"}`,
@@ -80,12 +90,41 @@ export function WeeklyUpdateEditor({
     }
     setSaving(true);
     try {
-      const result = await saveWeeklyUpdateAction({ iso_week: isoWeek, body });
+      const result = await saveWeeklyUpdateAction({
+        iso_week: isoWeek,
+        body,
+        // Send the snapshot only when we have one — vault preserves
+        // whatever's in the file when this is undefined.
+        original_body: originalBody ?? undefined,
+      });
       if (!result.ok) {
         toast.error(result.reason);
         return;
       }
       toast.success(`Saved to ${result.relative_path}`);
+      // Fire-and-forget: if the user edited the AI's first pass, run
+      // the learn loop over the 5 most recent diff'd weekly updates.
+      // No-op when there's no snapshot or no diff (the route returns
+      // applied: []).
+      if (originalBody && originalBody.trim() !== body.trim()) {
+        fetch("/api/learn-from-weekly-archives", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        })
+          .then((r) => r.json())
+          .then((data: { ok: boolean; applied?: { filename: string }[] }) => {
+            if (data.ok && data.applied && data.applied.length > 0) {
+              const n = data.applied.length;
+              toast.success(
+                `${n} learning${n === 1 ? "" : "s"} added to weekly-update style`,
+              );
+            }
+          })
+          .catch(() => {
+            /* fire-and-forget; surface nothing on failure */
+          });
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed");
     } finally {
@@ -169,6 +208,15 @@ export function WeeklyUpdateEditor({
               {showPreview ? "Edit" : "Preview"}
             </Button>
           </div>
+          {originalBody && originalBody.trim() !== body.trim() ? (
+            <p className="text-muted-foreground/80 mt-1 text-[11px] italic">
+              Your edits will feed into{" "}
+              <code className="bg-muted rounded px-1 py-0.5 font-mono not-italic">
+                my-voice/WEEKLY_UPDATE_STYLE.md
+              </code>{" "}
+              on save — the agent learns the diff against the AI's first pass.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 

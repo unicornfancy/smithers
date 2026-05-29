@@ -7,4 +7,5 @@ export const MY_VOICE_FILES: readonly { filename: string; label: string }[] = [
   { filename: "INTERNAL_STYLE_GUIDE.md", label: "Internal Style" },
   { filename: "EXTERNAL_STYLE_GUIDE.md", label: "External Style" },
   { filename: "REPORT_STRUCTURE.md", label: "Report Structure" },
+  { filename: "WEEKLY_UPDATE_STYLE.md", label: "Weekly Update Style" },
 ] as const;

@@ -142,12 +142,14 @@ import {
 import { watchVault, type VaultEventHandler } from "./watcher";
 import {
   listWeeklyUpdates,
+  listWeeklyUpdatesWithDiffs,
   readWeeklyUpdate,
   saveWeeklyUpdate,
   type SaveWeeklyUpdateInput,
   type WeeklyUpdate,
   type WeeklyUpdateFrontmatter,
   type WeeklyUpdateRow,
+  type WeeklyUpdateWithDiff,
 } from "./weekly-updates";
 
 export * from "./types";
@@ -291,6 +293,7 @@ export {
   archiveDraft,
   listArchivedDraftsWithDiffs,
   listWeeklyUpdates,
+  listWeeklyUpdatesWithDiffs,
   readWeeklyUpdate,
   saveWeeklyUpdate,
   watchVault,
@@ -302,6 +305,7 @@ export type {
   WeeklyUpdate,
   WeeklyUpdateFrontmatter,
   WeeklyUpdateRow,
+  WeeklyUpdateWithDiff,
 };
 
 export interface Vault {
@@ -351,6 +355,9 @@ export interface Vault {
   readStyleGuide: () => ReturnType<typeof readStyleGuide>;
   readWorkingWith: () => ReturnType<typeof readWorkingWith>;
   listWeeklyUpdates: () => ReturnType<typeof listWeeklyUpdates>;
+  listWeeklyUpdatesWithDiffs: (
+    limit?: number,
+  ) => ReturnType<typeof listWeeklyUpdatesWithDiffs>;
   readWeeklyUpdate: (
     isoWeek: string,
   ) => ReturnType<typeof readWeeklyUpdate>;
@@ -523,6 +530,8 @@ export function createVault(options: VaultOptions): Vault {
     listWeeklyUpdates: () => listWeeklyUpdates(resolved),
     readWeeklyUpdate: (isoWeek) => readWeeklyUpdate(resolved, isoWeek),
     saveWeeklyUpdate: (input) => saveWeeklyUpdate(resolved, input),
+    listWeeklyUpdatesWithDiffs: (limit) =>
+      listWeeklyUpdatesWithDiffs(resolved, limit),
     toggleProjectTask: (slug, taskId, done) =>
       toggleProjectTask(resolved, slug, taskId, done),
     appendProjectTask: (slug, text, markers) =>

@@ -70,6 +70,7 @@ export default async function WeeklyUpdateEditorPage({
           weekEnd={weekEnd}
           teamPost={teamPost}
           initialBody={existing?.body ?? ""}
+          initialOriginalBody={existing?.frontmatter.original_body ?? null}
           apiKeyConfigured={agentStatus.configured}
         />
       </PageShell>
