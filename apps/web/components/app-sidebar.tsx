@@ -10,10 +10,11 @@ import {
   Inbox,
   ListChecks,
   Newspaper,
+  PenLine,
   PhoneCall,
+  Search,
   Settings,
   Wand2,
-  PenLine,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { href: "/today", label: "Today", icon: Calendar },
+  { href: "/search", label: "Search HM", icon: Search },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/calls", label: "Calls", icon: PhoneCall },
   { href: "/drafts", label: "Drafts", icon: PenLine },
