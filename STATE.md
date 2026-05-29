@@ -1,8 +1,55 @@
 # STATE.md — Smithers (snapshot)
 
-_Updated 2026-05-28_
+_Updated 2026-05-29_
 
-## Just completed (2026-05-28 — /settings top-tab refactor + brief path fallback + Skills registry + brief generation workbench affordance)
+## Just completed (2026-05-29 — skills integration sweep: About + /project-handoff + /search-knowledge + /update-knowledge)
+
+Closes the PLAN.md "Skill integration — remaining queue" entry in a single session by reusing the runtime-skill-loader foundation 9039c16 introduced.
+
+### About card replaces the Settings placeholder (0500deb)
+
+- New `AboutCard` on `/settings → About` reads the running version from the root `package.json`, the active Anthropic model from `config.agents.model`, and the resolved repo root from the shared `findRepoRoot` helper. File-link shortcuts under "Docs on disk" open README / ONBOARDING / TROUBLESHOOTING / CLAUDE.md via `file://`. Closing note points at PLAN.md / STATE.md as the issue-tracking surface since there's no remote.
+- Drops the now-unused `PlaceholderCard` import from `/settings`.
+
+### `/project-handoff` workbench wizard (42c5218)
+
+- `generateProjectHandoffAction` mirrors the brief shape: pre-gathers vault project + HM partner-knowledge + HM project info + Linear project metadata (when linked), feeds the four user-context fields into `runHiveMindSkill` with the `/project-handoff` skill body and declared dependencies. The skill's MCP-side crawl phases (deep Linear, P2, Zendesk threads, GitHub open issues) are skipped — the run-skill agent has no MCP — so missing data comes back under `questions` for the user.
+- `saveProjectHandoffAction` writes the reviewed markdown to `handoff-<YYYY-MM-DD>.md` in the project's HM folder (per the skill's default save path) and commits.
+- `HandoffGeneratorDialog` + `GenerateHandoffButton`: four textareas for the skill's phase-4 inputs (locally tracked work / upcoming calls / critical context / exclude) plus a Prepared-by input pre-filled from `identity.name`. Review phase shows questions inline; markdown is editable before save.
+- Surfaced as a ghost "Handoff" button in `WorkbenchHeader`, gated on `hive_mind_partner_slug` so personal/team projects don't show it.
+
+### `/search-knowledge` — `/search` page over the HM MCP (4c988cd)
+
+- New `/search` page surfaces the HM MCP's existing `searchKnowledge` tool (already wired on the client side). State lives in `?q=` so results are deep-linkable + survive back/forward. `SearchInput` client component owns the field; the page re-runs server-side from `searchParams`.
+- Result rows have NDA badges, an excerpt, the source `path`, and a `file://` link opening the hit in the user's registered Markdown editor.
+- Sidebar nav grows a "Search HM" entry between Today and Projects. Cmd-K command palette as a global trigger is the deferred v1.5 polish item.
+
+### `/update-knowledge` — `/partner-knowledge/[slug]` editor (6662745)
+
+- Smithers-native editor replacing the previous "open the file via `file://`" round-trip. Two-pane: body textarea + preview toggle (matches the weekly-update + draft editor pattern). Frontmatter is shown read-only above the body so the user can see what's preserved across save.
+- `loadPartnerKnowledgeAction` reads the HM file via direct fs read (preserves the raw frontmatter via `gray-matter`); `savePartnerKnowledgeAction` merges existing + caller-provided frontmatter, stamps `updated` to today (matching the `/update-knowledge` skill's promise), writes via HM MCP `writePartnerFile`, and commits.
+- `PartnerCard` on the project workbench grows an "Edit here" link next to the existing "Open in editor" link — the in-app editor is the default; the `file://` link stays for users who'd rather edit in their own setup.
+- v1 deliberately body-only. Structured frontmatter fields stay editable via the existing brief wizard / project-metadata modal; a dedicated frontmatter form here is a follow-up.
+
+## Just completed (2026-05-28 PM — WU3 weekly-update learn loop + Live Activity feed cleanup)
+
+### Weekly-update learn-from-archives loop (1408ac5)
+
+Closes the asymmetry where draft edits flowed back into `my-voice/` but weekly-update edits did not. Every weekly-update save that diverges from the AI's first pass now kicks off a fire-and-forget learn pass that compares the snapshot vs the user's final and appends learned patterns to a new `my-voice/WEEKLY_UPDATE_STYLE.md`.
+
+- **Vault snapshot mechanism**: `WeeklyUpdateFrontmatter` grows `original_body`; `saveWeeklyUpdate` accepts it with `string=overwrite / null=clear / undefined=preserve` semantics so the snapshot survives subsequent edits. New `listWeeklyUpdatesWithDiffs(limit)` returns the N most recent files where `original_body` is set AND differs from the body — the learn loop only learns from real edits.
+- **New voice file**: `WEEKLY_UPDATE_STYLE.md` added to `MY_VOICE_FILES`; `loadStyleReference` picks it up automatically since it iterates the registry. The `learnStyleFromArchives` system-prompt routing rule now sends `weekly-update` channel patterns to that file (decoupled from `INTERNAL_STYLE_GUIDE.md`, which still owns p2 channel patterns).
+- **Wire-up**: `/api/learn-from-weekly-archives` mirrors the drafts route but pulls samples via `listWeeklyUpdatesWithDiffs` and tags `channel="weekly-update"`. Editor tracks the AI snapshot (initialized from frontmatter, refreshed on Regenerate, passed through `saveWeeklyUpdateAction` on save) and fires the learn route afterward when the body diverged. Small italic hint near Save surfaces what's happening.
+
+### Live Activity feed source cleanup (7062494, 7bacf07, 393347d, 1538a03)
+
+Debbie Millman workbench triggered a multi-pass investigation that exposed three independent gaps:
+
+- **GitHub URL form** (7062494) — `github_repo` frontmatter was historically stored as either `owner/repo` or the full `https://github.com/owner/repo` URL. The activity fetcher split on `/` expecting bare slug; the URL form produced `['https:', '']` and every github task failed. New `normalizeGithubRepo` accepts either form across all four call sites.
+- **Linear auth** (393347d) — context-a8c returned `"Please connect your Linear account at https://mc.a8c.com/ai/context-a8c/"` as plain text which `stdio-mcp` was silently converting to null. Now detects that exact pattern and throws so `runIsolated` surfaces it as a visible degraded-state notice instead of an empty panel. Also: `state: "all"` → `state: "OPEN"` for context-a8c-github/issues (provider only accepts uppercase OPEN / CLOSED).
+- **P2 removed entirely** (1538a03) — context-a8c's `wpcom` provider doesn't expose per-post comments (probed: `user-profile / posts-text / reader / ...` — no comments tool). Public WP.com REST 401s on internal P2s like `wpspecialprojectsp2`. Cut the dead branch instead of leaving a permanently-zero chip: dropped `fetchP2Comments` + helpers, `p2_url` field from `ProjectActivityRefs`, `"p2"` from `ActivitySourceFilter`, the P2 chip from the workbench's configured sources list, and the mock-transport seed. `Project.p2_url` stays on the vault type for the workbench's "View P2 post" link.
+
+### Earlier 2026-05-28 — /settings top-tab refactor + brief path fallback + Skills registry + brief generation workbench affordance
 
 ### Generate-brief workbench affordance via runtime skill loader (9039c16)
 

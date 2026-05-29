@@ -6,9 +6,8 @@ _Living doc for features discussed but not yet built. Add entries here when scop
 
 ## Settings page — remaining items
 
-The call-transcript-prompt + follow-up automation cards shipped 2026-05-26. /settings reorg + tab-based nav shipped 2026-05-27→28. Skills registry v1 shipped 2026-05-28. Still deferred:
+The call-transcript-prompt + follow-up automation cards shipped 2026-05-26. /settings reorg + tab-based nav shipped 2026-05-27→28. Skills registry v1 shipped 2026-05-28. About card shipped 2026-05-29. Still deferred:
 - **Future follow-up automations** — auto-draft a nudge when a follow-up crosses the escalate threshold. Settings already exposes the threshold day counts; the auto-draft trigger is the next slice.
-- **About section** — version, repo link, README + ONBOARDING shortcuts, running model id. Low priority polish.
 
 ## Background job scheduling — remaining jobs
 
@@ -30,7 +29,7 @@ Daily briefing, ping monitor, Fathom sync, and Hive Mind sync all shipped 2026-0
 
 ## Weekly Updates — follow-ups
 
-**WU1 + WU2 shipped 2026-05-08.** Two-pane editor + AI generator + free-form format template settings card are live.
+**WU1 + WU2 shipped 2026-05-08. WU3 (learn-from-archives loop) shipped 2026-05-28.** Two-pane editor + AI generator + free-form format template settings card + edit-diff → `my-voice/WEEKLY_UPDATE_STYLE.md` learning loop are all live.
 
 Possible follow-ups (none scoped, none scheduled):
 - **One-click "Post as comment" to the team P2** — currently the user copies and pastes manually. Would require either a P2 provider in ContextA8C or direct WP.com REST `POST /comments` with auth.
@@ -55,13 +54,14 @@ Defer concrete design until weekly-updates settles and this can be properly scop
 
 ---
 
-## Skill integration — remaining queue
+## Skill integration — queue closed 2026-05-29
 
-`/create-brief` integration shipped 2026-05-28 via Option 3 (runtime skill loader + `run-skill` agent + brief wizard). The foundation is reusable; remaining skills follow the same pattern.
+`/create-brief` (2026-05-28), `/project-handoff` (2026-05-29 — workbench wizard via `WorkbenchHeader` "Handoff" button), `/search-knowledge` (2026-05-29 — `/search` page over the HM MCP tool with sidebar entry), and `/update-knowledge` (2026-05-29 — `/partner-knowledge/[slug]` two-pane editor accessed from the workbench `PartnerCard`'s "Edit here" link) are all live. Foundation is the runtime skill loader + `run-skill` agent + per-skill wizard pattern from 9039c16.
 
-- **`/project-handoff`** — workbench affordance to generate a handoff report when passing a partner to another TAM. Same shape as brief: load the handoff skill's SKILL.md + dependencies, gather inputs (which project + recipient TAM + any hand-off notes), run via `runHiveMindSkill`, write the artifact to HM. Smaller than brief because the inputs are simpler.
-- **`/update-knowledge`** — closes the read-only loop on partner-knowledge cards. Bigger UI lift than the other two (needs a real markdown editor for partner-knowledge.md). The brief wizard's partner-knowledge frontmatter writer is reusable for the metadata; the body editor is new work.
-- **`/search-knowledge`** — global HM search via command palette (`Cmd-K`) or a `/search` page. Not a skill in the runtime-prompt sense; the HM MCP's `search-knowledge` tool already exists and Smithers just needs to call it + render results.
+Remaining polish (none scheduled):
+- **Cmd-K command palette** as a global trigger for `/search` — currently the search page is reachable only via sidebar nav.
+- **Frontmatter editor on `/partner-knowledge/[slug]`** — v1 is body-only; structured fields stay editable via the brief wizard / project-metadata modal. A dedicated form here would let users update title / description / team / NDA flag without leaving the page.
+- **`/update-knowledge` for project info.md** — same editor pattern as partner-knowledge; project info.md edits currently go through the brief wizard's persistence path.
 
 ## Hive Mind side — recommendations for v1.5 (not blocking)
 
