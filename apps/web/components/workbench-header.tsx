@@ -15,6 +15,7 @@ import {
 import { zendeskTicketUrl } from "@smithers/mcp-client";
 import type { Project, ProjectKind, ProjectStatus } from "@smithers/vault";
 
+import { GenerateHandoffButton } from "@/components/generate-handoff-button";
 import { ProjectMetadataModal } from "@/components/project-metadata-modal";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
@@ -41,8 +42,16 @@ const STATUS_VARIANT: Record<
   archived: "outline",
 };
 
-export function WorkbenchHeader({ project }: { project: Project }) {
+export function WorkbenchHeader({
+  project,
+  preparedBy,
+}: {
+  project: Project;
+  /** Default value for the handoff dialog's "Prepared by" field — usually identity.name from config. */
+  preparedBy: string;
+}) {
   const links = collectQuickLinks(project);
+  const hmConnected = Boolean(project.hive_mind_partner_slug);
 
   return (
     <header className="bg-background/85 sticky top-0 z-30 flex flex-col gap-2 border-b px-6 py-3 backdrop-blur">
@@ -81,6 +90,14 @@ export function WorkbenchHeader({ project }: { project: Project }) {
           >
             {project.status}
           </Badge>
+          {hmConnected ? (
+            <GenerateHandoffButton
+              projectSlug={project.slug}
+              defaultPreparedBy={preparedBy}
+              variant="ghost"
+              label="Handoff"
+            />
+          ) : null}
           <ProjectMetadataModal project={project} />
           <ThemeToggle />
         </div>

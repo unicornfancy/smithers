@@ -2299,3 +2299,246 @@ function renderBriefInputsMarkdown(args: {
 
   return lines.join("\n");
 }
+
+
+// Project handoff — runs the /project-handoff Hive Mind skill from the workbench.
+
+export interface GenerateHandoffInput {
+  slug: string;
+  /** Phase-4 user-provided context — 4 free-form prompts the skill normally asks. */
+  locally_tracked_work: string;
+  upcoming_calls: string;
+  critical_context: string;
+  exclude: string;
+  /** Phase-5 "Prepared by" line — defaults to identity.name from config. */
+  prepared_by: string;
+}
+
+export type GenerateHandoffResult =
+  | { ok: true; data: RunSkillOutput }
+  | {
+      ok: false;
+      reason: "not-configured" | "skill-missing" | "error";
+      message?: string;
+    };
+
+/**
+ * Run the project-handoff skill from the workbench. Pre-gathers what
+ * we have (vault project, HM partner-knowledge, HM project info, Linear
+ * project metadata) and feeds the phase-4 user-context fields straight
+ * through. The skill's MCP-side crawl phases (Linear deep crawl, P2,
+ * Zendesk thread reading, GitHub repo open issues) are skipped — the
+ * agent doesn't have MCP access — so questions for missing data come
+ * back under `result.questions` for the user to fill in manually.
+ *
+ * Doesn't write to disk — saveProjectHandoffAction does that after
+ * review.
+ */
+export async function generateProjectHandoffAction(
+  input: GenerateHandoffInput,
+): Promise<GenerateHandoffResult> {
+  const vault = await getVault();
+  const project = await vault.readProject(input.slug);
+  if (!project) {
+    return { ok: false, reason: "error", message: `Project "${input.slug}" not found` };
+  }
+  const partnerSlug = project.hive_mind_partner_slug ?? project.partner;
+  const projectSlug = project.hive_mind_project_slug ?? project.slug;
+  if (!partnerSlug) {
+    return { ok: false, reason: "error", message: "Project is not connected to Hive Mind" };
+  }
+
+  const runtime = await getAgentRuntime();
+  if (!runtime) return { ok: false, reason: "not-configured" };
+
+  const cfg = await loadConfig();
+  if (!cfg.paths.hive_mind) {
+    return { ok: false, reason: "not-configured", message: "hive_mind path not set" };
+  }
+
+  const skillContent = await vault.getHiveMindSkillContent("project-handoff");
+  if (!skillContent) {
+    return { ok: false, reason: "skill-missing" };
+  }
+
+  const [hmPartner, hmProject, linearProject] = await Promise.all([
+    vault.getHiveMindPartner(partnerSlug).catch(() => null),
+    vault.getHiveMindProject(partnerSlug, projectSlug).catch(() => null),
+    project.linear_project_id
+      ? (await getMcpClient()).linear.getProject(project.linear_project_id).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  const inputsMarkdown = renderHandoffInputsMarkdown({
+    partnerSlug,
+    projectSlug,
+    project,
+    hmPartner,
+    hmProject,
+    linearProject,
+    preparedBy: input.prepared_by.trim() || cfg.identity.name || "TAM",
+    userContext: {
+      locally_tracked_work: input.locally_tracked_work,
+      upcoming_calls: input.upcoming_calls,
+      critical_context: input.critical_context,
+      exclude: input.exclude,
+    },
+  });
+
+  try {
+    const result = await runHiveMindSkill(runtime, {
+      skill_slug: "project-handoff",
+      skill_prompt: skillContent.system_prompt,
+      dependency_files: skillContent.files,
+      inputs_markdown: inputsMarkdown,
+    });
+    return { ok: true, data: result.output };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Agent call failed",
+    };
+  }
+}
+
+/**
+ * Write the reviewed handoff markdown to the project's HM folder at
+ * `handoff-<YYYY-MM-DD>.md` (per the skill's default save path). The
+ * date is computed server-side so the user can't accidentally produce
+ * conflicting timestamps from different timezones.
+ */
+export async function saveProjectHandoffAction(input: {
+  slug: string;
+  markdown: string;
+}): Promise<{ ok: true; relative_path: string } | { ok: false; reason: string }> {
+  if (!input.markdown.trim()) {
+    return { ok: false, reason: "Handoff content is empty" };
+  }
+  const vault = await getVault();
+  const project = await vault.readProject(input.slug);
+  if (!project) return { ok: false, reason: "Project not found" };
+  const partnerSlug = project.hive_mind_partner_slug ?? project.partner;
+  const projectSlug = project.hive_mind_project_slug ?? project.slug;
+  if (!partnerSlug) return { ok: false, reason: "Project is not connected to Hive Mind" };
+
+  const today = new Date().toISOString().slice(0, 10);
+  const filename = `handoff-${today}.md`;
+
+  const mcp = await getMcpClient();
+  try {
+    await mcp.hiveMind.writeProjectFile(
+      partnerSlug,
+      projectSlug,
+      filename,
+      input.markdown,
+    );
+    await mcp.hiveMind.commit(
+      `handoff: ${filename} via Smithers for ${partnerSlug}/${projectSlug}`,
+    );
+    revalidatePath(`/projects/${input.slug}`);
+    return {
+      ok: true,
+      relative_path: `knowledge/partners/${partnerSlug}/${projectSlug}/${filename}`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "HM write failed",
+    };
+  }
+}
+
+function renderHandoffInputsMarkdown(args: {
+  partnerSlug: string;
+  projectSlug: string;
+  project: { name: string; partner?: string; linear_project_id?: string; github_repo?: string; p2_url?: string };
+  hmPartner: { title?: string; description?: string; body: string } | null;
+  hmProject: { title?: string; description?: string; body: string } | null;
+  linearProject: { name?: string; url?: string; state?: { name?: string }; lead?: { displayName?: string; name?: string } | null } | null;
+  preparedBy: string;
+  userContext: {
+    locally_tracked_work: string;
+    upcoming_calls: string;
+    critical_context: string;
+    exclude: string;
+  };
+}): string {
+  const lines: string[] = [];
+  lines.push(`Partner slug: \`${args.partnerSlug}\``);
+  lines.push(`Project slug: \`${args.projectSlug}\``);
+  lines.push(`Prepared by: ${args.preparedBy}`);
+  lines.push(`Generated: ${new Date().toISOString().slice(0, 10)}`);
+  lines.push("");
+
+  lines.push("## Project identifiers");
+  if (args.project.linear_project_id) {
+    const linearUrl = args.linearProject?.url ?? `https://linear.app/team51/project/${args.project.linear_project_id}`;
+    lines.push(`Linear: ${linearUrl}`);
+  }
+  if (args.project.github_repo) lines.push(`GitHub: ${args.project.github_repo}`);
+  if (args.project.p2_url) lines.push(`P2: ${args.project.p2_url}`);
+  lines.push("");
+
+  if (args.linearProject) {
+    lines.push("## Linear project metadata");
+    if (args.linearProject.name) lines.push(`Name: ${args.linearProject.name}`);
+    if (args.linearProject.state?.name) lines.push(`State: ${args.linearProject.state.name}`);
+    if (args.linearProject.lead?.displayName || args.linearProject.lead?.name) {
+      lines.push(`Lead: ${args.linearProject.lead.displayName ?? args.linearProject.lead.name}`);
+    }
+    lines.push("");
+  }
+
+  lines.push("## Partner knowledge");
+  if (args.hmPartner) {
+    if (args.hmPartner.title) lines.push(`Title: ${args.hmPartner.title}`);
+    if (args.hmPartner.description) lines.push(`Description: ${args.hmPartner.description}`);
+    if (args.hmPartner.body.trim()) {
+      lines.push("Body:");
+      lines.push("```markdown");
+      lines.push(args.hmPartner.body);
+      lines.push("```");
+    }
+  } else {
+    lines.push("(no partner-knowledge.md found)");
+  }
+  lines.push("");
+
+  lines.push("## Project info");
+  if (args.hmProject) {
+    if (args.hmProject.title) lines.push(`Title: ${args.hmProject.title}`);
+    if (args.hmProject.description) lines.push(`Description: ${args.hmProject.description}`);
+    if (args.hmProject.body.trim()) {
+      lines.push("Body:");
+      lines.push("```markdown");
+      lines.push(args.hmProject.body);
+      lines.push("```");
+    }
+  } else {
+    lines.push(`Project name (from vault): ${args.project.name}`);
+  }
+  lines.push("");
+
+  lines.push("## User-provided context (skill phase 4)");
+  lines.push("");
+  lines.push("### Locally tracked work");
+  lines.push(args.userContext.locally_tracked_work.trim() || "(none)");
+  lines.push("");
+  lines.push("### Upcoming calls / meetings");
+  lines.push(args.userContext.upcoming_calls.trim() || "(none)");
+  lines.push("");
+  lines.push("### Critical context for the next TAM");
+  lines.push(args.userContext.critical_context.trim() || "(none)");
+  lines.push("");
+  lines.push("### Anything to exclude");
+  lines.push(args.userContext.exclude.trim() || "(none)");
+  lines.push("");
+
+  lines.push("## Note to the agent");
+  lines.push(
+    "Smithers pre-gathered the data above. The skill's MCP-side crawl phases (Linear deep crawl, P2 reader, Zendesk thread fetch, GitHub repo open issues) are NOT available in this run — the run-skill agent has no MCP access. Produce the report from what's provided; for any section where you'd ordinarily fetch from MCP and the data isn't already included above, list the missing dependency under `questions` so the user can fill it in or fetch it separately.",
+  );
+
+  return lines.join("\n");
+}

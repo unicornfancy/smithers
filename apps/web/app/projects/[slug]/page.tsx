@@ -33,6 +33,7 @@ import {
 } from "@/components/workbench-panels";
 import { ForYouTodayPanel } from "@/components/for-you-today-panel";
 import { getAgentRuntimeStatus } from "@/lib/server/agents";
+import { loadConfig } from "@/lib/server/config";
 import { getMcpClient } from "@/lib/server/mcp";
 import { recordingMatchesProject } from "@/lib/server/recording-match";
 import { detectStallsForProject } from "@/lib/server/stalls";
@@ -76,6 +77,7 @@ export default async function ProjectWorkbenchPage({
     notFound();
   }
 
+  const cfg = await loadConfig();
   // Pull project-scoped data in parallel.
   const mcp = await getMcpClient();
   const hmPartnerSlug = detail.hive_mind_partner_slug ?? detail.slug;
@@ -559,7 +561,7 @@ export default async function ProjectWorkbenchPage({
 
   return (
     <>
-      <WorkbenchHeader project={detail} />
+      <WorkbenchHeader project={detail} preparedBy={cfg.identity.name ?? ""} />
       <PageShell className="max-w-5xl">
         <SectionList scope="project" sections={sections} />
       </PageShell>
