@@ -554,6 +554,11 @@ export default async function ProjectWorkbenchPage({
       <PartnerCard
         partner={hiveMindPartner}
         editPath={hmPartnerKnowledgePath}
+        smithersEditHref={
+          detail.hive_mind_partner_slug
+            ? `/partner-knowledge/${detail.hive_mind_partner_slug}`
+            : null
+        }
         hmIsConfigured={hmIsConfigured}
       />
     ),

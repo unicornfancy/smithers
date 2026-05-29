@@ -1,4 +1,5 @@
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Pencil } from "lucide-react";
+import Link from "next/link";
 import type { HiveMindPartner } from "@smithers/vault";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,10 +8,17 @@ import { Markdown } from "@/components/markdown";
 interface Props {
   partner: HiveMindPartner | null;
   editPath: string | null;
+  /** Smithers-native editor route, e.g. /partner-knowledge/<slug>. */
+  smithersEditHref: string | null;
   hmIsConfigured: boolean;
 }
 
-export function PartnerCard({ partner, editPath, hmIsConfigured }: Props) {
+export function PartnerCard({
+  partner,
+  editPath,
+  smithersEditHref,
+  hmIsConfigured,
+}: Props) {
   if (!hmIsConfigured || !partner) return null;
 
   return (
@@ -23,15 +31,26 @@ export function PartnerCard({ partner, editPath, hmIsConfigured }: Props) {
               NDA
             </span>
           ) : null}
-          {editPath ? (
-            <a
-              href={editPath}
-              className="text-muted-foreground hover:text-foreground ml-auto flex items-center gap-1 text-xs font-normal"
-            >
-              <ExternalLink className="size-3" />
-              Edit in Hive-Mind
-            </a>
-          ) : null}
+          <span className="ml-auto flex items-center gap-3 text-xs font-normal">
+            {smithersEditHref ? (
+              <Link
+                href={smithersEditHref}
+                className="text-muted-foreground hover:text-foreground flex items-center gap-1"
+              >
+                <Pencil className="size-3" />
+                Edit here
+              </Link>
+            ) : null}
+            {editPath ? (
+              <a
+                href={editPath}
+                className="text-muted-foreground hover:text-foreground flex items-center gap-1"
+              >
+                <ExternalLink className="size-3" />
+                Open in editor
+              </a>
+            ) : null}
+          </span>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
