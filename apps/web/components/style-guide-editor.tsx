@@ -163,7 +163,7 @@ export function StyleGuideEditor({
 
         {/* Actions + save status */}
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground text-[11px]">
+          <span className="text-muted-foreground inline-block w-[120px] text-right text-[11px] tabular-nums">
             {saving
               ? "Saving..."
               : savedFlash
@@ -190,20 +190,23 @@ export function StyleGuideEditor({
         </div>
       </div>
 
-      {/* Two-panel editor */}
-      <div className="grid gap-3 md:grid-cols-2">
+      {/* Two-panel editor — columns are fixed height + scroll internally so
+          typing into a long file doesn't grow the row and shift the textarea
+          around (live preview previously dragged both columns taller via the
+          grid's default align-items: stretch). */}
+      <div className="grid items-start gap-3 md:grid-cols-2">
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
           spellCheck
           className={cn(
             "border-input bg-background focus-visible:ring-ring",
-            "min-h-[70vh] w-full rounded-md border p-3 font-mono text-sm leading-relaxed",
+            "h-[70vh] w-full rounded-md border p-3 font-mono text-sm leading-relaxed",
             "focus-visible:outline-none focus-visible:ring-1",
             "resize-y",
           )}
         />
-        <div className="border-input bg-background min-h-[70vh] overflow-y-auto rounded-md border p-4">
+        <div className="border-input bg-background h-[70vh] overflow-y-auto rounded-md border p-4">
           {content.trim() ? (
             <Markdown source={content} />
           ) : (

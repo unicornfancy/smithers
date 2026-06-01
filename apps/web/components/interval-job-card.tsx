@@ -9,7 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-type JobKey = "ping_monitor" | "fathom_sync" | "hive_mind_sync";
+type JobKey =
+  | "ping_monitor"
+  | "fathom_sync"
+  | "hive_mind_sync"
+  | "team_roster_sync";
 
 interface Props {
   job: JobKey;

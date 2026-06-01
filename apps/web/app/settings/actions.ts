@@ -163,7 +163,7 @@ export async function updateFollowUpAutomationAction(input: {
  * to register the new timer.
  */
 export async function updateIntervalJobAction(input: {
-  job: "ping_monitor" | "fathom_sync" | "hive_mind_sync";
+  job: "ping_monitor" | "fathom_sync" | "hive_mind_sync" | "team_roster_sync";
   enabled?: boolean;
   interval_minutes?: number;
 }): Promise<{ ok: true } | { ok: false; reason: string }> {

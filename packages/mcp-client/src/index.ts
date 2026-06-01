@@ -99,6 +99,8 @@ export type {
   ProjectActivityRefs,
   PingsQuery,
   ActivitySourceFilter,
+  MatticspaceGroupMember,
+  MatticspaceGroupRoster,
 } from "./context-a8c/index";
 export {
   extractTicketId,

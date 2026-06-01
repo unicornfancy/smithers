@@ -121,6 +121,18 @@ export default async function SettingsPage() {
                   cfg.schedule?.hive_mind_sync?.interval_minutes ?? 30,
               }}
             />
+            <IntervalJobCard
+              job="team_roster_sync"
+              title="Team roster sync"
+              description="Refreshes the auto-managed Common collaborators block in JOB_CONTEXT.md from the configured Matticspace group (default: team-51, include sub-teams). User-edited intro + post-script content outside the BEGIN/END markers is preserved. Default cadence: weekly."
+              runNowPath="/api/jobs/team-roster-sync"
+              initial={{
+                enabled: cfg.schedule?.team_roster_sync?.enabled ?? false,
+                interval_minutes:
+                  cfg.schedule?.team_roster_sync?.interval_minutes ??
+                  7 * 24 * 60,
+              }}
+            />
           </SettingsSection>
 
           <SettingsSection

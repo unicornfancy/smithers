@@ -156,3 +156,43 @@ export async function runHiveMindSyncJob(): Promise<JobResult> {
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Team roster sync — refreshes the auto-managed block in JOB_CONTEXT.md's
+// Common collaborators section from the configured Matticspace group.
+// ---------------------------------------------------------------------------
+
+export async function runTeamRosterSyncJob(): Promise<JobResult> {
+  const started = Date.now();
+  try {
+    const cfg = await loadConfig();
+    const groupSlug = cfg.schedule?.team_roster_sync?.group_slug ?? "team-51";
+    const { syncTeamRosterToJobContext } = await import(
+      "@/lib/server/team-roster"
+    );
+    const result = await syncTeamRosterToJobContext({
+      groupSlug,
+      includeSubteams: true,
+    });
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: result.error ?? "team roster sync failed",
+        duration_ms: Date.now() - started,
+      };
+    }
+    return {
+      ok: true,
+      summary: result.changed
+        ? `${result.members_synced} members synced to JOB_CONTEXT.md`
+        : `${result.members_synced} members up to date (no change)`,
+      duration_ms: Date.now() - started,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      duration_ms: Date.now() - started,
+    };
+  }
+}

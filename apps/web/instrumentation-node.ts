@@ -20,6 +20,7 @@ import {
   runFathomSyncJob,
   runHiveMindSyncJob,
   runPingMonitorJob,
+  runTeamRosterSyncJob,
   type JobResult,
 } from "@/lib/server/scheduler-jobs";
 
@@ -52,6 +53,13 @@ export async function setup(): Promise<void> {
     enabled: cfg.schedule?.hive_mind_sync?.enabled,
     intervalMinutes: cfg.schedule?.hive_mind_sync?.interval_minutes ?? 30,
     run: runHiveMindSyncJob,
+  });
+  registerIntervalJob({
+    label: "team roster sync",
+    enabled: cfg.schedule?.team_roster_sync?.enabled,
+    intervalMinutes:
+      cfg.schedule?.team_roster_sync?.interval_minutes ?? 7 * 24 * 60,
+    run: runTeamRosterSyncJob,
   });
 }
 

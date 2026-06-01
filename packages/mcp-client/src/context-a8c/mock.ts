@@ -9,6 +9,7 @@ import { createRng, dailySeed, pickN } from "../seed";
 import type {
   ActivitySourceFilter,
   ContextA8CClient,
+  MatticspaceGroupRoster,
   PingsQuery,
   ProjectActivityQuery,
 } from "./types";
@@ -637,6 +638,41 @@ export class MockContextA8CTransport implements ContextA8CClient {
     _slackHandle: string,
   ): Promise<boolean> {
     return false;
+  }
+
+  async listMatticspaceGroupMembers(
+    groupSlug: string,
+    _opts?: { includeSubteams?: boolean },
+  ): Promise<SourceResult<MatticspaceGroupRoster>> {
+    return {
+      ok: true,
+      from: "fresh",
+      fetched_at: new Date().toISOString(),
+      data: {
+        group_slug: groupSlug,
+        group_name: `Mock ${groupSlug}`,
+        group_url: `https://matticspace.example/groups/${groupSlug}/`,
+        total_members: 2,
+        members: [
+          {
+            name: "Mock Lead",
+            wp_username: "mocklead",
+            job_title: "Team Lead",
+            team_group: groupSlug,
+            is_team_lead: true,
+            matticspace_url: `https://matticspace.example/mocklead/`,
+          },
+          {
+            name: "Mock Member",
+            wp_username: "mockmember",
+            job_title: "Team Member",
+            team_group: groupSlug,
+            is_team_lead: false,
+            matticspace_url: `https://matticspace.example/mockmember/`,
+          },
+        ],
+      },
+    };
   }
 }
 

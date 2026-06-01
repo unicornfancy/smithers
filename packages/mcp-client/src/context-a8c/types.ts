@@ -56,12 +56,47 @@ export interface ZendeskTicketSummary {
   url: string;
 }
 
+export interface MatticspaceGroupMember {
+  /** Full display name. */
+  name: string;
+  /** WordPress.com username — the durable handle. */
+  wp_username: string;
+  /** Job title from matticspace; may be formal-sounding. */
+  job_title: string;
+  /** Sub-team this member belongs to (matticspace `team_group` field). */
+  team_group: string;
+  /** True for team leads. */
+  is_team_lead: boolean;
+  /** Profile URL on matticspace. */
+  matticspace_url: string;
+}
+
+export interface MatticspaceGroupRoster {
+  group_slug: string;
+  group_name: string;
+  group_url: string;
+  total_members: number;
+  members: MatticspaceGroupMember[];
+}
+
 export interface ContextA8CClient {
   listProjectActivity(
     query: ProjectActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>>;
 
   listPings(query: PingsQuery): Promise<SourceResult<Ping[]>>;
+
+  /**
+   * Fetch a Matticspace group's full roster via the matticspace
+   * provider's `list-group-members` tool. `include_subteams: true`
+   * for Team51 — the top-level "team-51" group has only the lead;
+   * actual day-to-day team members live in sub-teams (Confluence /
+   * Estuary / Geyser / Torrent / Wave / etc.).
+   */
+  listMatticspaceGroupMembers(
+    groupSlug: string,
+    opts?: { includeSubteams?: boolean },
+  ): Promise<SourceResult<MatticspaceGroupRoster>>;
 
   /**
    * Per-ticket metadata fetch for the workbench's Zendesk threads

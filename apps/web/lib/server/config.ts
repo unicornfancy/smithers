@@ -121,6 +121,17 @@ export interface SmithersConfig {
       enabled: boolean;
       interval_minutes?: number;
     };
+    /**
+     * Team roster sync: re-fetches the configured Matticspace group's
+     * members and rewrites the auto-managed block in JOB_CONTEXT.md's
+     * Common collaborators section. Default cadence weekly.
+     */
+    team_roster_sync?: {
+      enabled: boolean;
+      interval_minutes?: number;
+      /** Matticspace group slug (default: "team-51"). */
+      group_slug?: string;
+    };
   };
 }
 
@@ -166,6 +177,11 @@ const DEFAULTS: SmithersConfig = {
     ping_monitor: { enabled: false, interval_minutes: 15 },
     fathom_sync: { enabled: false, interval_minutes: 60 },
     hive_mind_sync: { enabled: false, interval_minutes: 30 },
+    team_roster_sync: {
+      enabled: false,
+      interval_minutes: 7 * 24 * 60,
+      group_slug: "team-51",
+    },
   },
 };
 
@@ -327,6 +343,20 @@ function mergeWithDefaults(
           partial.schedule?.hive_mind_sync?.interval_minutes ??
           DEFAULTS.schedule?.hive_mind_sync?.interval_minutes ??
           30,
+      },
+      team_roster_sync: {
+        enabled:
+          partial.schedule?.team_roster_sync?.enabled ??
+          DEFAULTS.schedule?.team_roster_sync?.enabled ??
+          false,
+        interval_minutes:
+          partial.schedule?.team_roster_sync?.interval_minutes ??
+          DEFAULTS.schedule?.team_roster_sync?.interval_minutes ??
+          7 * 24 * 60,
+        group_slug:
+          partial.schedule?.team_roster_sync?.group_slug ??
+          DEFAULTS.schedule?.team_roster_sync?.group_slug ??
+          "team-51",
       },
     },
     weekly_update: partial.weekly_update,

@@ -22,6 +22,8 @@ import type { ActivityEvent, Ping, SourceResult } from "../types";
 import type {
   ActivitySourceFilter,
   ContextA8CClient,
+  MatticspaceGroupMember,
+  MatticspaceGroupRoster,
   PingsQuery,
   ProjectActivityQuery,
 } from "./types";
@@ -73,6 +75,7 @@ interface LinearInboxResult {
 
 const PING_TTL = { freshMs: 5 * 60 * 1000 } as const;
 const ACTIVITY_TTL = { freshMs: 5 * 60 * 1000 } as const;
+const MATTICSPACE_ROSTER_TTL = { freshMs: 60 * 60 * 1000 } as const;
 
 // --- response shapes from each provider's tools ---
 //
@@ -1214,6 +1217,82 @@ export class RealContextA8CTransport implements ContextA8CClient {
       return false;
     }
   }
+
+  async listMatticspaceGroupMembers(
+    groupSlug: string,
+    opts: { includeSubteams?: boolean } = {},
+  ): Promise<SourceResult<MatticspaceGroupRoster>> {
+    const includeSubteams = opts.includeSubteams ?? false;
+    const cacheKey = `real:context_a8c:matticspace:group_members:${groupSlug}:${includeSubteams}`;
+    return runIsolated(
+      { cache: this.cache, health: this.health },
+      {
+        source: "context_a8c.linear",
+        cacheKey,
+        ttl: MATTICSPACE_ROSTER_TTL,
+        fetcher: async () => {
+          const raw = await this.mcp.callJsonTool<MatticspaceGroupMembersRaw>(
+            "context-a8c-execute-tool",
+            {
+              provider: "matticspace",
+              tool: "list-group-members",
+              params: {
+                group: groupSlug,
+                include_subteams: includeSubteams,
+                returned_fields: [
+                  "name",
+                  "wp_username",
+                  "job_title",
+                  "team_group",
+                  "is_team_lead",
+                  "matticspace_url",
+                ],
+              },
+            },
+          );
+          return mapMatticspaceGroupRoster(raw, groupSlug);
+        },
+      },
+    );
+  }
+}
+
+interface MatticspaceGroupMembersRaw {
+  group?: {
+    name?: string;
+    slug?: string;
+    url?: string;
+  };
+  total_members?: number;
+  members?: Array<{
+    name?: string;
+    wp_username?: string;
+    job_title?: string;
+    team_group?: string;
+    is_team_lead?: boolean;
+    matticspace_url?: string;
+  }>;
+}
+
+function mapMatticspaceGroupRoster(
+  raw: MatticspaceGroupMembersRaw | null | undefined,
+  fallbackSlug: string,
+): MatticspaceGroupRoster {
+  const members: MatticspaceGroupMember[] = (raw?.members ?? []).map((m) => ({
+    name: m.name ?? "",
+    wp_username: m.wp_username ?? "",
+    job_title: m.job_title ?? "",
+    team_group: m.team_group ?? "",
+    is_team_lead: Boolean(m.is_team_lead),
+    matticspace_url: m.matticspace_url ?? "",
+  }));
+  return {
+    group_slug: raw?.group?.slug ?? fallbackSlug,
+    group_name: raw?.group?.name ?? "",
+    group_url: raw?.group?.url ?? "",
+    total_members: raw?.total_members ?? members.length,
+    members,
+  };
 }
 
 interface SlackGetResult {

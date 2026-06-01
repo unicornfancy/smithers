@@ -38,4 +38,6 @@ export type {
   ProjectActivityQuery,
   ProjectActivityRefs,
   ActivitySourceFilter,
+  MatticspaceGroupMember,
+  MatticspaceGroupRoster,
 } from "./types";
