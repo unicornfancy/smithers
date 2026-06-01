@@ -21,6 +21,7 @@ import { WorkbenchHeader } from "@/components/workbench-header";
 import { ProjectStatusCard } from "@/components/project-status-card";
 import { HiveMindDraftsSection } from "@/components/hive-mind-drafts-section";
 import { PartnerCard } from "@/components/partner-card";
+import { ProjectHandoffSection } from "@/components/project-handoff-section";
 import { ProjectBriefSection } from "@/components/project-brief-section";
 import {
   CallNotesPanel,
@@ -563,6 +564,22 @@ export default async function ProjectWorkbenchPage({
       />
     ),
   });
+
+  // Bottom-of-page lifecycle action. HM-gated since the skill writes
+  // to the project's HM folder. Lives below partner-profile so it's
+  // out of the daily-flow surfaces.
+  if (detail.hive_mind_partner_slug) {
+    sections.push({
+      id: "project-handoff",
+      title: "Project handoff",
+      node: (
+        <ProjectHandoffSection
+          projectSlug={detail.slug}
+          preparedBy={cfg.identity.name ?? ""}
+        />
+      ),
+    });
+  }
 
   return (
     <>
