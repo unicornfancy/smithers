@@ -17,6 +17,7 @@ import {
 } from "@/app/weekly-updates/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HandleCheckBanner } from "@/components/handle-check-banner";
 import { Markdown } from "@/components/markdown";
 import type { WeeklyFacts } from "@/lib/server/weekly-facts";
 import type { TeamWeeklyPostResult } from "@/lib/server/team-weekly-post";
@@ -225,7 +226,14 @@ export function WeeklyUpdateEditor({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Draft</CardTitle>
           </CardHeader>
-          <CardContent className="pt-0">
+          <CardContent className="space-y-2 pt-0">
+            {body ? (
+              <HandleCheckBanner
+                text={body}
+                onApply={setBody}
+                label="@-handle check"
+              />
+            ) : null}
             {showPreview ? (
               <div className="prose prose-sm dark:prose-invert max-w-none">
                 {body ? (

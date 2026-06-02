@@ -189,7 +189,11 @@ const DEFAULTS: SmithersConfig = {
     team_roster_sync: {
       enabled: false,
       interval_minutes: 7 * 24 * 60,
-      group_slugs: ["team-51", "team-51-contractors"],
+      // Default groups that surface the people Smithers should know about:
+      //   - team-51:             FT employees + sub-teams (Confluence, Estuary, etc.)
+      //   - team-51-contractors: contract devs / designers / TAMs
+      //   - studio-51:           creative arm (Christy Nyiri lives here, not team-51)
+      group_slugs: ["team-51", "team-51-contractors", "studio-51"],
     },
   },
 };

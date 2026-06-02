@@ -18,6 +18,7 @@ import { saveAsDraftAction } from "@/app/drafts/actions";
 import { encodeDraftIdForUrl } from "@/lib/draft-id-url";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { HandleCheckBanner } from "@/components/handle-check-banner";
 import {
   Dialog,
   DialogContent,
@@ -238,6 +239,11 @@ export function AiDraftDialog({
               "w-full resize-y rounded-md border px-3 py-2 text-sm leading-relaxed",
               "focus-visible:outline-none focus-visible:ring-1",
             )}
+          />
+          <HandleCheckBanner
+            text={editedBody}
+            onApply={setEditedBody}
+            label="@-handle check"
           />
         </div>
 
