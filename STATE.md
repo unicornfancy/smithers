@@ -29,6 +29,14 @@ Closes the long-deferred "Verify @handles before posting" PLAN item. The team-ro
 
 Smoke: `@christy` → `@nyiriland (Christy Nyiri)`. `@nyiri` → same. `@nyriland` (the typo) → flagged unknown so it doesn't silently ship.
 
+### Live Activity row → +Task button (69dc6ba)
+
+Covers the "I need to do something about this even though I wasn't tagged" case that the existing "Watch for reply" button doesn't handle. Each ActivityRow gets a small `+ Task` button (opacity-0 → group-hover:1 so it doesn't clutter the feed).
+
+- `addProjectTaskFromActivityAction` appends to the project's Open Items via the existing vault helper, embedding the activity URL as a trailing markdown link: `- [ ] {prefilled text} — [source](https://...)`. Source-ref persistence is "free" via the markdown link — parseable for a future auto-mark-done slice without needing a separate ref store.
+- `AddTaskFromActivityButton` opens a small dialog with editable prefill. Verb chosen from source/kind (Reply to / Respond to / Follow up on / Review), tags the actor's first name + "(partner)" badge when external, labels the source. User edits, hits Add, task lands in the vault file.
+- Workbench passes its own `projectSlug`; cross-project surfaces fall back to `event.project_match.project_slug` when `in_vault` is true. Button hides when no project target.
+
 ### HM sync now also pushes local-ahead commits (831a20f)
 
 The original 2026-05-27 job only pulled. Smithers-generated commits (Process Call writes call-transcripts; brief generation writes brief.md; project-handoff writes handoff-*.md; etc.) stacked up locally until manually pushed — meaning colleagues couldn't see Smithers-authored work until that happened. Surfaced when Katie noticed colleague edits weren't showing in Smithers: local was 1 ahead, 6 behind, `--ff-only` would have rejected the next sync.

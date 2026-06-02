@@ -59,9 +59,20 @@ Defer concrete design until weekly-updates settles and this can be properly scop
 `/create-brief` (2026-05-28), `/project-handoff` (2026-05-29 — workbench wizard via `WorkbenchHeader` "Handoff" button), `/search-knowledge` (2026-05-29 — `/search` page over the HM MCP tool with sidebar entry), and `/update-knowledge` (2026-05-29 — `/partner-knowledge/[slug]` two-pane editor accessed from the workbench `PartnerCard`'s "Edit here" link) are all live. Foundation is the runtime skill loader + `run-skill` agent + per-skill wizard pattern from 9039c16.
 
 Remaining polish (none scheduled):
-- **Cmd-K command palette** as a global trigger for `/search` — currently the search page is reachable only via sidebar nav.
+- **Cmd-K palette** — now folded into the "Ask Smithers" item below (expanded from "just trigger /search" to a full action-and-search palette).
 - **Frontmatter editor on `/partner-knowledge/[slug]`** — v1 is body-only; structured fields stay editable via the brief wizard / project-metadata modal. A dedicated form here would let users update title / description / team / NDA flag without leaving the page.
 - **`/update-knowledge` for project info.md** — same editor pattern as partner-knowledge; project info.md edits currently go through the brief wizard's persistence path.
+
+## Ask Smithers — Cmd-K palette + action router
+
+Replaces the deferred Cmd-K item above. Scope expanded from "global HM search" to "single palette that takes structured actions on Smithers state."
+
+Design in progress (2026-06-02). Decided so far:
+- **Shape**: hybrid Cmd-K — quick-match on top (instant client-side fuzzy match against an in-memory index), structured action picker below, "Ask Smithers" LLM path at the bottom for natural-language queries.
+- **v1 action catalog**: add task, add follow-up, set status, view status, attach Zendesk, mark task done, resolve follow-up, navigation (Open <page>).
+- **v1 indexing**: server-side `/api/palette-index` returns vault projects, HM partners, follow-ups, open tasks, static pages. Client fetches once on first open, refreshes per session. Token-based scoring (prefix-match > substring-match), no fuzzy library.
+- **Two-step interaction**: type → results → pick action → action-specific param form → submit. Parametric parsing (`add task to pocket: respond to martin`) deferred to v1.5.
+- **LLM dispatcher** (v2): true free-form query → agent tool-use → mutation with confirm. Out of v1 scope.
 
 ## Hive Mind side — recommendations for v1.5 (not blocking)
 
