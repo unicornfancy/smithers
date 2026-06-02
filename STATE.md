@@ -29,6 +29,19 @@ Closes the long-deferred "Verify @handles before posting" PLAN item. The team-ro
 
 Smoke: `@christy` → `@nyiriland (Christy Nyiri)`. `@nyiri` → same. `@nyriland` (the typo) → flagged unknown so it doesn't silently ship.
 
+### HM sync now also pushes local-ahead commits (831a20f)
+
+The original 2026-05-27 job only pulled. Smithers-generated commits (Process Call writes call-transcripts; brief generation writes brief.md; project-handoff writes handoff-*.md; etc.) stacked up locally until manually pushed — meaning colleagues couldn't see Smithers-authored work until that happened. Surfaced when Katie noticed colleague edits weren't showing in Smithers: local was 1 ahead, 6 behind, `--ff-only` would have rejected the next sync.
+
+- `git fetch` first to know ahead/behind exactly via `rev-list --count --left-right @{u}...HEAD`.
+- Behind-only → `git pull --ff-only` (unchanged).
+- Diverged (behind AND ahead) → `git pull --rebase` to replay local commits onto the new remote.
+- After pull, check ahead-count again (rebase preserves local commits with new SHAs) and `git push` if anything to share.
+- Summary string reads e.g. `"rebased 1 local commit(s) onto 6 new remote · pushed 1 local commit(s)"`.
+- Still skips on a dirty working tree — that case warrants the user's attention and is too risky for an automatic rebase.
+
+Also enabled the job in Katie's `config.local.yaml` so the next 30-min tick keeps things in sync without manual intervention.
+
 ## Just completed (2026-05-29 — skills integration sweep: About + /project-handoff + /search-knowledge + /update-knowledge)
 
 Closes the PLAN.md "Skill integration — remaining queue" entry in a single session by reusing the runtime-skill-loader foundation 9039c16 introduced.
@@ -325,6 +338,7 @@ In rough priority order:
 
 ## Recent decisions (with the why)
 
+- **HM sync rebases on divergence rather than failing** (2026-06-02) — Original `git pull --ff-only` would have rejected any state where local had its own commits ahead of remote (which Smithers creates routinely via Process Call, brief generation, project-handoff, etc.). Rebasing local commits onto the new remote handles the common case cleanly. Alternative considered: leave `--ff-only` and surface "your local is ahead, push first" as an error. Rejected because Smithers-authored commits should sync automatically — the whole point of the job is "I shouldn't have to think about HM git state." Dirty working tree still skips (different risk profile — uncommitted user work).
 - **Handle map exposed via `/api/handle-map`, not a server action** (2026-06-02) — `HandleCheckBanner` is used in two different surfaces (weekly editor + AiDraftDialog) and may end up in more later. A plain HTTP endpoint means the client component is self-contained: any new page that drops in the banner gets the map without each page needing to plumb a server action through props. Trade: a tiny serialization cost per editor load vs. the wiring tax of threading the map through server actions on every consumer.
 - **JOB_CONTEXT.md auto-managed block uses HTML comment markers, not full-section replace** (2026-05-28→06-02) — Each group's roster lives between `<!-- BEGIN matticspace-<slug> -->` / `<!-- END -->` markers inside the "Common collaborators" section. User-edited intro/outro prose outside the markers survives every sync. Alternative: replace the whole `## Common collaborators` section on each sync. Rejected because Katie's hand-curated narrative ("This list is illustrative...") would have been wiped. Markers let auto-sync coexist with user prose.
 - **studio-51 added to default group slugs after smoke-test** (2026-06-02) — Christy Nyiri wasn't returning from `@christy` lookup because she's not in `team-51` or `team-51-contractors` — she's in `studio-51` (the creative arm: design + dev + disco balls). Took a probe of the search-groups tool to find this. The discovery prompted us to bump the roster sync default to three groups rather than two.
