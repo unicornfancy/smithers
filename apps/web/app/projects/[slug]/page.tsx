@@ -20,6 +20,7 @@ import { SectionList, type SectionDef } from "@/components/section-list";
 import { WorkbenchHeader } from "@/components/workbench-header";
 import { ProjectStatusCard } from "@/components/project-status-card";
 import { HiveMindDraftsSection } from "@/components/hive-mind-drafts-section";
+import { AgendaPanel } from "@/components/agenda-panel";
 import { PartnerCard } from "@/components/partner-card";
 import { ProjectHandoffSection } from "@/components/project-handoff-section";
 import { ProjectBriefSection } from "@/components/project-brief-section";
@@ -36,6 +37,7 @@ import { ForYouTodayPanel } from "@/components/for-you-today-panel";
 import { getAgentRuntimeStatus } from "@/lib/server/agents";
 import { loadConfig } from "@/lib/server/config";
 import { getMcpClient } from "@/lib/server/mcp";
+import { findAgendaForPartner } from "@/lib/server/agenda-for-partner";
 import { recordingMatchesProject } from "@/lib/server/recording-match";
 import { detectStallsForProject } from "@/lib/server/stalls";
 import { getVault } from "@/lib/server/vault";
@@ -114,6 +116,7 @@ export default async function ProjectWorkbenchPage({
     hiveMindFollowUps,
     hiveMindBrief,
     hiveMindProject,
+    agendaForPartner,
   ] = await Promise.all([
       vault.listDrafts().catch(() => []),
       vault
@@ -163,6 +166,7 @@ export default async function ProjectWorkbenchPage({
       vault.getHiveMindFollowUps(hmPartnerSlug, hmProjectSlug).catch(() => null),
       vault.getHiveMindBrief(hmPartnerSlug, hmProjectSlug).catch(() => null),
       vault.getHiveMindProject(hmPartnerSlug, hmProjectSlug).catch(() => null),
+      findAgendaForPartner(detail.partner).catch(() => null),
     ]);
 
   // Find the active phase (first started issue) and fetch its subtasks.
@@ -473,6 +477,23 @@ export default async function ProjectWorkbenchPage({
   });
 
   sections.push({
+    id: "agenda",
+    title: "Agenda",
+    node: (
+      <AgendaPanel
+        agenda={agendaForPartner}
+        projectName={detail.name}
+        partnerSlug={detail.partner}
+        editorHref={
+          agendaForPartner
+            ? `/agendas/${agendaSlug(agendaForPartner.filename)}`
+            : null
+        }
+      />
+    ),
+  });
+
+  sections.push({
     id: "items-and-drafts",
     title: "Items & drafts",
     node: (
@@ -591,3 +612,16 @@ export default async function ProjectWorkbenchPage({
   );
 }
 
+
+/**
+ * Mirror of the slugifier used by /agendas/[slug] route — kept inline
+ * here so we don't pull a "use server" file into the RSC page. Any
+ * change to the slug shape needs to be made in both spots.
+ */
+function agendaSlug(filename: string): string {
+  return filename
+    .replace(/\.md$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}

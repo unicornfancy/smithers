@@ -42,11 +42,12 @@ export default async function AgendasPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             {agendas.map(({ ref, agenda }) => {
               const slug = slugifyFilename(ref.filename);
-              const openCount =
-                agenda?.open_items.filter((i) => !i.checked).length ?? 0;
+              const openItems = agenda?.open_items.filter((i) => !i.checked) ?? [];
+              const openCount = openItems.length;
               const checkedCount =
                 agenda?.open_items.filter((i) => i.checked).length ?? 0;
               const archivedCount = agenda?.archived.length ?? 0;
+              const groupCounts = countOpenByGroup(openItems);
               return (
                 <Link
                   key={ref.filename}
@@ -54,14 +55,23 @@ export default async function AgendasPage() {
                   className="block"
                 >
                   <Card className="hover:bg-accent/30 transition-colors">
-                    <CardContent className="space-y-1 py-3">
+                    <CardContent className="space-y-1.5 py-3">
                       <div className="flex items-baseline gap-2">
                         <ListTodo className="text-muted-foreground size-4 shrink-0" />
                         <span className="text-sm font-medium">
                           {agenda?.title ?? ref.filename.replace(/\.md$/i, "")}
                         </span>
+                        {agenda?.partner ? (
+                          <code className="bg-muted text-muted-foreground ml-auto rounded px-1.5 py-0.5 font-mono text-[10px]">
+                            {agenda.partner}
+                          </code>
+                        ) : (
+                          <span className="text-muted-foreground/70 ml-auto text-[10px] italic">
+                            not linked
+                          </span>
+                        )}
                       </div>
-                      <div className="text-muted-foreground flex gap-3 pl-6 text-[11px]">
+                      <div className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5 pl-6 text-[11px]">
                         <span>{openCount} open</span>
                         {checkedCount > 0 ? (
                           <span>{checkedCount} checked</span>
@@ -73,6 +83,21 @@ export default async function AgendasPage() {
                           </span>
                         ) : null}
                       </div>
+                      {groupCounts.length > 0 ? (
+                        <ul className="text-muted-foreground/90 flex flex-wrap gap-1.5 pl-6 text-[11px]">
+                          {groupCounts.map(({ group, count }) => (
+                            <li
+                              key={group ?? "__general__"}
+                              className="border-muted-foreground/20 inline-flex items-center gap-1 rounded border px-1.5 py-0.5"
+                            >
+                              <span className="font-medium">
+                                {group ?? "Partner-level"}
+                              </span>
+                              <span>· {count}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
                     </CardContent>
                   </Card>
                 </Link>
@@ -91,4 +116,23 @@ function slugifyFilename(filename: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Bucket open items by their H3 group for the index card's per-project
+ * mini-counts. Items with no group (general / partner-level) get
+ * `group: undefined` and render as "Partner-level". Sorted by count
+ * desc so the busiest projects sit at the front.
+ */
+function countOpenByGroup(
+  items: { group?: string }[],
+): Array<{ group: string | undefined; count: number }> {
+  const buckets = new Map<string | undefined, number>();
+  for (const item of items) {
+    const key = item.group?.trim() || undefined;
+    buckets.set(key, (buckets.get(key) ?? 0) + 1);
+  }
+  return Array.from(buckets.entries())
+    .map(([group, count]) => ({ group, count }))
+    .sort((a, b) => b.count - a.count);
 }

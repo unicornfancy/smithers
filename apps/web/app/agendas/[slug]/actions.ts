@@ -7,13 +7,18 @@ import { getVault } from "@/lib/server/vault";
 export async function addAgendaItemAction(
   filename: string,
   text: string,
+  options?: { group?: string },
 ): Promise<{ ok: true; changed: boolean } | { ok: false; reason: string }> {
   if (!filename) return { ok: false, reason: "filename is required" };
   const vault = await getVault();
   try {
-    const result = await vault.addAgendaItem(filename, text);
+    const result = await vault.addAgendaItem(filename, text, options);
     revalidatePath(`/agendas/${slugifyFilename(filename)}`);
     revalidatePath(`/agendas`);
+    // The agenda also surfaces on every project workbench whose partner
+    // matches; revalidate the wildcard so an open workbench picks up
+    // the new item without a hard refresh.
+    revalidatePath("/projects/[slug]", "page");
     return { ok: true, changed: result.changed };
   } catch (err) {
     return {
@@ -35,6 +40,7 @@ export async function toggleAgendaItemAction(
   try {
     const result = await vault.setAgendaItemChecked(filename, itemId, checked);
     revalidatePath(`/agendas/${slugifyFilename(filename)}`);
+    revalidatePath("/projects/[slug]", "page");
     return { ok: true, changed: result.changed };
   } catch (err) {
     return {
@@ -57,6 +63,7 @@ export async function archiveCheckedAgendaItemsAction(
     const result = await vault.archiveCheckedAgendaItems(filename, label);
     revalidatePath(`/agendas/${slugifyFilename(filename)}`);
     revalidatePath(`/agendas`);
+    revalidatePath("/projects/[slug]", "page");
     return { ok: true, archived: result.archived };
   } catch (err) {
     return {

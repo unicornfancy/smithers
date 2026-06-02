@@ -342,6 +342,7 @@ export interface Vault {
   addAgendaItem: (
     filename: string,
     text: string,
+    options?: Parameters<typeof addAgendaItem>[3],
   ) => ReturnType<typeof addAgendaItem>;
   setAgendaItemChecked: (
     filename: string,
@@ -520,7 +521,8 @@ export function createVault(options: VaultOptions): Vault {
     listAgendas: () => listAgendas(resolved),
     readAgenda: (filename) => readAgenda(resolved, filename),
     agendaExists: (filename) => agendaExists(resolved, filename),
-    addAgendaItem: (filename, text) => addAgendaItem(resolved, filename, text),
+    addAgendaItem: (filename, text, options) =>
+      addAgendaItem(resolved, filename, text, options),
     setAgendaItemChecked: (filename, itemId, checked) =>
       setAgendaItemChecked(resolved, filename, itemId, checked),
     archiveCheckedAgendaItems: (filename, dateLabel) =>

@@ -18,6 +18,7 @@
 import { join, relative } from "node:path";
 
 import type { ResolvedVaultOptions } from "./config";
+import { parseMarkdown, serializeMarkdown } from "./frontmatter";
 import { fileExists, fileMtime, listMarkdownFiles, tryReadFile, writeFileAtomic } from "./fs";
 import { deterministicId } from "./ids";
 import { vaultPaths } from "./paths";
@@ -53,6 +54,14 @@ export interface AgendaItem {
   id: string;
   text: string;
   checked: boolean;
+  /**
+   * H3 sub-heading the item lives under within `## Open Items`. Used to
+   * segment a per-partner agenda into per-project buckets — e.g. an item
+   * under `### Phase 2` matches the Pocket NYC Phase 2 project workbench.
+   * Undefined for items that appear before the first H3 (general /
+   * partner-level items).
+   */
+  group?: string;
 }
 
 export interface AgendaArchiveSection {
@@ -66,6 +75,14 @@ export interface Agenda {
   filename: string;
   /** Title from the `# ` H1 line if present, else the filename without extension. */
   title: string;
+  /**
+   * Partner slug from frontmatter (`partner: <slug>`). The workbench
+   * uses this to wire an agenda file to a project — every project
+   * sharing this partner shows the same agenda. Backfilled manually
+   * for files that pre-date the field; unset means the file isn't
+   * yet linked.
+   */
+  partner?: string;
   open_items: AgendaItem[];
   archived: AgendaArchiveSection[];
   /** Raw file content for fallback rendering. */
@@ -86,20 +103,30 @@ export async function readAgenda(
 }
 
 function parseAgenda(filename: string, raw: string, mtime: string): Agenda {
-  const lines = raw.split(/\r?\n/);
+  // Strip frontmatter first; the body parser walks markdown lines.
+  const { data: fm, content: body } = parseMarkdown(raw);
+  const partner =
+    typeof fm.partner === "string" && fm.partner.trim()
+      ? fm.partner.trim()
+      : undefined;
+
+  const lines = body.split(/\r?\n/);
   const titleMatch = lines.find((l) => l.startsWith("# "));
   const title = titleMatch
     ? titleMatch.slice(2).trim()
     : filename.replace(/\.md$/i, "");
 
   // Find the Open Items section (between `## Open Items` and the next `---`
-  // divider or `## ` heading or EOF).
+  // divider or `## ` heading or EOF). Within that section, items are
+  // grouped by H3 sub-headings (`### Phase 2` → group: "Phase 2"). Items
+  // appearing before the first H3 get group: undefined (general).
   const openHeadingIdx = lines.findIndex((l) =>
     /^##\s+Open Items\s*$/i.test(l),
   );
   const open_items: AgendaItem[] = [];
   let archiveStartIdx = lines.length;
   if (openHeadingIdx !== -1) {
+    let currentGroup: string | undefined = undefined;
     let i = openHeadingIdx + 1;
     while (i < lines.length) {
       const line = lines[i]!;
@@ -111,6 +138,12 @@ function parseAgenda(filename: string, raw: string, mtime: string): Agenda {
         archiveStartIdx = i;
         break;
       }
+      const h3 = /^###\s+(.+?)\s*$/.exec(line);
+      if (h3) {
+        currentGroup = h3[1]!.trim();
+        i += 1;
+        continue;
+      }
       const itemMatch = /^[-*]\s+\[([ xX])\]\s+(.*)$/.exec(line);
       if (itemMatch) {
         const text = itemMatch[2]!.trim();
@@ -119,6 +152,7 @@ function parseAgenda(filename: string, raw: string, mtime: string): Agenda {
             id: deterministicId(filename, text),
             text,
             checked: itemMatch[1]!.toLowerCase() === "x",
+            group: currentGroup,
           });
         }
       }
@@ -155,7 +189,15 @@ function parseAgenda(filename: string, raw: string, mtime: string): Agenda {
     }
   }
 
-  return { filename, title, open_items, archived, raw, modified_at: mtime };
+  return {
+    filename,
+    title,
+    partner,
+    open_items,
+    archived,
+    raw,
+    modified_at: mtime,
+  };
 }
 
 export interface AgendaMutationResult {
@@ -163,53 +205,125 @@ export interface AgendaMutationResult {
 }
 
 /**
- * Append a new unchecked item to the end of the Open Items list. Creates the
+ * Append a new unchecked item to the Open Items list. Creates the
  * `## Open Items` section if missing. No-op when `text` is empty.
+ *
+ * When `options.group` is provided, the item is appended under the
+ * matching `### <group>` H3 sub-heading (created at the bottom of the
+ * Open Items block if it doesn't exist yet). When undefined, the item
+ * lands in the "general" zone above any H3s — partner-level items not
+ * tied to a specific project.
  */
 export async function addAgendaItem(
   opts: ResolvedVaultOptions,
   filename: string,
   text: string,
+  options?: { group?: string },
 ): Promise<AgendaMutationResult> {
   const trimmed = text.trim();
   if (!trimmed) return { changed: false };
+  const group = options?.group?.trim() || undefined;
   const paths = vaultPaths(opts);
   const abs = join(paths.agendas, filename);
   const existing = await tryReadFile(abs);
   if (existing === null) {
     // Create a fresh agenda file with the new item.
     const title = filename.replace(/\.md$/i, "");
-    const content = `# ${title} — Call Agenda\n\n## Open Items\n- [ ] ${trimmed}\n\n---\n`;
-    await writeFileAtomic(abs, content);
+    const body = group
+      ? `# ${title} — Call Agenda\n\n## Open Items\n\n### ${group}\n- [ ] ${trimmed}\n\n---\n`
+      : `# ${title} — Call Agenda\n\n## Open Items\n- [ ] ${trimmed}\n\n---\n`;
+    await writeFileAtomic(abs, body);
     return { changed: true };
   }
-  const lines = existing.split(/\r?\n/);
+
+  const { data, content } = parseMarkdown(existing);
+  const lines = content.split(/\r?\n/);
   const openIdx = lines.findIndex((l) => /^##\s+Open Items\s*$/i.test(l));
   if (openIdx === -1) {
     // No Open Items section yet — append one right after the title.
     const titleIdx = lines.findIndex((l) => l.startsWith("# "));
     const insertAt = titleIdx >= 0 ? titleIdx + 1 : 0;
-    const block = ["", "## Open Items", `- [ ] ${trimmed}`, "", "---", ""];
+    const block = group
+      ? ["", "## Open Items", "", `### ${group}`, `- [ ] ${trimmed}`, "", "---", ""]
+      : ["", "## Open Items", `- [ ] ${trimmed}`, "", "---", ""];
     lines.splice(insertAt, 0, ...block);
   } else {
-    // Walk to the end of the Open Items block, then insert before whatever
-    // delimiter ends it (divider, next heading, or EOF).
-    let endIdx = openIdx + 1;
-    while (endIdx < lines.length) {
-      const l = lines[endIdx]!;
-      if (/^---\s*$/.test(l) || /^##\s+/.test(l)) break;
-      endIdx += 1;
+    insertInOpenItems(lines, openIdx, trimmed, group);
+  }
+  await writeFileAtomic(abs, serializeMarkdown(data, lines.join("\n")));
+  return { changed: true };
+}
+
+/**
+ * Locate the right insertion point for a new item within the Open
+ * Items block and splice it in. Handles three cases: group requested
+ * and H3 exists → append after last item in that group; group
+ * requested and H3 missing → create H3 + item at the end of Open
+ * Items; no group → append in the general zone (before any H3).
+ */
+function insertInOpenItems(
+  lines: string[],
+  openIdx: number,
+  trimmed: string,
+  group: string | undefined,
+): void {
+  // Walk to the end of the Open Items block.
+  let blockEnd = openIdx + 1;
+  while (blockEnd < lines.length) {
+    const l = lines[blockEnd]!;
+    if (/^---\s*$/.test(l) || /^##\s+/.test(l)) break;
+    blockEnd += 1;
+  }
+  // Trim trailing blank lines.
+  let endTrimmed = blockEnd;
+  while (endTrimmed > openIdx + 1 && lines[endTrimmed - 1]!.trim() === "") {
+    endTrimmed -= 1;
+  }
+
+  if (group === undefined) {
+    // General zone = everything from openIdx+1 to the first H3 (or
+    // blockEnd if no H3). Insert at end of that zone.
+    let generalEnd = openIdx + 1;
+    while (generalEnd < endTrimmed) {
+      if (/^###\s+/.test(lines[generalEnd]!)) break;
+      generalEnd += 1;
     }
-    // Trim trailing blank lines inside the block so the new item slots in
-    // tight against the existing list.
-    let insertAt = endIdx;
+    let insertAt = generalEnd;
     while (insertAt > openIdx + 1 && lines[insertAt - 1]!.trim() === "") {
       insertAt -= 1;
     }
     lines.splice(insertAt, 0, `- [ ] ${trimmed}`);
+    return;
   }
-  await writeFileAtomic(abs, lines.join("\n"));
-  return { changed: true };
+
+  // Group requested — find matching H3 within Open Items.
+  let h3Idx = -1;
+  for (let i = openIdx + 1; i < endTrimmed; i += 1) {
+    const h = /^###\s+(.+?)\s*$/.exec(lines[i]!);
+    if (h && h[1]!.trim().toLowerCase() === group.toLowerCase()) {
+      h3Idx = i;
+      break;
+    }
+  }
+  if (h3Idx === -1) {
+    // H3 missing — append a new H3 + item at the end of Open Items.
+    const block = ["", `### ${group}`, `- [ ] ${trimmed}`];
+    lines.splice(endTrimmed, 0, ...block);
+    return;
+  }
+  // H3 found — append after the last item in this group (before next H3,
+  // ## heading, or divider).
+  let groupEnd = h3Idx + 1;
+  while (groupEnd < endTrimmed) {
+    const l = lines[groupEnd]!;
+    if (/^###\s+/.test(l) || /^##\s+/.test(l) || /^---\s*$/.test(l)) break;
+    groupEnd += 1;
+  }
+  let insertAt = groupEnd;
+  while (insertAt > h3Idx + 1 && lines[insertAt - 1]!.trim() === "") {
+    insertAt -= 1;
+  }
+  lines.splice(insertAt, 0, `- [ ] ${trimmed}`);
 }
 
 /**
@@ -227,9 +341,13 @@ export async function setAgendaItemChecked(
   const abs = join(paths.agendas, filename);
   const existing = await tryReadFile(abs);
   if (existing === null) return { changed: false };
-  const lines = existing.split(/\r?\n/);
+  const { data, content } = parseMarkdown(existing);
+  const lines = content.split(/\r?\n/);
   const openIdx = lines.findIndex((l) => /^##\s+Open Items\s*$/i.test(l));
   if (openIdx === -1) return { changed: false };
+  // Walk the entire Open Items block including H3 sub-headings — the
+  // toggle is id-based, so the group structure is irrelevant for
+  // matching.
   for (let i = openIdx + 1; i < lines.length; i += 1) {
     const line = lines[i]!;
     if (/^---\s*$/.test(line) || /^##\s+/.test(line)) break;
@@ -240,7 +358,7 @@ export async function setAgendaItemChecked(
     const isCurrentlyChecked = m[2]!.toLowerCase() === "x";
     if (isCurrentlyChecked === checked) return { changed: false };
     lines[i] = `${m[1]}${checked ? "x" : " "}${m[3]}${m[4]}`;
-    await writeFileAtomic(abs, lines.join("\n"));
+    await writeFileAtomic(abs, serializeMarkdown(data, lines.join("\n")));
     return { changed: true };
   }
   return { changed: false };
@@ -261,11 +379,15 @@ export async function archiveCheckedAgendaItems(
   const abs = join(paths.agendas, filename);
   const existing = await tryReadFile(abs);
   if (existing === null) return { changed: false, archived: 0 };
-  const lines = existing.split(/\r?\n/);
+  const { data, content } = parseMarkdown(existing);
+  const lines = content.split(/\r?\n/);
   const openIdx = lines.findIndex((l) => /^##\s+Open Items\s*$/i.test(l));
   if (openIdx === -1) return { changed: false, archived: 0 };
 
-  // Walk Open Items, pulling out checked rows.
+  // Walk Open Items, pulling out checked rows from every H3 group. H3
+  // headings are left in place so the group structure persists across
+  // archives — an empty group is fine (it just becomes a heading with
+  // no items, which the next add re-fills).
   const archivedRows: string[] = [];
   let i = openIdx + 1;
   let dividerIdx = -1;
@@ -298,7 +420,7 @@ export async function archiveCheckedAgendaItems(
 
   const block = [`## ${dateLabel}`, ...archivedRows, ""];
   lines.splice(dividerIdx + 1, 0, "", ...block);
-  await writeFileAtomic(abs, lines.join("\n"));
+  await writeFileAtomic(abs, serializeMarkdown(data, lines.join("\n")));
   return { changed: true, archived: archivedRows.length };
 }
 
