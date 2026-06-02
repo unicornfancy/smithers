@@ -1,6 +1,33 @@
 # STATE.md — Smithers (snapshot)
 
-_Updated 2026-05-29_
+_Updated 2026-06-02_
+
+## Just completed (2026-06-02 — JOB_CONTEXT.md loop closes: roster sync + @handle verification)
+
+Three commits, all feeding the JOB_CONTEXT.md / agent-context loop introduced 2026-05-29.
+
+### Style-guide editor stability + Matticspace team roster sync (13df837)
+
+- **`/style-guide` editor stops shifting under the cursor.** Both columns now `h-[70vh]` (strict height, internal scroll on the preview) instead of `min-h-[70vh]`. CSS Grid's default `align-items: stretch` was dragging the textarea taller in lockstep with the live preview growing as content grew. Save-status text gets a fixed 120px right-aligned slot so the "Learn from archives" button doesn't shift as the status cycles.
+- **Team roster sync v1.** New `mcp.contextA8C.listMatticspaceGroupMembers(slug, opts)` with 1h SWR cache + serializable `MatticspaceGroupRoster` type. `lib/server/team-roster.ts` reads JOB_CONTEXT.md, finds/inserts `<!-- BEGIN matticspace-<slug> --> / <!-- END --> ` markers inside the "Common collaborators" section, renders an alphabetical-with-leads-first markdown list, atomic write. Decodes HTML entities (`&amp;` → `&` etc.) from matticspace strings. Idempotent. New `runTeamRosterSyncJob` + `/api/jobs/team-roster-sync` + `instrumentation-node` registration + `IntervalJobCard` on `/settings → Workflow`. Default disabled; weekly cadence.
+
+### Multi-group sync (613e400)
+
+- `team_roster_sync.group_slug` (singular, legacy) → `group_slugs[]` (plural). Each group gets its own BEGIN/END block in JOB_CONTEXT.md. Default: `["team-51", "team-51-contractors", "studio-51"]` — contractors live in the standalone `team-51-contractors` group (not a sub-team so `include_subteams: true` doesn't reach them), and studio-51 holds the in-house designers (Christy Nyiri, Allan Cole, Dave Whitley, Diana Costa, Pedro Azpurua, Zeljko Gudelj).
+- New `syncTeamRostersToJobContext` orchestrator loops over slugs; per-group results bubble up in the `JobResult`'s `groups[]`.
+- `team_group: "None"` labels stripped from the rendered output — contractors have no sub-team membership so the field reads "None" upstream and adds no signal. Their `job_title` carries the meaningful info ("Contract designer on Team 51-Launch").
+- Summary now reads e.g. `"58 members synced (team-51=30 team-51-contractors=22 studio-51=6*)"` — trailing `*` marks which groups actually changed on disk.
+
+### @-handle verification banner (e58ee8f)
+
+Closes the long-deferred "Verify @handles before posting" PLAN item. The team-roster sync gave us the canonical wp_username for every member; drafts now check their mentions against that source of truth before they ship to P2.
+
+- `getMatticspaceHandleMap()` server util builds a serializable lookup from the cached roster: `known_wp_usernames[]` plus `by_candidate: Record<string, Person[]>` keyed by first-name slug, last-name slug, full-kebab, full-concat.
+- `/api/handle-map` exposes the map to the client (no-cache headers — fresh from server SWR every load).
+- `<HandleCheckBanner>` client component scans the draft, classifies @-mentions as already-correct / suggested / ambiguous / unknown, renders per-suggestion "Apply" buttons that rewrite `@typed → @suggested` in the textarea. Unknown mentions collapse into a soft-warning details block. Hides itself when nothing's flagged.
+- Wired into the weekly-update editor (above the draft body) and AiDraftDialog (below the body textarea). Client-side string matching, no debounce needed.
+
+Smoke: `@christy` → `@nyiriland (Christy Nyiri)`. `@nyiri` → same. `@nyriland` (the typo) → flagged unknown so it doesn't silently ship.
 
 ## Just completed (2026-05-29 — skills integration sweep: About + /project-handoff + /search-knowledge + /update-knowledge)
 
@@ -292,12 +319,16 @@ In rough priority order:
 5. **`/today` view focus** — design discussion needed; queued in PLAN.md. Polish items (day-specific banners, AFK / weekend / no-data states) plus open questions about opinionated section visibility, "what changed since you last opened this," calendar integration surface, For-You-Today confidence.
 6. **H6 — workbench Pinned context card** — manage pins outside of a draft flow.
 7. **`/weekly-updates/[YYYY-WN]` editor** — stub.
-8. **Remaining AI affordances** — Verify @handles before posting, Find related context. (Summarize Zendesk thread shipped 2026-05-26.)
+8. **Remaining AI affordances** — Find related context. (Summarize Zendesk thread shipped 2026-05-26; @handle verification shipped 2026-06-02 as `HandleCheckBanner`.)
 9. **Bell icon + unresolved-issues count** — vault-watcher events.
 10. **Auto-draft nudge when follow-up crosses escalate threshold** — the thresholds are now user-configurable; the next slice is wiring the auto-draft trigger.
 
 ## Recent decisions (with the why)
 
+- **Handle map exposed via `/api/handle-map`, not a server action** (2026-06-02) — `HandleCheckBanner` is used in two different surfaces (weekly editor + AiDraftDialog) and may end up in more later. A plain HTTP endpoint means the client component is self-contained: any new page that drops in the banner gets the map without each page needing to plumb a server action through props. Trade: a tiny serialization cost per editor load vs. the wiring tax of threading the map through server actions on every consumer.
+- **JOB_CONTEXT.md auto-managed block uses HTML comment markers, not full-section replace** (2026-05-28→06-02) — Each group's roster lives between `<!-- BEGIN matticspace-<slug> -->` / `<!-- END -->` markers inside the "Common collaborators" section. User-edited intro/outro prose outside the markers survives every sync. Alternative: replace the whole `## Common collaborators` section on each sync. Rejected because Katie's hand-curated narrative ("This list is illustrative...") would have been wiped. Markers let auto-sync coexist with user prose.
+- **studio-51 added to default group slugs after smoke-test** (2026-06-02) — Christy Nyiri wasn't returning from `@christy` lookup because she's not in `team-51` or `team-51-contractors` — she's in `studio-51` (the creative arm: design + dev + disco balls). Took a probe of the search-groups tool to find this. The discovery prompted us to bump the roster sync default to three groups rather than two.
+- **Handle check is surface-for-review, not auto-fix** (2026-06-02) — Per-suggestion "Apply" button rather than silent rewrite on save. Safer: auto-fix could mangle a deliberate `@partnername` that happens to match a T51 first name. Ambiguous matches (multiple people with the same first name) skip the Apply entirely and just list the options — user picks.
 - **Skill dependencies live in SKILL.md frontmatter, not a Smithers-side registry** (2026-05-28) — Skills declare which files they read at runtime via a `dependencies:` YAML list. Smithers' `getHiveMindSkillContent` loads them. Alternative considered: hardcode per-skill in Smithers (`SKILL_DEPENDENCIES["create-brief"] = [...]`). Rejected because HM is the source of truth for skill metadata; embedding it in Smithers creates drift when the skill evolves. Trade: needs cross-repo coordination when adding a new dep, which is the right discipline anyway.
 - **`run-skill` is a generic agent, not `generate-brief`** (2026-05-28) — Same agent handles `/project-handoff`, `/update-knowledge`, and any future skill that produces a single markdown artifact. The skill-specific shape is in the user prompt (gathered inputs + dependency files), not the agent code. Trade: one shared contract means brief-specific output schema validation isn't possible (output is "markdown string + question list" regardless of skill); skills that need richer structured output would warrant their own agent.
 - **Brief wizard has explicit phases (inputs → generating → review → saving), not AiDraftDialog reuse** (2026-05-28) — AiDraftDialog would have lost the questions banner + the "back to inputs" navigation. The brief flow's review phase needs the questions list above the markdown so Katie sees what the skill flagged before saving. Custom dialog is ~250 lines but maps to the actual workflow.

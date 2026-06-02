@@ -78,4 +78,4 @@ Surfaced while building the brief integration:
 - **Change-project-kind wizard** — Team/Personal ↔ Partner copy/unlink flow. Preserves `project_id`.
 - **In-flight indicator on auto-learn-from-archive** — currently fire-and-forget with a success toast on completion. Plan called for a small "learning…" pill near the archive button until the toast fires; deferred as a polish item.
 - **H6 — workbench "Pinned context" affordance** — a small card on the project page for managing pins outside of a draft flow. Pinning currently happens via the picker's "Pin permanently" checkbox.
-- **More AI affordances** — Verify @handles before posting, Find related context. Each is a self-contained small slice (Summarize Zendesk thread shipped 2026-05-26).
+- **More AI affordances** — Find related context. Self-contained small slice. (Summarize Zendesk thread shipped 2026-05-26; @handle verification shipped 2026-06-02 as `HandleCheckBanner` in weekly editor + AiDraftDialog, backed by the Matticspace roster sync.)
