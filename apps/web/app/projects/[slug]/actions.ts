@@ -487,7 +487,9 @@ export async function draftZendeskReplyAction(
   }
 
   // Best-effort comment context. fetchZendeskTicketActivity returns
-  // [] when the upstream tool isn't available, which is fine.
+  // [] when the upstream tool isn't available, which is fine. Events
+  // come back newest-first, so .find() yields the most recent of each
+  // side without an extra sort.
   const mcp = await getMcpClient();
   const recent = await mcp.contextA8C
     .fetchZendeskTicketActivity(ticketId, {
@@ -496,7 +498,19 @@ export async function draftZendeskReplyAction(
     })
     .catch(() => []);
   const lastPartner = recent.find((e) => e.actor?.is_external === true);
-  const lastInternal = recent.find((e) => e.actor?.is_external === false);
+  const lastOurTeam = recent.find((e) => e.actor?.is_external === false);
+
+  // Who replied LAST drives the agent's reply-vs-nudge branch. Compare
+  // timestamps; if either side is absent the other wins by default.
+  let lastResponder: "partner" | "our_team" | null = null;
+  if (lastPartner && lastOurTeam) {
+    lastResponder =
+      lastPartner.timestamp > lastOurTeam.timestamp ? "partner" : "our_team";
+  } else if (lastPartner) {
+    lastResponder = "partner";
+  } else if (lastOurTeam) {
+    lastResponder = "our_team";
+  }
 
   const style = (await loadStyleReference()) ?? undefined;
 
@@ -508,7 +522,10 @@ export async function draftZendeskReplyAction(
         subject: thread.subject ?? null,
         status: thread.status ?? null,
         last_partner_excerpt: lastPartner?.excerpt ?? null,
-        last_internal_excerpt: lastInternal?.excerpt ?? null,
+        last_partner_at: lastPartner?.timestamp ?? null,
+        last_our_team_excerpt: lastOurTeam?.excerpt ?? null,
+        last_our_team_at: lastOurTeam?.timestamp ?? null,
+        last_responder: lastResponder,
       },
       intent,
       style,

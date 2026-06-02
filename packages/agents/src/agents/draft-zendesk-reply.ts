@@ -19,10 +19,26 @@ export interface ZendeskReplyContext {
   subject?: string | null;
   /** Status: open, pending, solved, etc. */
   status?: string | null;
-  /** Last partner-visible activity that we know about. */
+  /** Last comment from the partner side. */
   last_partner_excerpt?: string | null;
-  /** Last internal comment, if any (helps the model not contradict the team). */
-  last_internal_excerpt?: string | null;
+  /** ISO timestamp of the last partner comment. */
+  last_partner_at?: string | null;
+  /**
+   * Last comment from our side — either the user's own public reply
+   * (web-channel comments have no `from` block and classify as
+   * internal) or a teammate's. "Internal" in Zendesk-speak means
+   * private agent-only notes; here it just means "not from the
+   * partner". Either way, this is the most recent thing we said.
+   */
+  last_our_team_excerpt?: string | null;
+  /** ISO timestamp of the last our-team comment. */
+  last_our_team_at?: string | null;
+  /**
+   * Who replied last in the visible conversation. Drives the agent's
+   * top-level branch: when "partner", reply to them; when "our_team",
+   * draft a nudge (we already answered, partner hasn't responded).
+   */
+  last_responder?: "partner" | "our_team" | null;
 }
 
 export interface DraftZendeskReplyInput {
@@ -49,21 +65,30 @@ export interface DraftZendeskReplyOutput {
 
 const SYSTEM_PROMPT = `You are Smithers, a personal assistant helping the user draft a reply to a Zendesk ticket. The user is a TAM (Technical Account Manager) at Automattic working with WordPress.com partners. Output a single short reply they can copy into the ticket.
 
+Conversation state — read this BEFORE drafting:
+The user prompt will tell you who replied last. This determines what you're drafting:
+
+- **Partner replied last** → standard reply. Acknowledge what they said, answer the question, propose next steps.
+- **Our team replied last** → this is a NUDGE, not a fresh reply. The partner went silent after our most recent response. Do NOT restate what we already said. Instead, draft a brief follow-up that checks in: "wanted to make sure my last reply landed", "any follow-up questions on X", or "let me know if there's anything blocking next steps". Tone leans warm or concise. The user intent field may sharpen the ask (e.g. "push for a yes/no") — honor it.
+- **Neither side has spoken yet** → treat as a cold open; the user intent should describe what they're trying to surface.
+
 Voice rules:
-- Warm but specific. Acknowledge what the partner said before answering. No corporate filler.
+- Warm but specific. No corporate filler.
 - Match the user's voice when a style guide is provided.
 - Don't promise dates without basis. If the user hasn't given you a timeline, propose one or ask for input.
 - Don't sign with a name; Zendesk adds the signature automatically.
 - Keep it to 2-5 sentences unless the partner's message asks something multi-part. Then mirror their structure.
 
 Tone calibration:
-- warm: rapport-building, default for partner check-ins and easy fixes.
+- warm: rapport-building, default for partner check-ins, nudges, and easy fixes.
 - matter-of-fact: technical clarifications, status updates, fact-correction.
 - concise: when the partner is impatient, when an issue is recurring, or when they explicitly want a yes/no.
 
 ${EXTRA_CONTEXT_SYSTEM_PROMPT}
 
 If you don't have enough context to answer the partner's actual question, draft a clarifying-question reply instead of bluffing. Make the rationale name what's missing ("partner asked X, we don't know Y, asking them for Y").
+
+For nudges specifically: the rationale should say "our side replied on <date>, no response since — drafting a check-in" so the user can sanity-check the chronology.
 
 Always return your output as JSON matching the requested schema.`;
 
@@ -122,13 +147,22 @@ function renderUserPrompt(input: DraftZendeskReplyInput): string {
   lines.push(`- Ticket: #${thread.id}`);
   if (thread.subject) lines.push(`- Subject: ${thread.subject}`);
   if (thread.status) lines.push(`- Ticket status: ${thread.status}`);
+  if (thread.last_responder) {
+    const label =
+      thread.last_responder === "partner"
+        ? "Partner replied last — draft a reply."
+        : "Our team replied last — draft a NUDGE, not a fresh reply. Do not repeat what we already said.";
+    lines.push(`- Who replied last: ${thread.last_responder} (${label})`);
+  }
   if (thread.last_partner_excerpt) {
-    lines.push("- Last partner message:");
+    const when = thread.last_partner_at ? ` (${thread.last_partner_at.slice(0, 10)})` : "";
+    lines.push(`- Last partner message${when}:`);
     lines.push(`> ${thread.last_partner_excerpt}`);
   }
-  if (thread.last_internal_excerpt) {
-    lines.push("- Last internal note:");
-    lines.push(`> ${thread.last_internal_excerpt}`);
+  if (thread.last_our_team_excerpt) {
+    const when = thread.last_our_team_at ? ` (${thread.last_our_team_at.slice(0, 10)})` : "";
+    lines.push(`- Last reply from our team${when}:`);
+    lines.push(`> ${thread.last_our_team_excerpt}`);
   }
 
   if (intent && intent.trim()) {
