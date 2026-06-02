@@ -23,6 +23,7 @@ import type {
 } from "@smithers/mcp-client";
 
 import { cn } from "@/lib/utils";
+import { AddTaskFromActivityButton } from "@/components/add-task-from-activity-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResolveFollowUpButton } from "@/components/resolve-follow-up-button";
@@ -273,12 +274,27 @@ function ActivityRow({
             {event.excerpt ? <> · {event.excerpt}</> : null}
           </p>
         </div>
-        <span
-          className="text-muted-foreground/80 mt-0.5 shrink-0 text-[11px] tabular-nums"
-          suppressHydrationWarning
-        >
-          {formatRelative(event.timestamp)}
-        </span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <AddTaskFromActivityButton
+            event={event}
+            projectSlug={
+              projectSlug ??
+              (event.project_match?.in_vault
+                ? event.project_match.project_slug
+                : "") ??
+              ""
+            }
+            projectName={
+              projectName ?? event.project_match?.display_label ?? undefined
+            }
+          />
+          <span
+            className="text-muted-foreground/80 mt-0.5 text-[11px] tabular-nums"
+            suppressHydrationWarning
+          >
+            {formatRelative(event.timestamp)}
+          </span>
+        </div>
       </div>
       {issueNumber && projectSlug && projectName ? (
         <IssueFollowUpInline

@@ -96,6 +96,44 @@ export async function addProjectTaskAction(
 }
 
 /**
+ * Append a task to a project's Open Items, embedding the originating
+ * activity event's URL as a trailing markdown link so the user can jump
+ * back to the source later (and so Smithers can detect "the underlying
+ * activity has been resolved" in a future auto-mark-done slice).
+ *
+ * Source URL is appended to the user-edited text as ` — [source](<url>)`
+ * if the user didn't already include the URL in the text. Empty URL =
+ * plain text task (delegates to addProjectTaskAction's shape).
+ */
+export async function addProjectTaskFromActivityAction(
+  slug: string,
+  text: string,
+  sourceUrl: string | null,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    if (!slug) throw new Error("slug is required");
+    const trimmed = text.trim();
+    if (!trimmed) throw new Error("Task text is required");
+
+    const finalText =
+      sourceUrl && sourceUrl.trim() && !trimmed.includes(sourceUrl.trim())
+        ? `${trimmed} — [source](${sourceUrl.trim()})`
+        : trimmed;
+
+    const vault = await getVault();
+    await vault.appendProjectTask(slug, finalText);
+    revalidatePath(`/projects/${slug}`);
+    revalidatePath("/today");
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "Failed to add task",
+    };
+  }
+}
+
+/**
  * Replace a task's text. The vault helper preserves the line's indent,
  * bullet, and checkbox state and returns the new task_id (which is
  * text-derived and changes with the rename).
