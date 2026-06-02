@@ -125,3 +125,13 @@ export {
   renderExtraContextBlock,
   type DraftExtraContextItem,
 } from "./extra-context";
+
+export {
+  interpretPaletteQuery,
+  type InterpretPaletteQueryInput,
+  type InterpretPaletteQueryOutput,
+  type InterpretPaletteIntentKind,
+  type InterpretPaletteEntry,
+  type InterpretPaletteOpenTaskHint,
+  type InterpretPaletteOpenFollowUpHint,
+} from "./agents/interpret-palette-query";

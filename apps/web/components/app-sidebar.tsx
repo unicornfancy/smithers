@@ -12,7 +12,7 @@ import {
   Newspaper,
   PenLine,
   PhoneCall,
-  Search,
+  Sparkles,
   Settings,
   Wand2,
 } from "lucide-react";
@@ -27,7 +27,6 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { href: "/today", label: "Today", icon: Calendar },
-  { href: "/search", label: "Search HM", icon: Search },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/calls", label: "Calls", icon: PhoneCall },
   { href: "/drafts", label: "Drafts", icon: PenLine },
@@ -57,6 +56,22 @@ export function AppSidebar() {
             Launch TAM Assistant
           </span>
         </div>
+      </div>
+
+      <div className="px-2 pt-2">
+        <button
+          type="button"
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent("smithers:open-palette"));
+          }}
+          className="text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground flex w-full items-center gap-2 rounded-md border border-sidebar-border/60 px-3 py-1.5 text-xs transition-colors"
+        >
+          <Sparkles className="size-3.5" />
+          <span className="flex-1 text-left">Ask Smithers</span>
+          <kbd className="bg-sidebar-accent/40 rounded px-1 py-0.5 font-mono text-[10px]">
+            ⌘K
+          </kbd>
+        </button>
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 p-2">

@@ -1258,7 +1258,6 @@ export async function snoozeFollowUpAction(
   followUpId: string,
   days: number,
 ): Promise<{ changed: boolean; follow_up_by: string }> {
-  if (!slug) throw new Error("slug is required");
   if (!followUpId) throw new Error("followUpId is required");
   if (!Number.isFinite(days) || days <= 0) {
     throw new Error("days must be a positive number");
@@ -1271,7 +1270,8 @@ export async function snoozeFollowUpAction(
   const vault = await getVault();
   const result = await vault.snoozeFollowUp(followUpId, newFollowUpBy);
 
-  revalidatePath(`/projects/${slug}`);
+  if (slug) revalidatePath(`/projects/${slug}`);
+  revalidatePath("/follow-ups");
   return { changed: result.changed, follow_up_by: result.follow_up_by };
 }
 

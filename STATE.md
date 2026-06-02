@@ -2,6 +2,37 @@
 
 _Updated 2026-06-02_
 
+## Just completed (2026-06-02 PM — Ask Smithers Cmd-K palette: A + B + C)
+
+Ships the full Ask Smithers palette in one session — global Cmd-K overlay with 9 structured actions across vault projects + open follow-ups, plus an LLM dispatcher for free-form queries. Replaces (and removes) the standalone `/search` page.
+
+### Slice A — foundation + Navigation + Add task
+
+- **`lib/server/palette-index.ts`** unified index across vault projects, HM partners, HM projects not in vault, open follow-ups, and the static-pages catalog. 5-min in-process cache.
+- **`/api/palette-index`** GET endpoint, `?force=1` bypasses the server cache.
+- **`lib/palette-score.ts`** token-based scorer: `label*3 + description*1 + kindBoost + recencyBoost`. No fuzzy library. Exact-word=5, prefix-word=3, substring=1 per token.
+- **`AskSmithersPalette`** global client component mounted in `app/layout.tsx`. Cmd/Ctrl-K toggles open; also listens for a `smithers:open-palette` `CustomEvent` so any client can trigger the open without faking key events.
+- Sidebar gets a sticky "Ask Smithers ⌘K" affordance at the top; the old "Search HM" item is gone.
+- Two-step interaction: type → results → pick action → action-specific form. Single-action entries (pages, HM partners, HM projects) skip the action step and Enter navigates immediately.
+
+### Slice B — six more actions (project) + two more (follow-ups)
+
+- **Project-vault entries** now expose: View status, Add task, Add follow-up, Mark task done, Set status, Attach Zendesk. Six new step kinds in the palette state machine, each with arrow-key picker + Esc-back navigation.
+- **`/api/palette-project/[slug]`** single endpoint serving both View status (status, priority, kind, partner, open-tasks count, open-followups count, ZD count, last-touched) and Mark task done (open-tasks list). Lazy-loaded per slug; results cached per-session in the client.
+- **Follow-up entries** expose Resolve + Snooze (3d / 1w / 2w / 1mo presets).
+- **`snoozeFollowUpAction` now accepts an empty project slug** so the palette can run it on a global follow-up entry without inventing a slug — revalidates `/follow-ups` instead of a project page.
+- All actions reuse existing server actions in `[slug]/actions.ts` — no duplication.
+
+### Slice C — LLM dispatcher + helpful text
+
+- **`interpret-palette-query` agent** in `packages/agents/`: input is the user's free-form query + the palette index + open tasks (capped at 80) + open follow-ups + today. Output is one structured intent (or `unknown`) with params + a one-sentence confirmation + a 0..1 confidence. Effort: low, maxTokens 512 — fast roundtrip.
+- **`/api/palette-query`** POST endpoint runs the agent and returns `{ok, data: AiIntent}` or `{ok:false, reason, message}` when ANTHROPIC_API_KEY isn't set / the run fails.
+- **"Ask Smithers: <query>" row** pinned at the top of results whenever the query is non-empty. Enter on it → `ai-interpreting` (spinner) → `ai-confirm` (intent + params + confidence visible — Enter to run, Esc to back). Low-confidence (<0.5) or `unknown` intent → an `ai-error` state with a "try a more specific phrasing" hint.
+- **`runAiIntent` routes intents back to the same server actions** the structured catalog uses — single source of truth for mutations. The agent never writes; it only interprets.
+- **Helpful text** under the search input: *"Pick a project to add tasks, follow-ups, set status, attach Zendesk tickets, and more. Pick a follow-up to resolve or snooze it."* Empty-state copy now reads *"Start typing to search across projects, partners, follow-ups, and pages."* For nav-only entries (page / partner-hm / project-hm), the action menu appends a contextual note explaining why no actions are offered and pointing at vault projects.
+
+Smoke: `POST /api/palette-query {query:"add task to body dao: review staging url"}` → intent `add-task`, confidence 0.95, correct entry_id + task_text. `{query:"what is the status of body dao"}` → `view-status` 0.95. Garbage → `unknown` 0.
+
 ## Just completed (2026-06-02 — JOB_CONTEXT.md loop closes: roster sync + @handle verification)
 
 Three commits, all feeding the JOB_CONTEXT.md / agent-context loop introduced 2026-05-29.
@@ -334,18 +365,25 @@ _Nothing active. Branch is clean and ready for next pickup._
 In rough priority order:
 
 1. **Hand off to other TAMs** — README + ONBOARDING + identity card on `/setup` + vault-missing redirect + settings cards all landed 2026-05-26. Next step is sharing the repo with colleagues and watching for issues that ONBOARDING.md doesn't yet cover.
-2. **Personal Digest (v2)** — newly added to PLAN.md. Weekly highlight prompt + personal development tracker. Needs a design conversation before scoping.
-3. **Project briefs — attach affordance + skill integration** — discovered while reviewing Body Dao (brief lives at `brief.md`, helper reads `briefs/project-brief.md`). PLAN.md captures the attach UX + `/create-brief` skill integration questions.
-4. **Learning queue drain** — last scheduler job from the original roadmap. Only matters once `/api/learn-from-archive` moves from fire-and-forget to a real queue; out of scope until that happens. (Daily briefing + ping monitor + Fathom sync + Hive Mind sync all shipped.)
-5. **`/today` view focus** — design discussion needed; queued in PLAN.md. Polish items (day-specific banners, AFK / weekend / no-data states) plus open questions about opinionated section visibility, "what changed since you last opened this," calendar integration surface, For-You-Today confidence.
-6. **H6 — workbench Pinned context card** — manage pins outside of a draft flow.
-7. **`/weekly-updates/[YYYY-WN]` editor** — stub.
-8. **Remaining AI affordances** — Find related context. (Summarize Zendesk thread shipped 2026-05-26; @handle verification shipped 2026-06-02 as `HandleCheckBanner`.)
-9. **Bell icon + unresolved-issues count** — vault-watcher events.
-10. **Auto-draft nudge when follow-up crosses escalate threshold** — the thresholds are now user-configurable; the next slice is wiring the auto-draft trigger.
+2. **Ask Smithers → full AI agent** — newly added to PLAN.md. The palette ships today as a one-shot interpreter; the v2 is a real conversational agent with tool use, multi-turn, and broader vault read+write surface.
+3. **Job Context handbook ingest** — newly added to PLAN.md. Use the public team handbook at https://specialprojects.automattic.com/project-handbook/ to enrich `my-voice/JOB_CONTEXT.md` so partner-safe voice grounding gets the team's documented norms baked in.
+4. **Claude API usage card on `/settings`** — newly added to PLAN.md. Tokens + cost telemetry per agent, with a daily/weekly roll-up at the bottom of Settings.
+5. **P2 integration re-evaluation** — newly added to PLAN.md. ContextA8C's wpcom provider may have grown comment-fetch tooling since the 2026-05-28 cut; re-probe and rewire if so.
+6. **Personal Digest (v2)** — weekly highlight prompt + personal development tracker. Needs a design conversation before scoping.
+7. **Project briefs — attach affordance + skill integration** — discovered while reviewing Body Dao (brief lives at `brief.md`, helper reads `briefs/project-brief.md`). PLAN.md captures the attach UX + `/create-brief` skill integration questions.
+8. **Learning queue drain** — last scheduler job from the original roadmap. Only matters once `/api/learn-from-archive` moves from fire-and-forget to a real queue; out of scope until that happens. (Daily briefing + ping monitor + Fathom sync + Hive Mind sync all shipped.)
+9. **`/today` view focus** — design discussion needed; queued in PLAN.md. Polish items (day-specific banners, AFK / weekend / no-data states) plus open questions about opinionated section visibility, "what changed since you last opened this," calendar integration surface, For-You-Today confidence.
+10. **H6 — workbench Pinned context card** — manage pins outside of a draft flow.
+11. **`/weekly-updates/[YYYY-WN]` editor** — stub.
+12. **Remaining AI affordances** — Find related context. (Summarize Zendesk thread shipped 2026-05-26; @handle verification shipped 2026-06-02 as `HandleCheckBanner`.)
+13. **Bell icon + unresolved-issues count** — vault-watcher events.
+14. **Auto-draft nudge when follow-up crosses escalate threshold** — the thresholds are now user-configurable; the next slice is wiring the auto-draft trigger.
 
 ## Recent decisions (with the why)
 
+- **Ask Smithers palette is a single global overlay, not a route** (2026-06-02 PM) — mounted in `app/layout.tsx` so Cmd-K works on every page without route-level wiring. The standalone `/search` page was removed in the same commit because folding it into the palette eliminates a redundant surface. Trade: the overlay's state machine got bigger (9 step kinds incl. AI confirm) but every consumer benefits from one keyboard shortcut and one results panel.
+- **LLM dispatcher interprets but never writes** (2026-06-02 PM) — `interpret-palette-query` returns a structured intent + confirmation message; the palette runs the same server actions that the structured catalog uses to mutate state. Single source of truth for writes; the agent's job is to map free-form English onto the existing action surface, not to invent new ones. Confidence < 0.5 routes to an error state rather than silently picking the best guess — wrong-but-confident is worse than asking the user to refine.
+- **Palette index keeps a 5-min in-memory cache on the server side** (2026-06-02 PM) — mashing Cmd-K shouldn't re-hit the HM MCP. 5 min is short enough that vault edits show up within one palette open; longer would have meant the user thinks the index is stale. Client fetches once per session — Cmd-K-open is cheap, Cmd-K-open-after-fresh-edit gets the new state on the next page load.
 - **HM sync rebases on divergence rather than failing** (2026-06-02) — Original `git pull --ff-only` would have rejected any state where local had its own commits ahead of remote (which Smithers creates routinely via Process Call, brief generation, project-handoff, etc.). Rebasing local commits onto the new remote handles the common case cleanly. Alternative considered: leave `--ff-only` and surface "your local is ahead, push first" as an error. Rejected because Smithers-authored commits should sync automatically — the whole point of the job is "I shouldn't have to think about HM git state." Dirty working tree still skips (different risk profile — uncommitted user work).
 - **Handle map exposed via `/api/handle-map`, not a server action** (2026-06-02) — `HandleCheckBanner` is used in two different surfaces (weekly editor + AiDraftDialog) and may end up in more later. A plain HTTP endpoint means the client component is self-contained: any new page that drops in the banner gets the map without each page needing to plumb a server action through props. Trade: a tiny serialization cost per editor load vs. the wiring tax of threading the map through server actions on every consumer.
 - **JOB_CONTEXT.md auto-managed block uses HTML comment markers, not full-section replace** (2026-05-28→06-02) — Each group's roster lives between `<!-- BEGIN matticspace-<slug> -->` / `<!-- END -->` markers inside the "Common collaborators" section. User-edited intro/outro prose outside the markers survives every sync. Alternative: replace the whole `## Common collaborators` section on each sync. Rejected because Katie's hand-curated narrative ("This list is illustrative...") would have been wiped. Markers let auto-sync coexist with user prose.

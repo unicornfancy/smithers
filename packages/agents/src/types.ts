@@ -17,7 +17,8 @@ export type AgentName =
   | "compose-call-recap"
   | "analyze-call-transcript"
   | "learn-style-from-archives"
-  | "run-skill";
+  | "run-skill"
+  | "interpret-palette-query";
 
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 

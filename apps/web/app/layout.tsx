@@ -6,6 +6,7 @@ import "./globals.css";
 import { Toaster } from "sonner";
 
 import { AppSidebar } from "@/components/app-sidebar";
+import { AskSmithersPalette } from "@/components/ask-smithers-palette";
 import { ThemeProvider } from "@/components/theme-provider";
 
 const geistSans = Geist({
@@ -44,6 +45,7 @@ export default function RootLayout({
             <AppSidebar />
             <div className="flex min-w-0 flex-1 flex-col">{children}</div>
           </div>
+          <AskSmithersPalette />
           <Toaster position="bottom-right" richColors closeButton />
         </ThemeProvider>
       </body>

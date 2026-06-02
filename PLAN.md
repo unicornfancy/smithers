@@ -56,23 +56,72 @@ Defer concrete design until weekly-updates settles and this can be properly scop
 
 ## Skill integration — queue closed 2026-05-29
 
-`/create-brief` (2026-05-28), `/project-handoff` (2026-05-29 — workbench wizard via `WorkbenchHeader` "Handoff" button), `/search-knowledge` (2026-05-29 — `/search` page over the HM MCP tool with sidebar entry), and `/update-knowledge` (2026-05-29 — `/partner-knowledge/[slug]` two-pane editor accessed from the workbench `PartnerCard`'s "Edit here" link) are all live. Foundation is the runtime skill loader + `run-skill` agent + per-skill wizard pattern from 9039c16.
+`/create-brief` (2026-05-28), `/project-handoff` (2026-05-29 — workbench wizard via `WorkbenchHeader` "Handoff" button), `/search-knowledge` (2026-05-29 — `/search` page over the HM MCP tool with sidebar entry; the standalone `/search` page was removed 2026-06-02 PM when Ask Smithers absorbed search), and `/update-knowledge` (2026-05-29 — `/partner-knowledge/[slug]` two-pane editor accessed from the workbench `PartnerCard`'s "Edit here" link) are all live. Foundation is the runtime skill loader + `run-skill` agent + per-skill wizard pattern from 9039c16.
 
 Remaining polish (none scheduled):
-- **Cmd-K palette** — now folded into the "Ask Smithers" item below (expanded from "just trigger /search" to a full action-and-search palette).
+- **Cmd-K palette** — shipped 2026-06-02 PM as Ask Smithers. See section below.
 - **Frontmatter editor on `/partner-knowledge/[slug]`** — v1 is body-only; structured fields stay editable via the brief wizard / project-metadata modal. A dedicated form here would let users update title / description / team / NDA flag without leaving the page.
 - **`/update-knowledge` for project info.md** — same editor pattern as partner-knowledge; project info.md edits currently go through the brief wizard's persistence path.
 
-## Ask Smithers — Cmd-K palette + action router
+## Ask Smithers — palette shipped 2026-06-02 PM (A + B + C)
 
-Replaces the deferred Cmd-K item above. Scope expanded from "global HM search" to "single palette that takes structured actions on Smithers state."
+Slices A (foundation + Navigation + Add task), B (View status / Add follow-up / Set status / Attach Zendesk / Mark task done / Resolve / Snooze), and C (LLM dispatcher + helpful text) all live. See STATE.md for what landed. Possible follow-ups (none scoped):
 
-Design in progress (2026-06-02). Decided so far:
-- **Shape**: hybrid Cmd-K — quick-match on top (instant client-side fuzzy match against an in-memory index), structured action picker below, "Ask Smithers" LLM path at the bottom for natural-language queries.
-- **v1 action catalog**: add task, add follow-up, set status, view status, attach Zendesk, mark task done, resolve follow-up, navigation (Open <page>).
-- **v1 indexing**: server-side `/api/palette-index` returns vault projects, HM partners, follow-ups, open tasks, static pages. Client fetches once on first open, refreshes per session. Token-based scoring (prefix-match > substring-match), no fuzzy library.
-- **Two-step interaction**: type → results → pick action → action-specific param form → submit. Parametric parsing (`add task to pocket: respond to martin`) deferred to v1.5.
-- **LLM dispatcher** (v2): true free-form query → agent tool-use → mutation with confirm. Out of v1 scope.
+- **Param-edit on the AI confirm step** — currently the user sees the agent's interpretation as read-only dl pairs and can only Confirm/Cancel. A small "edit" affordance would let the user tweak `task_text` or `status` before running without round-tripping through a re-query.
+- **Recent-query memory** — last N palette queries surfaced when the input is empty (instead of the default top-of-index list). LocalStorage; per-user.
+- **Parametric parsing as a fast path before the LLM** — `add task to <project>: <text>` could route locally without an Anthropic round-trip. Worth doing only if Ask Smithers usage stays high and the LLM latency becomes the perceived bottleneck.
+
+## Ask Smithers → full conversational AI agent (v2 of the palette)
+
+The palette today is a one-shot interpreter: query → one structured intent → confirm. The next step is a real agent that the user can talk to.
+
+Open scope, not yet designed:
+- **Multi-turn conversation** — user asks "what's the status of body dao?", agent answers inline, user follows up with "ok mark the staging task done", agent confirms and runs. The conversation state lives in the palette overlay until dismissed (or persists if useful).
+- **Broader tool surface** — beyond the 9 structured actions: search Hive Mind knowledge, summarize a thread, fetch a Zendesk ticket's latest comment, "what changed on this project this week," etc. Probably reuses the existing per-feature agents as tools the dispatcher can call.
+- **Read vs write boundary** — read tools run silently; any mutation still requires a confirmation step. Don't auto-post is the load-bearing constraint here.
+- **Surfaces**: keep Cmd-K as the entry, but also consider a dedicated `/ask` page for long-running conversations + a workbench-side variant that's project-scoped.
+
+Needs a design conversation before scoping. Pre-reqs: better understanding of what queries Katie actually types into the v1 palette (could log Ask Smithers queries to a local SQLite table for analysis).
+
+## Job Context — ingest the Special Projects handbook
+
+The public team handbook at https://specialprojects.automattic.com/project-handbook/ is the canonical statement of how Team51 operates. Pulling its substance into `my-voice/JOB_CONTEXT.md` would give every voice-aware agent a stronger ground truth for partner-safe job context (current JOB_CONTEXT.md is hand-curated and partner-safe v1).
+
+Open questions:
+- **Scope of ingest** — full handbook? Per-section excerpts (Engagement / Onboarding / Working with Partners / Voice)? Probably curated chunks rather than dump.
+- **Mechanism** — manual one-time copy + occasional refresh, or a small fetcher that pulls + diffs the handbook on a schedule like the matticspace roster sync? Schedule cadence is much slower (monthly?) since the handbook moves slowly.
+- **Provenance markers** — auto-managed BEGIN/END blocks like the matticspace roster blocks, so user-curated additions to JOB_CONTEXT.md survive re-syncs.
+- **Confidentiality** — the handbook is public, so ingest itself is safe. Worth flagging if any internal-only addenda are mixed in.
+
+## Claude API usage card on `/settings`
+
+A "Costs" card at the bottom of `/settings` showing token + cost telemetry across all Smithers agent runs. The `AgentResult` already carries `usage.{input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens}`; nothing persists it today.
+
+Sketch:
+- **Storage** — new SQLite table `agent_runs(id, agent, model, input_tokens, output_tokens, cache_creation, cache_read, cost_usd, started_at, duration_ms, ok)`. Append on every `runAgent` call (via a thin shim around the runner).
+- **Cost model** — per-model price table loaded from a JSON constant; Opus 4.7 input/output rates. Cache tokens billed at the per-Anthropic rate (10x cheaper for reads).
+- **Settings card** — at the bottom of `/settings → About` (or its own "Costs" tab if it grows). Roll-up: last 24h tokens + cost, last 7d, all-time. Per-agent breakdown table sortable by cost. CSV export button for accounting.
+- **Optional later**: budget alert when daily spend exceeds a configurable threshold; per-agent cap.
+
+## P2 integration — re-evaluate after ContextA8C updates (and explore WordPress.com MCP)
+
+P2 was cut from the Live Activity feed on 2026-05-28 (1538a03) because ContextA8C's `wpcom` provider had no per-post comments tool and public WP.com REST 401'd on internal P2s like `wpspecialprojectsp2`. ContextA8C ships periodic updates; the provider may have grown comment-fetch tooling since. Separately, the WordPress.com MCP (the public/official one) is a second path that may give cleaner P2 access than ContextA8C's `wpcom` wrapper.
+
+Two parallel paths to probe — pick whichever produces working comment + post access on internal P2s:
+
+**Path A — Re-probe ContextA8C:**
+- Run `mcp.contextA8C.loadProvider("wpcom")` and dump the tool list. Look for `posts-comments`, `post-comments`, `reader-comments`, or anything that takes a post URL + returns the thread.
+- Check whether the existing `posts-text` / `reader` tools now handle internal P2s without 401ing (the original cut was driven by auth, not by missing tools alone).
+
+**Path B — WordPress.com MCP:**
+- Evaluate the WordPress.com MCP (the official one, not the ContextA8C wrapper) as a parallel transport. May expose richer P2-as-WP-site primitives — post comments, post bodies, search across a P2, user/author lookups — under proper a8c-internal auth instead of public REST.
+- Check whether it co-exists with ContextA8C (e.g. `mcps.wpcom` as a new config block alongside `mcps.context_a8c`) or whether it replaces the `wpcom` provider entirely. Hive Mind's MCP wiring is the precedent for "additional MCP transport beside ContextA8C."
+- Compare against ContextA8C `wpcom` on the same internal-P2 fixtures — which gives cleaner data, lower latency, fewer 401s, write capability.
+
+**Either way:**
+- If comment reads work: re-add the `fetchP2Comments` branch in the activity pipeline, the `p2_url` field on `ProjectActivityRefs`, the `"p2"` source filter, and the workbench's P2 chip. The mock transport seed will need a P2 sample too.
+- If write tools exist (`create-comment`, `create-post`): the manual copy-paste step in the team weekly-update flow (see Weekly Updates follow-ups above) becomes a one-click "Post as comment to team P2" affordance.
+- If neither path produces working access: leave the cut in place but timestamp the re-probe date so the next person doesn't re-investigate. Record which MCP failed and how.
 
 ## Hive Mind side — recommendations for v1.5 (not blocking)
 
