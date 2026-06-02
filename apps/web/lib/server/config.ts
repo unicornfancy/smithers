@@ -122,14 +122,23 @@ export interface SmithersConfig {
       interval_minutes?: number;
     };
     /**
-     * Team roster sync: re-fetches the configured Matticspace group's
-     * members and rewrites the auto-managed block in JOB_CONTEXT.md's
-     * Common collaborators section. Default cadence weekly.
+     * Team roster sync: re-fetches every configured Matticspace group
+     * and rewrites the auto-managed blocks in JOB_CONTEXT.md's Common
+     * collaborators section. Default cadence weekly. Default groups:
+     * `team-51` (FT employees + sub-teams) and `team-51-contractors`
+     * (contract designers / devs / TAMs).
      */
     team_roster_sync?: {
       enabled: boolean;
       interval_minutes?: number;
-      /** Matticspace group slug (default: "team-51"). */
+      /**
+       * Matticspace group slugs. Each gets its own BEGIN/END marker
+       * block in JOB_CONTEXT.md. The legacy `group_slug` (singular)
+       * field still works for backward compat — when present and
+       * `group_slugs` is empty, it's promoted to a one-element list.
+       */
+      group_slugs?: string[];
+      /** @deprecated Use `group_slugs` instead. */
       group_slug?: string;
     };
   };
@@ -180,7 +189,7 @@ const DEFAULTS: SmithersConfig = {
     team_roster_sync: {
       enabled: false,
       interval_minutes: 7 * 24 * 60,
-      group_slug: "team-51",
+      group_slugs: ["team-51", "team-51-contractors"],
     },
   },
 };
@@ -353,12 +362,29 @@ function mergeWithDefaults(
           partial.schedule?.team_roster_sync?.interval_minutes ??
           DEFAULTS.schedule?.team_roster_sync?.interval_minutes ??
           7 * 24 * 60,
-        group_slug:
-          partial.schedule?.team_roster_sync?.group_slug ??
-          DEFAULTS.schedule?.team_roster_sync?.group_slug ??
-          "team-51",
+        group_slugs: pickGroupSlugs(partial.schedule?.team_roster_sync),
       },
     },
     weekly_update: partial.weekly_update,
   };
+}
+
+/**
+ * Resolve the team-roster group slugs, supporting both the modern
+ * `group_slugs` array and the legacy `group_slug` singular. When the
+ * partial config has neither, falls back to the bundled default.
+ */
+function pickGroupSlugs(partial: {
+  group_slugs?: string[];
+  group_slug?: string;
+} | undefined): string[] {
+  if (Array.isArray(partial?.group_slugs) && partial.group_slugs.length > 0) {
+    return partial.group_slugs.filter(
+      (s): s is string => typeof s === "string" && s.length > 0,
+    );
+  }
+  if (typeof partial?.group_slug === "string" && partial.group_slug.length > 0) {
+    return [partial.group_slug];
+  }
+  return DEFAULTS.schedule?.team_roster_sync?.group_slugs ?? ["team-51"];
 }

@@ -166,12 +166,13 @@ export async function runTeamRosterSyncJob(): Promise<JobResult> {
   const started = Date.now();
   try {
     const cfg = await loadConfig();
-    const groupSlug = cfg.schedule?.team_roster_sync?.group_slug ?? "team-51";
-    const { syncTeamRosterToJobContext } = await import(
+    const groupSlugs =
+      cfg.schedule?.team_roster_sync?.group_slugs ?? ["team-51"];
+    const { syncTeamRostersToJobContext } = await import(
       "@/lib/server/team-roster"
     );
-    const result = await syncTeamRosterToJobContext({
-      groupSlug,
+    const result = await syncTeamRostersToJobContext({
+      groupSlugs,
       includeSubteams: true,
     });
     if (!result.ok) {
@@ -181,11 +182,12 @@ export async function runTeamRosterSyncJob(): Promise<JobResult> {
         duration_ms: Date.now() - started,
       };
     }
+    const perGroup = (result.groups ?? [])
+      .map((g) => `${g.slug}=${g.members}${g.changed ? "*" : ""}`)
+      .join(" ");
     return {
       ok: true,
-      summary: result.changed
-        ? `${result.members_synced} members synced to JOB_CONTEXT.md`
-        : `${result.members_synced} members up to date (no change)`,
+      summary: `${result.members_synced} members synced (${perGroup}${result.changed ? "" : "; no change"})`,
       duration_ms: Date.now() - started,
     };
   } catch (err) {

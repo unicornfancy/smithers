@@ -22,13 +22,62 @@ import { readMyVoiceFile, writeMyVoiceFile } from "@/lib/server/my-voice";
  */
 export interface TeamRosterSyncResult {
   ok: boolean;
+  /** Total members synced across every group attempted. */
   members_synced: number;
+  /** True when at least one group's block actually changed on disk. */
   changed: boolean;
+  /** Per-group rows so the caller can surface per-block status. */
+  groups?: { slug: string; members: number; changed: boolean; error?: string }[];
+  /** Set when the overall sync failed (e.g. missing file). */
   error?: string;
 }
 
 const FILENAME = "JOB_CONTEXT.md";
 const SECTION_HEADING = "## Common collaborators";
+
+/**
+ * Multi-group orchestrator. Each group gets its own BEGIN/END marker
+ * block inside the Common collaborators section, so the user can mix
+ * an FT team with a contractors group, a cross-team initiative, etc.
+ */
+export async function syncTeamRostersToJobContext(opts: {
+  groupSlugs: string[];
+  includeSubteams?: boolean;
+}): Promise<TeamRosterSyncResult> {
+  if (opts.groupSlugs.length === 0) {
+    return { ok: false, members_synced: 0, changed: false, error: "no group slugs configured" };
+  }
+  const perGroup: NonNullable<TeamRosterSyncResult["groups"]> = [];
+  let totalMembers = 0;
+  let anyChanged = false;
+  for (const slug of opts.groupSlugs) {
+    const result = await syncTeamRosterToJobContext({
+      groupSlug: slug,
+      includeSubteams: opts.includeSubteams,
+    });
+    perGroup.push({
+      slug,
+      members: result.members_synced,
+      changed: result.changed,
+      error: result.error,
+    });
+    totalMembers += result.members_synced;
+    if (result.changed) anyChanged = true;
+  }
+  const anyFailed = perGroup.some((g) => g.error);
+  return {
+    ok: !anyFailed,
+    members_synced: totalMembers,
+    changed: anyChanged,
+    groups: perGroup,
+    error: anyFailed
+      ? perGroup
+          .filter((g) => g.error)
+          .map((g) => `${g.slug}: ${g.error}`)
+          .join("; ")
+      : undefined,
+  };
+}
 
 export async function syncTeamRosterToJobContext(opts: {
   groupSlug: string;
@@ -158,8 +207,17 @@ function renderRosterBlock(
     if (m.wp_username) parts.push(`(${m.wp_username})`);
     parts.push("—");
     parts.push(decodeHtmlEntities(m.job_title) || "Team member");
-    if (m.team_group && m.team_group !== roster.group_name) {
-      parts.push(`· \`${decodeHtmlEntities(m.team_group)}\``);
+    // Skip team_group when it's empty, equal to the group name, or
+    // the literal "None" — matticspace returns "None" for members
+    // who aren't in a sub-team (e.g. the contractors group). The
+    // job_title usually carries the meaningful info in those cases.
+    const teamGroup = decodeHtmlEntities(m.team_group).trim();
+    if (
+      teamGroup &&
+      teamGroup.toLowerCase() !== "none" &&
+      teamGroup !== roster.group_name
+    ) {
+      parts.push(`· \`${teamGroup}\``);
     }
     if (m.is_team_lead) parts.push("· lead");
     lines.push(parts.join(" "));
