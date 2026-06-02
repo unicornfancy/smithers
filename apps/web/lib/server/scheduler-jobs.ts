@@ -98,9 +98,10 @@ export async function runFathomSyncJob(): Promise<JobResult> {
 }
 
 // ---------------------------------------------------------------------------
-// Hive Mind sync — `git pull` on the configured Hive Mind clone so
-// collaborative edits from other TAMs land without manual git work.
-// Skips on a dirty working tree (would otherwise need to fight conflicts).
+// Hive Mind sync — `git pull` + `git push` on the configured Hive Mind clone
+// so collaborative edits from other TAMs land without manual git work AND
+// Smithers-generated commits (Process Call, brief generation, etc.) get
+// shared with the team automatically. Skips on a dirty working tree.
 // ---------------------------------------------------------------------------
 
 export async function runHiveMindSyncJob(): Promise<JobResult> {
@@ -133,19 +134,76 @@ export async function runHiveMindSyncJob(): Promise<JobResult> {
       };
     }
 
-    const { stdout: pullOut, stderr: pullErr } = await execFileAsync("git", [
+    // Always fetch first so we know exactly how many commits are pending
+    // in each direction. Pull/push decisions depend on it.
+    await execFileAsync("git", ["-C", hmPath, "fetch"]);
+    const { stdout: aheadBehindRaw } = await execFileAsync("git", [
       "-C",
       hmPath,
-      "pull",
-      "--ff-only",
+      "rev-list",
+      "--count",
+      "--left-right",
+      "@{u}...HEAD",
     ]);
-    const combined = `${pullOut}\n${pullErr}`.trim();
-    const upToDate = /already up.to.date/i.test(combined);
+    const [behindStr, aheadStr] = aheadBehindRaw.trim().split(/\s+/);
+    const behind = parseInt(behindStr ?? "0", 10);
+    const ahead = parseInt(aheadStr ?? "0", 10);
+
+    let pullSummary = "";
+    let pushSummary = "";
+
+    if (behind > 0 && ahead === 0) {
+      // Pure fast-forward pull.
+      const { stdout, stderr } = await execFileAsync("git", [
+        "-C",
+        hmPath,
+        "pull",
+        "--ff-only",
+      ]);
+      pullSummary = firstLine(`${stdout}\n${stderr}`);
+    } else if (behind > 0 && ahead > 0) {
+      // Diverged — rebase the local-ahead commits onto the new remote
+      // before push. `--ff-only` would fail in this state.
+      const { stdout, stderr } = await execFileAsync("git", [
+        "-C",
+        hmPath,
+        "pull",
+        "--rebase",
+      ]);
+      pullSummary = `rebased ${ahead} local commit(s) onto ${behind} new remote: ${firstLine(`${stdout}\n${stderr}`)}`;
+    }
+
+    // Recheck ahead-count after the pull because rebase may have
+    // re-set local commits with new SHAs but kept them ahead.
+    if (ahead > 0 || behind === 0) {
+      const { stdout: aheadAfterRaw } = await execFileAsync("git", [
+        "-C",
+        hmPath,
+        "rev-list",
+        "--count",
+        "@{u}..HEAD",
+      ]);
+      const aheadAfter = parseInt(aheadAfterRaw.trim(), 10);
+      if (aheadAfter > 0) {
+        const { stdout, stderr } = await execFileAsync("git", [
+          "-C",
+          hmPath,
+          "push",
+        ]);
+        pushSummary = `pushed ${aheadAfter} local commit(s): ${firstLine(`${stdout}\n${stderr}`)}`;
+      }
+    }
+
+    if (!pullSummary && !pushSummary) {
+      return {
+        ok: true,
+        summary: "already up to date",
+        duration_ms: Date.now() - started,
+      };
+    }
     return {
       ok: true,
-      summary: upToDate
-        ? "already up to date"
-        : combined.split("\n").slice(0, 2).join(" / ").slice(0, 200),
+      summary: [pullSummary, pushSummary].filter(Boolean).join(" · ").slice(0, 200),
       duration_ms: Date.now() - started,
     };
   } catch (err) {
@@ -155,6 +213,10 @@ export async function runHiveMindSyncJob(): Promise<JobResult> {
       duration_ms: Date.now() - started,
     };
   }
+}
+
+function firstLine(s: string): string {
+  return s.trim().split("\n")[0]?.trim() ?? "";
 }
 
 // ---------------------------------------------------------------------------
