@@ -33,6 +33,7 @@ import { TopThreeCard } from "@/components/top-three-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAgentRuntimeStatus } from "@/lib/server/agents";
+import { loadConfig } from "@/lib/server/config";
 import {
   dateCacheKey,
   getCached,
@@ -110,16 +111,21 @@ export default async function TodayPage() {
   const latestDailyNote = dailyNotes.at(-1);
 
   const mcp = await getMcpClient();
+  const cfg = await loadConfig();
 
   const githubRepos = projects
     .map((p) => p.github_repo)
     .filter((r): r is string => Boolean(r));
 
+  const githubHandle = cfg.identity.github_handle?.trim() ?? "";
+
   const [pingsResult, githubPings, recordingsResult] = await Promise.all([
     mcp.contextA8C.listPings({ limit: 10 }),
-    mcp.contextA8C.listGithubMentionPings(githubRepos, "unicornfancy").catch(
-      () => [] as Ping[],
-    ),
+    githubHandle
+      ? mcp.contextA8C
+          .listGithubMentionPings(githubRepos, githubHandle)
+          .catch(() => [] as Ping[])
+      : Promise.resolve([] as Ping[]),
     mcp.fathom.listRecordings({ limit: 20 }),
   ]);
 

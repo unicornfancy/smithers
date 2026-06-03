@@ -119,11 +119,8 @@ async function detectActioned(ping: PingActionedInput): Promise<boolean> {
         .catch(() => false);
     }
     case "github": {
-      // Falls back to the same hardcoded handle that listGithubMentionPings
-      // uses in /today's page.tsx — keeps the detector working without
-      // requiring identity.github_handle to be set in config.local.yaml.
-      const login = cfg.identity.github_handle || "unicornfancy";
-      if (!ping.url) return false;
+      const login = cfg.identity.github_handle?.trim();
+      if (!login || !ping.url) return false;
       return mcp.contextA8C
         .checkGithubIssueActioned(ping.url, ping.timestamp, login)
         .catch(() => false);
