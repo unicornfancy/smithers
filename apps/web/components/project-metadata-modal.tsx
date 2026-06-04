@@ -58,6 +58,7 @@ interface FormState {
   github_repo: string;
   staging_url: string;
   production_url: string;
+  figma_url: string;
   linear_project_id: string;
   linear_project_slug: string;
   p2_url: string;
@@ -76,6 +77,7 @@ function projectToFormState(p: Project): FormState {
     github_repo: p.github_repo ?? "",
     staging_url: p.staging_url ?? "",
     production_url: p.production_url ?? "",
+    figma_url: p.figma_url ?? "",
     linear_project_id: p.linear_project_id ?? "",
     linear_project_slug: p.linear_project_slug ?? "",
     p2_url: p.p2_url ?? "",
@@ -102,6 +104,7 @@ function formStateToPatch(s: FormState, original: FormState) {
   diffString("github_repo");
   diffString("staging_url");
   diffString("production_url");
+  diffString("figma_url");
   diffString("linear_project_id");
   diffString("linear_project_slug");
   diffString("p2_url");
@@ -333,6 +336,13 @@ export function ProjectMetadataModal({ project }: Props) {
               <Input
                 value={state.production_url}
                 onChange={(v) => update("production_url", v)}
+                disabled={pending}
+              />
+            </Field>
+            <Field label="Figma URL">
+              <Input
+                value={state.figma_url}
+                onChange={(v) => update("figma_url", v)}
                 disabled={pending}
               />
             </Field>

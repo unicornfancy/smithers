@@ -52,6 +52,8 @@ export interface ProjectFrontmatter {
   github_repo?: string;
   staging_url?: string;
   production_url?: string;
+  /** Figma file or project URL — surfaced as a quick-link in the workbench header. */
+  figma_url?: string;
   linear_project_id?: string;
   linear_project_slug?: string;
   /**
@@ -129,6 +131,8 @@ export interface Project {
   github_repo?: string;
   staging_url?: string;
   production_url?: string;
+  /** Figma file or project URL — surfaced as a quick-link in the workbench header. */
+  figma_url?: string;
   linear_project_id?: string;
   linear_project_slug?: string;
   /**

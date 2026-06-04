@@ -5,6 +5,7 @@ import {
   CheckSquare,
   Clock,
   ExternalLink,
+  Figma,
   Github,
   Hash,
   Inbox,
@@ -260,6 +261,13 @@ function collectQuickLinks(p: Project): QuickLink[] {
       label: "Live",
       href: p.production_url,
       icon: <ExternalLink className="size-3.5" />,
+    });
+  }
+  if (p.figma_url) {
+    out.push({
+      label: "Figma",
+      href: p.figma_url,
+      icon: <Figma className="size-3.5" />,
     });
   }
   if (p.slack_channel) {
