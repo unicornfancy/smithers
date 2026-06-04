@@ -16,6 +16,7 @@ import { SettingsSetupGroup } from "@/components/settings-setup-group";
 import { SettingsTabs, type SettingsTab } from "@/components/settings-tabs";
 import { SkillsRegistryCard } from "@/components/skills-registry-card";
 import { WeeklyUpdateFormatCard } from "@/components/weekly-update-format-card";
+import { WorkbenchLayoutCard } from "@/components/workbench-layout-card";
 import { loadConfig } from "@/lib/server/config";
 import { findRepoRoot } from "@/lib/server/config-write";
 import { getVault } from "@/lib/server/vault";
@@ -62,6 +63,7 @@ export default async function SettingsPage() {
             title="Workflow"
             description="The daily-tunable knobs — agent prompts, follow-up thresholds, and the background jobs that pre-warm your morning."
           >
+            <WorkbenchLayoutCard />
             <WeeklyUpdateFormatCard
               initialTemplate={cfg.weekly_update?.format_template ?? ""}
             />

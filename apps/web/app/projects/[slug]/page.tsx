@@ -16,7 +16,8 @@ import { LiveActivityFeed } from "@/components/live-activity-feed";
 import { NeedsDecisionPanel } from "@/components/needs-decision-panel";
 import { ZendeskThreadsPanel } from "@/components/zendesk-threads-panel";
 import { PageShell } from "@/components/page-shell";
-import { SectionList, type SectionDef } from "@/components/section-list";
+import { type SectionDef } from "@/components/section-list";
+import { WorkbenchLayoutSwitcher } from "@/components/workbench-layout-switcher";
 import { WorkbenchHeader } from "@/components/workbench-header";
 import { ProjectStatusCard } from "@/components/project-status-card";
 import { HiveMindDraftsSection } from "@/components/hive-mind-drafts-section";
@@ -494,17 +495,24 @@ export default async function ProjectWorkbenchPage({
   });
 
   sections.push({
-    id: "items-and-drafts",
-    title: "Items & drafts",
+    id: "open-items",
+    title: "Open items",
     node: (
-      <div className="grid gap-3 lg:grid-cols-2">
-        <OpenItemsPanel
-          projectSlug={detail.slug}
-          projectName={detail.name}
-          open={open}
-          done={done}
-          githubRepo={detail.github_repo}
-        />
+      <OpenItemsPanel
+        projectSlug={detail.slug}
+        projectName={detail.name}
+        open={open}
+        done={done}
+        githubRepo={detail.github_repo}
+      />
+    ),
+  });
+
+  sections.push({
+    id: "drafts-for-project",
+    title: "Drafts",
+    node: (
+      <div className="space-y-3">
         <DraftsForProjectPanel
           drafts={projectDrafts}
           projectName={detail.name}
@@ -602,11 +610,22 @@ export default async function ProjectWorkbenchPage({
     });
   }
 
+  const workbenchCounts = {
+    open_tasks: open.length,
+    open_follow_ups: effectiveFollowUps.active.length,
+    zendesk_tickets: (detail.zendesk_tickets ?? []).length,
+    last_touched_at: detail.modified_at,
+  };
+
   return (
     <>
-      <WorkbenchHeader project={detail} preparedBy={cfg.identity.name ?? ""} />
+      <WorkbenchHeader
+        project={detail}
+        preparedBy={cfg.identity.name ?? ""}
+        counts={workbenchCounts}
+      />
       <PageShell className="max-w-5xl">
-        <SectionList scope="project" sections={sections} />
+        <WorkbenchLayoutSwitcher projectSlug={detail.slug} sections={sections} />
       </PageShell>
     </>
   );

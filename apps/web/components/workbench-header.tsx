@@ -2,14 +2,18 @@ import * as React from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
+  CheckSquare,
+  Clock,
   ExternalLink,
   Github,
   Hash,
+  Inbox,
   KanbanSquare,
   LifeBuoy,
   Server,
   ShieldAlert,
   Slack,
+  Ticket,
 } from "lucide-react";
 
 import { zendeskTicketUrl } from "@smithers/mcp-client";
@@ -42,13 +46,29 @@ const STATUS_VARIANT: Record<
   archived: "outline",
 };
 
+export interface WorkbenchCounts {
+  open_tasks: number;
+  open_follow_ups: number;
+  zendesk_tickets: number;
+  /** ISO timestamp of the project's last modification (file mtime). */
+  last_touched_at: string;
+}
+
 export function WorkbenchHeader({
   project,
   preparedBy,
+  counts,
 }: {
   project: Project;
   /** Default value for the handoff dialog's "Prepared by" field — usually identity.name from config. */
   preparedBy: string;
+  /**
+   * Quick-stat counts rendered as a chips row at the bottom of the
+   * sticky header. Omit on pages where the data isn't easily available;
+   * the row is hidden when absent so the existing single-row header
+   * survives.
+   */
+  counts?: WorkbenchCounts;
 }) {
   const links = collectQuickLinks(project);
   const hmConnected = Boolean(project.hive_mind_partner_slug);
@@ -120,8 +140,66 @@ export function WorkbenchHeader({
           ))}
         </nav>
       ) : null}
+
+      {counts ? <CountsRow counts={counts} /> : null}
     </header>
   );
+}
+
+function CountsRow({ counts }: { counts: WorkbenchCounts }) {
+  return (
+    <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-[11px]">
+      <CountChip
+        icon={<CheckSquare className="size-3" />}
+        label="open tasks"
+        value={counts.open_tasks}
+      />
+      <CountChip
+        icon={<Inbox className="size-3" />}
+        label="follow-ups"
+        value={counts.open_follow_ups}
+      />
+      <CountChip
+        icon={<Ticket className="size-3" />}
+        label="ZD tickets"
+        value={counts.zendesk_tickets}
+      />
+      <span className="text-muted-foreground/80 inline-flex items-center gap-1">
+        <Clock className="size-3" />
+        last touched {formatRelative(counts.last_touched_at)}
+      </span>
+    </div>
+  );
+}
+
+function CountChip({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {icon}
+      <span className="text-foreground font-medium tabular-nums">{value}</span>{" "}
+      {label}
+    </span>
+  );
+}
+
+function formatRelative(iso: string): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return iso.slice(0, 10);
+  const diffMs = Date.now() - t;
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  return iso.slice(0, 10);
 }
 
 interface QuickLink {

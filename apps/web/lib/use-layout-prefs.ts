@@ -21,7 +21,13 @@ import * as React from "react";
  * v1: localStorage only (per-browser, no sync). Promote to disk under
  * paths.data when cross-machine sync becomes a real ask.
  */
-export type LayoutScope = "today" | "project";
+export type LayoutScope =
+  | "today"
+  | "project"
+  | "project-tab-now"
+  | "project-tab-comms"
+  | "project-tab-knowledge"
+  | "project-tab-drafts";
 
 export interface LayoutPrefs {
   /** User-customized section order; sections not in here render after, in their default order. */
