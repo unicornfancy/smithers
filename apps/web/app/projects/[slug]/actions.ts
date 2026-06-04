@@ -28,7 +28,11 @@ import {
 import type {
   CallRecordingRef,
   ContextItem,
+  LinearIssue,
+  LinearIssueDetail,
+  LinearProject,
   LinearProjectMetadata,
+  LinearProjectUpdate,
   ZendeskSearchResult,
 } from "@smithers/mcp-client";
 import type {
@@ -2675,15 +2679,38 @@ export async function generateProjectLaunchPostAction(
   const skillContent = await vault.getHiveMindSkillContent("create-launch-post");
   if (!skillContent) return { ok: false, reason: "skill-missing" };
 
-  const [hmPartner, hmProject, linearProject] = await Promise.all([
-    vault.getHiveMindPartner(partnerSlug).catch(() => null),
-    vault.getHiveMindProject(partnerSlug, projectSlug).catch(() => null),
-    project.linear_project_id
-      ? (await getMcpClient()).linear
-          .getProject(project.linear_project_id)
-          .catch(() => null)
-      : Promise.resolve(null),
-  ]);
+  const mcp = await getMcpClient();
+  const linearProjectId = project.linear_project_id;
+  const [hmPartner, hmProject, linearProject, linearIssues, linearUpdates] =
+    await Promise.all([
+      vault.getHiveMindPartner(partnerSlug).catch(() => null),
+      vault.getHiveMindProject(partnerSlug, projectSlug).catch(() => null),
+      linearProjectId
+        ? mcp.linear.getProject(linearProjectId).catch(() => null)
+        : Promise.resolve(null),
+      linearProjectId
+        ? mcp.linear.getProjectIssues(linearProjectId).catch(() => [])
+        : Promise.resolve([]),
+      linearProjectId
+        ? mcp.linear.getProjectUpdates(linearProjectId).catch(() => [])
+        : Promise.resolve([]),
+    ]);
+
+  // Pull full detail (incl. comments) for the most recently updated
+  // issues so the agent has narrative material — Linear's project
+  // issues query is title/state only. Cap at 8 to keep prompt size
+  // reasonable; launch posts care about the headline deliverables,
+  // not every backlog ticket.
+  const TOP_ISSUE_DETAIL_COUNT = 8;
+  const topIssueRefs = [...linearIssues]
+    .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+    .slice(0, TOP_ISSUE_DETAIL_COUNT)
+    .map((i) => i.identifier);
+  const linearIssueDetails = (
+    await Promise.all(
+      topIssueRefs.map((id) => mcp.linear.getIssue(id).catch(() => null)),
+    )
+  ).filter((d): d is NonNullable<typeof d> => d !== null);
 
   const inputsMarkdown = renderLaunchPostInputsMarkdown({
     partnerSlug,
@@ -2694,6 +2721,9 @@ export async function generateProjectLaunchPostAction(
     hmPartner,
     hmProject,
     linearProject,
+    linearIssues,
+    linearUpdates,
+    linearIssueDetails,
     preparedBy: cfg.identity.name ?? "TAM",
     userContext: {
       p2: input.p2_context,
@@ -2844,12 +2874,10 @@ function renderLaunchPostInputsMarkdown(args: {
   };
   hmPartner: { title?: string; description?: string; body: string } | null;
   hmProject: { title?: string; description?: string; body: string } | null;
-  linearProject: {
-    name?: string;
-    url?: string;
-    state?: { name?: string };
-    lead?: { displayName?: string; name?: string } | null;
-  } | null;
+  linearProject: LinearProject | null;
+  linearIssues: LinearIssue[];
+  linearUpdates: LinearProjectUpdate[];
+  linearIssueDetails: LinearIssueDetail[];
   preparedBy: string;
   userContext: {
     p2: string;
@@ -2893,7 +2921,61 @@ function renderLaunchPostInputsMarkdown(args: {
         `Lead: ${args.linearProject.lead.displayName ?? args.linearProject.lead.name}`,
       );
     }
+    if (args.linearProject.targetDate)
+      lines.push(`Target date: ${args.linearProject.targetDate}`);
     lines.push("");
+  }
+
+  if (args.linearUpdates.length > 0) {
+    lines.push(
+      `## Linear project updates (pre-fetched, newest first — ${args.linearUpdates.length})`,
+    );
+    for (const u of args.linearUpdates.slice(0, 6)) {
+      const when = u.createdAt.slice(0, 10);
+      const who = u.user.displayName;
+      lines.push(`- **${when}** (${who}, health=${u.health}):`);
+      lines.push(indent(u.body.trim(), "  "));
+    }
+    lines.push("");
+  }
+
+  if (args.linearIssues.length > 0) {
+    lines.push(
+      `## Linear issues — top-level (${args.linearIssues.length} total, pre-fetched)`,
+    );
+    for (const i of args.linearIssues) {
+      const assignee = i.assignee
+        ? ` — ${i.assignee.displayName ?? i.assignee.name}`
+        : "";
+      lines.push(`- \`${i.identifier}\` (${i.state.name}) ${i.title}${assignee}`);
+    }
+    lines.push("");
+  }
+
+  if (args.linearIssueDetails.length > 0) {
+    lines.push(
+      `## Linear issue detail with comments (top ${args.linearIssueDetails.length} by recency, pre-fetched)`,
+    );
+    for (const d of args.linearIssueDetails) {
+      lines.push(`### \`${d.identifier}\` — ${d.title}`);
+      lines.push(
+        `State: ${d.state.name} · Updated: ${d.updatedAt.slice(0, 10)} · ${d.url}`,
+      );
+      if (d.description?.trim()) {
+        lines.push("");
+        lines.push(d.description.trim());
+      }
+      if (d.comments.length > 0) {
+        lines.push("");
+        lines.push(`Comments (${d.comments.length}):`);
+        for (const c of d.comments) {
+          const when = c.createdAt.slice(0, 10);
+          lines.push(`- **${when}** ${c.user.displayName}:`);
+          lines.push(indent(c.body.trim(), "  "));
+        }
+      }
+      lines.push("");
+    }
   }
 
   lines.push("## Partner knowledge (from Hive Mind)");
@@ -2932,7 +3014,9 @@ function renderLaunchPostInputsMarkdown(args: {
   lines.push(args.userContext.p2.trim() || "(none provided)");
   lines.push("");
 
-  lines.push("## Linear context (pasted, in addition to metadata above)");
+  lines.push(
+    "## Linear context (pasted — supplements pre-fetched issues/updates above)",
+  );
   lines.push(args.userContext.linear.trim() || "(none provided)");
   lines.push("");
 
@@ -2976,4 +3060,12 @@ function renderAssetsManifest(args: {
   }
   lines.push("");
   return lines.join("\n");
+}
+
+function indent(text: string, prefix: string): string {
+  if (!text) return text;
+  return text
+    .split("\n")
+    .map((line) => prefix + line)
+    .join("\n");
 }

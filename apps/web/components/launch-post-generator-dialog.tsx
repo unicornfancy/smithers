@@ -347,12 +347,12 @@ function InputsPhase(props: {
         rows={4}
       />
       <Field
-        label="Linear context"
-        hint="Additional Linear context beyond project metadata — paste notable issues, deliverables, comments. (Smithers pre-fetches name/state/lead automatically.)"
+        label="Linear context (optional)"
+        hint="Smithers pre-fetches project metadata, recent updates, and the top-8 issues (with comments). Paste here only if there's something the agent needs that those queries won't catch."
         value={props.linearContext}
         onChange={props.onLinearContext}
         disabled={props.disabled}
-        rows={3}
+        rows={2}
       />
       <Field
         label="Slack context"
