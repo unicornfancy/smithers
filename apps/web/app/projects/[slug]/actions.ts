@@ -48,6 +48,7 @@ import {
 import { getAgentRuntime } from "@/lib/server/agents";
 import { loadConfig } from "@/lib/server/config";
 import { buildPartnerKnowledgeFrontmatterUpdate } from "@/lib/server/hive-mind-frontmatter";
+import { writeLaunchPostImage } from "@/lib/server/launch-post-assets";
 import { getMcpClient } from "@/lib/server/mcp";
 import { loadStyleReference } from "@/lib/server/style";
 import { getVault } from "@/lib/server/vault";
@@ -2595,5 +2596,384 @@ function renderHandoffInputsMarkdown(args: {
     "Smithers pre-gathered the data above. The skill's MCP-side crawl phases (Linear deep crawl, P2 reader, Zendesk thread fetch, GitHub repo open issues) are NOT available in this run — the run-skill agent has no MCP access. Produce the report from what's provided; for any section where you'd ordinarily fetch from MCP and the data isn't already included above, list the missing dependency under `questions` so the user can fill it in or fetch it separately.",
   );
 
+  return lines.join("\n");
+}
+
+// =====================================================================
+// /create-launch-post — workbench wiring
+// =====================================================================
+
+export interface GenerateLaunchPostInput {
+  slug: string;
+  launch_date: string;
+  site_url: string;
+  p2_context: string;
+  linear_context: string;
+  slack_context: string;
+  features: string;
+  lessons: string;
+}
+
+export type GenerateLaunchPostResult =
+  | { ok: true; data: RunSkillOutput }
+  | {
+      ok: false;
+      reason: "not-configured" | "error" | "skill-missing";
+      message?: string;
+    };
+
+/**
+ * Run the /create-launch-post skill. Pre-gathers what we have (vault
+ * project, HM partner-knowledge, HM project info, Linear project
+ * metadata) and threads the TAM's pasted context (P2, Linear, Slack,
+ * features, lessons) through the skill's input contract. Doesn't write
+ * to disk — saveProjectLaunchPostAction does that after review, and is
+ * the path that also stores the collected image binaries.
+ */
+export async function generateProjectLaunchPostAction(
+  input: GenerateLaunchPostInput,
+): Promise<GenerateLaunchPostResult> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.launch_date.trim())) {
+    return {
+      ok: false,
+      reason: "error",
+      message: "Launch date must be YYYY-MM-DD",
+    };
+  }
+
+  const vault = await getVault();
+  const project = await vault.readProject(input.slug);
+  if (!project) {
+    return {
+      ok: false,
+      reason: "error",
+      message: `Project "${input.slug}" not found`,
+    };
+  }
+  const partnerSlug = project.hive_mind_partner_slug ?? project.partner;
+  const projectSlug = project.hive_mind_project_slug ?? project.slug;
+  if (!partnerSlug) {
+    return {
+      ok: false,
+      reason: "error",
+      message: "Project is not connected to Hive Mind",
+    };
+  }
+
+  const runtime = await getAgentRuntime();
+  if (!runtime) return { ok: false, reason: "not-configured" };
+
+  const cfg = await loadConfig();
+  if (!cfg.paths.hive_mind) {
+    return {
+      ok: false,
+      reason: "not-configured",
+      message: "hive_mind path not set",
+    };
+  }
+
+  const skillContent = await vault.getHiveMindSkillContent("create-launch-post");
+  if (!skillContent) return { ok: false, reason: "skill-missing" };
+
+  const [hmPartner, hmProject, linearProject] = await Promise.all([
+    vault.getHiveMindPartner(partnerSlug).catch(() => null),
+    vault.getHiveMindProject(partnerSlug, projectSlug).catch(() => null),
+    project.linear_project_id
+      ? (await getMcpClient()).linear
+          .getProject(project.linear_project_id)
+          .catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  const inputsMarkdown = renderLaunchPostInputsMarkdown({
+    partnerSlug,
+    projectSlug,
+    launchDate: input.launch_date.trim(),
+    siteUrl: input.site_url.trim(),
+    project,
+    hmPartner,
+    hmProject,
+    linearProject,
+    preparedBy: cfg.identity.name ?? "TAM",
+    userContext: {
+      p2: input.p2_context,
+      linear: input.linear_context,
+      slack: input.slack_context,
+      features: input.features,
+      lessons: input.lessons,
+    },
+  });
+
+  try {
+    const result = await runHiveMindSkill(runtime, {
+      skill_slug: "create-launch-post",
+      skill_prompt: skillContent.system_prompt,
+      dependency_files: skillContent.files,
+      inputs_markdown: inputsMarkdown,
+    });
+    return { ok: true, data: result.output };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Agent call failed",
+    };
+  }
+}
+
+export interface SaveLaunchPostInput {
+  slug: string;
+  launch_date: string;
+  markdown: string;
+  /** base64-encoded image bytes, keyed by their target filename in assets/. */
+  images: Array<{ filename: string; base64: string }>;
+}
+
+export type SaveLaunchPostResult =
+  | {
+      ok: true;
+      relative_path: string;
+      assets_written: string[];
+    }
+  | { ok: false; reason: string };
+
+/**
+ * Write the reviewed launch-post markdown + any uploaded image binaries
+ * into the project's HM folder. Markdown goes through the MCP
+ * write-project-file tool; images bypass MCP and write directly to disk
+ * (write-project-file is utf-8 only). A single commit picks up
+ * everything via `git add -A`.
+ */
+export async function saveProjectLaunchPostAction(
+  input: SaveLaunchPostInput,
+): Promise<SaveLaunchPostResult> {
+  if (!input.markdown.trim()) {
+    return { ok: false, reason: "Launch post content is empty" };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.launch_date.trim())) {
+    return { ok: false, reason: "Launch date must be YYYY-MM-DD" };
+  }
+
+  const vault = await getVault();
+  const project = await vault.readProject(input.slug);
+  if (!project) return { ok: false, reason: "Project not found" };
+  const partnerSlug = project.hive_mind_partner_slug ?? project.partner;
+  const projectSlug = project.hive_mind_project_slug ?? project.slug;
+  if (!partnerSlug) {
+    return { ok: false, reason: "Project is not connected to Hive Mind" };
+  }
+
+  const cfg = await loadConfig();
+  if (!cfg.paths.hive_mind) {
+    return { ok: false, reason: "hive_mind path not set in config" };
+  }
+
+  const launchDate = input.launch_date.trim();
+  const filename = `launched-${launchDate}.md`;
+  const mcp = await getMcpClient();
+  const assetsWritten: string[] = [];
+
+  try {
+    for (const img of input.images) {
+      const bytes = Buffer.from(img.base64, "base64");
+      if (bytes.length === 0) continue;
+      const { relative_path } = await writeLaunchPostImage({
+        hiveMindRoot: cfg.paths.hive_mind,
+        partnerSlug,
+        projectSlug,
+        launchDate,
+        filename: img.filename,
+        bytes,
+      });
+      assetsWritten.push(relative_path);
+    }
+
+    if (input.images.length > 0) {
+      const manifest = renderAssetsManifest({
+        launchDate,
+        filenames: input.images.map((i) => i.filename),
+      });
+      await mcp.hiveMind.writeProjectFile(
+        partnerSlug,
+        projectSlug,
+        `assets/launched-${launchDate}/README.md`,
+        manifest,
+      );
+    }
+
+    await mcp.hiveMind.writeProjectFile(
+      partnerSlug,
+      projectSlug,
+      filename,
+      input.markdown,
+    );
+
+    const summary =
+      input.images.length > 0
+        ? `${filename} + ${input.images.length} image${input.images.length === 1 ? "" : "s"}`
+        : filename;
+    await mcp.hiveMind.commit(
+      `launch post: ${summary} via Smithers for ${partnerSlug}/${projectSlug}`,
+    );
+
+    revalidatePath(`/projects/${input.slug}`);
+    return {
+      ok: true,
+      relative_path: `knowledge/partners/${partnerSlug}/${projectSlug}/${filename}`,
+      assets_written: assetsWritten,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "HM write failed",
+    };
+  }
+}
+
+function renderLaunchPostInputsMarkdown(args: {
+  partnerSlug: string;
+  projectSlug: string;
+  launchDate: string;
+  siteUrl: string;
+  project: {
+    name: string;
+    partner?: string;
+    linear_project_id?: string;
+    github_repo?: string;
+    p2_url?: string;
+  };
+  hmPartner: { title?: string; description?: string; body: string } | null;
+  hmProject: { title?: string; description?: string; body: string } | null;
+  linearProject: {
+    name?: string;
+    url?: string;
+    state?: { name?: string };
+    lead?: { displayName?: string; name?: string } | null;
+  } | null;
+  preparedBy: string;
+  userContext: {
+    p2: string;
+    linear: string;
+    slack: string;
+    features: string;
+    lessons: string;
+  };
+}): string {
+  const lines: string[] = [];
+  lines.push("# Inputs");
+  lines.push("");
+  lines.push(`Partner slug: \`${args.partnerSlug}\``);
+  lines.push(`Project slug: \`${args.projectSlug}\``);
+  lines.push(`Launch date: ${args.launchDate}`);
+  lines.push(`Live site URL: ${args.siteUrl || "(not provided)"}`);
+  lines.push(`Prepared by: ${args.preparedBy}`);
+  lines.push("");
+
+  lines.push("## Project identifiers");
+  if (args.project.linear_project_id) {
+    const linearUrl =
+      args.linearProject?.url ??
+      `https://linear.app/team51/project/${args.project.linear_project_id}`;
+    lines.push(`Linear: ${linearUrl}`);
+  }
+  if (args.project.github_repo) lines.push(`GitHub: ${args.project.github_repo}`);
+  if (args.project.p2_url) lines.push(`P2: ${args.project.p2_url}`);
+  lines.push("");
+
+  if (args.linearProject) {
+    lines.push("## Linear project metadata (pre-fetched)");
+    if (args.linearProject.name) lines.push(`Name: ${args.linearProject.name}`);
+    if (args.linearProject.state?.name)
+      lines.push(`State: ${args.linearProject.state.name}`);
+    if (
+      args.linearProject.lead?.displayName ||
+      args.linearProject.lead?.name
+    ) {
+      lines.push(
+        `Lead: ${args.linearProject.lead.displayName ?? args.linearProject.lead.name}`,
+      );
+    }
+    lines.push("");
+  }
+
+  lines.push("## Partner knowledge (from Hive Mind)");
+  if (args.hmPartner) {
+    if (args.hmPartner.title) lines.push(`Title: ${args.hmPartner.title}`);
+    if (args.hmPartner.description)
+      lines.push(`Description: ${args.hmPartner.description}`);
+    if (args.hmPartner.body.trim()) {
+      lines.push("Body:");
+      lines.push("```markdown");
+      lines.push(args.hmPartner.body);
+      lines.push("```");
+    }
+  } else {
+    lines.push("(no partner-knowledge.md found)");
+  }
+  lines.push("");
+
+  lines.push("## Project info (from Hive Mind)");
+  if (args.hmProject) {
+    if (args.hmProject.title) lines.push(`Title: ${args.hmProject.title}`);
+    if (args.hmProject.description)
+      lines.push(`Description: ${args.hmProject.description}`);
+    if (args.hmProject.body.trim()) {
+      lines.push("Body:");
+      lines.push("```markdown");
+      lines.push(args.hmProject.body);
+      lines.push("```");
+    }
+  } else {
+    lines.push(`Project name (from vault): ${args.project.name}`);
+  }
+  lines.push("");
+
+  lines.push("## P2 context (pasted)");
+  lines.push(args.userContext.p2.trim() || "(none provided)");
+  lines.push("");
+
+  lines.push("## Linear context (pasted, in addition to metadata above)");
+  lines.push(args.userContext.linear.trim() || "(none provided)");
+  lines.push("");
+
+  lines.push("## Slack context (pasted)");
+  lines.push(args.userContext.slack.trim() || "(none provided)");
+  lines.push("");
+
+  lines.push("## Features to highlight (with code snippets if relevant)");
+  lines.push(args.userContext.features.trim() || "(none provided)");
+  lines.push("");
+
+  lines.push("## Lessons learned + A8C product feedback");
+  lines.push(args.userContext.lessons.trim() || "(none provided)");
+  lines.push("");
+
+  lines.push("## Note to the agent");
+  lines.push(
+    "Smithers pre-gathered the project identifiers, Linear metadata, and HM knowledge above. The TAM pasted P2/Linear/Slack/features/lessons context. MCP is NOT available in this run — do not call any context-a8c tools. For each Development feature subsection, add a repo-relative Markdown image reference (`![alt](assets/launched-" +
+      args.launchDate +
+      "/<descriptive-slug>.png)`) and list the expected filename under `questions` so the wizard can collect the file. Do the same for Design BEFORE/AFTER images. Code snippets are NOT images — leave them as inline `[CODE SNIPPET: …]` text slots.",
+  );
+
+  return lines.join("\n");
+}
+
+function renderAssetsManifest(args: {
+  launchDate: string;
+  filenames: string[];
+}): string {
+  const lines: string[] = [];
+  lines.push(`# Launch post assets — ${args.launchDate}`);
+  lines.push("");
+  lines.push(
+    "Image files referenced by `../launched-" +
+      args.launchDate +
+      ".md`. Uploaded via Smithers' launch-post wizard.",
+  );
+  lines.push("");
+  for (const f of args.filenames) {
+    lines.push(`- \`${f}\``);
+  }
+  lines.push("");
   return lines.join("\n");
 }

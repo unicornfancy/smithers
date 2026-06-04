@@ -24,6 +24,7 @@ import { HiveMindDraftsSection } from "@/components/hive-mind-drafts-section";
 import { AgendaPanel } from "@/components/agenda-panel";
 import { PartnerCard } from "@/components/partner-card";
 import { ProjectHandoffSection } from "@/components/project-handoff-section";
+import { ProjectLaunchPostSection } from "@/components/project-launch-post-section";
 import { ProjectBriefSection } from "@/components/project-brief-section";
 import {
   CallNotesPanel,
@@ -594,10 +595,22 @@ export default async function ProjectWorkbenchPage({
     ),
   });
 
-  // Bottom-of-page lifecycle action. HM-gated since the skill writes
-  // to the project's HM folder. Lives below partner-profile so it's
-  // out of the daily-flow surfaces.
+  // Wrap-up artifacts (launch post + handoff). HM-gated since both
+  // write into the project's HM folder. Launch-post sits right under
+  // partner-profile in the knowledge tab — the post is a piece of
+  // partner/project knowledge; handoff is the lifecycle-end action
+  // below it.
   if (detail.hive_mind_partner_slug) {
+    sections.push({
+      id: "project-launch-post",
+      title: "Launch post",
+      node: (
+        <ProjectLaunchPostSection
+          projectSlug={detail.slug}
+          defaultSiteUrl={detail.production_url}
+        />
+      ),
+    });
     sections.push({
       id: "project-handoff",
       title: "Project handoff",

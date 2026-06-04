@@ -59,6 +59,7 @@ const TAB_ORDER: Record<WorkbenchTabId, string[]> = {
     "partner-info",
     "personal-notes",
     "partner-profile",
+    "project-launch-post",
     "project-handoff",
   ],
   drafts: ["drafts-for-project"],

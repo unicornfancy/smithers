@@ -3,6 +3,11 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   typedRoutes: true,
+  experimental: {
+    // Launch-post images (screenshots) routinely exceed the 1MB default.
+    // Smithers runs locally — there's no proxy upload limit to worry about.
+    serverActions: { bodySizeLimit: "25mb" },
+  },
   transpilePackages: [
     "@smithers/vault",
     "@smithers/mcp-client",
