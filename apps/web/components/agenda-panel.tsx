@@ -321,7 +321,10 @@ function Group({
                   muted && "text-muted-foreground",
                 )}
               >
-                <Markdown source={item.text} />
+                <Markdown
+                  source={item.text}
+                  className="[&_p:first-child]:mt-0 [&_p:last-child]:mb-0"
+                />
               </div>
             </li>
           ))}
