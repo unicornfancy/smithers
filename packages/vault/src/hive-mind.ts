@@ -140,6 +140,15 @@ export async function listHiveMindSkills(
   return skills;
 }
 
+export interface HiveMindPartnerContact {
+  /** Required — the email is the search/match key. */
+  email: string;
+  /** Display name; falls back to the email local-part when absent. */
+  name?: string;
+  /** Free-form role label ("Engineering Lead", "Founder"). */
+  role?: string;
+}
+
 export interface HiveMindPartner {
   title?: string;
   owner?: string;
@@ -150,6 +159,13 @@ export interface HiveMindPartner {
   domain_registrar?: string;
   /** From frontmatter `dns_provider` (added 2026-05-28 for brief inputs). */
   dns_provider?: string;
+  /**
+   * Partner contacts from the `contacts:` frontmatter (added 2026-06-05).
+   * Powers Smithers' suggested-tickets surface — Zendesk searches fan out
+   * across these emails to catch unattached threads from partner senders.
+   * Always normalized to a clean array; bad entries are silently dropped.
+   */
+  contacts?: HiveMindPartnerContact[];
   body: string;
 }
 
@@ -174,6 +190,7 @@ export async function getHiveMindPartner(
     description: asString(data.description),
     domain_registrar: asString(data.domain_registrar),
     dns_provider: asString(data.dns_provider),
+    contacts: asContactArray(data.contacts),
     body: content.trim(),
   };
 }
@@ -716,4 +733,21 @@ function asStringArray(v: unknown): string[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const arr = v.map((x) => String(x).trim()).filter(Boolean);
   return arr.length ? arr : undefined;
+}
+
+function asContactArray(v: unknown): HiveMindPartnerContact[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: HiveMindPartnerContact[] = [];
+  for (const raw of v) {
+    if (!raw || typeof raw !== "object") continue;
+    const obj = raw as Record<string, unknown>;
+    const email = asString(obj.email);
+    if (!email) continue;
+    out.push({
+      email,
+      name: asString(obj.name),
+      role: asString(obj.role),
+    });
+  }
+  return out.length ? out : undefined;
 }

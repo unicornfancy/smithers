@@ -26,6 +26,7 @@ import { SummarizeZendeskThreadButton } from "@/components/summarize-zendesk-thr
 import { RefreshZendeskMetadataButton } from "@/components/refresh-zendesk-metadata-button";
 import { ResolveFollowUpButton } from "@/components/resolve-follow-up-button";
 import { SnoozeFollowUpButton } from "@/components/snooze-follow-up-button";
+import { SuggestedZendeskTickets } from "@/components/suggested-zendesk-tickets";
 import { WatchForReplyDialog } from "@/components/watch-for-reply-dialog";
 import { ZendeskAttachModal } from "@/components/zendesk-attach-modal";
 import { ZendeskSearchSettingsModal } from "@/components/zendesk-search-settings-modal";
@@ -175,6 +176,7 @@ export function ZendeskThreadsPanel({
             </div>
           </div>
         ) : null}
+        <SuggestedZendeskTickets projectSlug={projectSlug} />
         {active.length > 0 ? (
           <ul className="flex flex-col gap-3">
             {active.map((t) => (

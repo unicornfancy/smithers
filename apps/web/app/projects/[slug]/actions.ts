@@ -191,6 +191,107 @@ export async function searchZendeskTicketsAction(
   return mcp.contextA8C.searchZendeskTickets(query, { limit: 20 });
 }
 
+export interface SuggestedZendeskTicket {
+  id: string;
+  subject: string | null;
+  status: string | null;
+  updated_at: string | null;
+  /** The search term that surfaced this ticket — usually the matching email. */
+  matched_term: string;
+}
+
+/**
+ * Surface Zendesk tickets that look like they belong to this project but
+ * aren't yet attached. Fans out searches across:
+ *
+ *   - The HM partner's `contacts[].email` (canonical contacts per partner)
+ *   - The project's `zendesk_search_terms` (per-project override hints)
+ *
+ * Filters out tickets already in `project.zendesk_tickets`. Returns a
+ * discriminated result so the UI can branch cleanly on
+ * not-configured / no-search-terms / error.
+ *
+ * The Zendesk provider exposes only `search`; no ticket-id filter that
+ * works reliably (see CLAUDE.md gotchas), so we use the partner-email
+ * angle to catch the typical "Martin filed a new ticket" case.
+ */
+export async function findSuggestedZendeskTicketsAction(
+  slug: string,
+): Promise<
+  | { ok: true; data: SuggestedZendeskTicket[] }
+  | {
+      ok: false;
+      reason: "not-configured" | "no-search-terms" | "error";
+      message?: string;
+    }
+> {
+  if (!slug) throw new Error("slug is required");
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) {
+    return { ok: false, reason: "error", message: `Project "${slug}" not found` };
+  }
+
+  const partnerSlug = project.hive_mind_partner_slug ?? project.partner ?? null;
+  const partner = partnerSlug
+    ? await vault.getHiveMindPartner(partnerSlug).catch(() => null)
+    : null;
+
+  const contactEmails = (partner?.contacts ?? [])
+    .map((c) => c.email.trim())
+    .filter(Boolean);
+  const projectTerms = (project.zendesk_search_terms ?? [])
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  // Dedup so we don't fire the same query twice if a per-project term
+  // already lists a partner contact email.
+  const allTerms = Array.from(new Set([...contactEmails, ...projectTerms]));
+  if (allTerms.length === 0) {
+    return { ok: false, reason: "no-search-terms" };
+  }
+
+  const attachedIds = new Set(
+    (project.zendesk_tickets ?? []).map((t) => t.id),
+  );
+
+  const mcp = await getMcpClient();
+  const seen = new Map<string, SuggestedZendeskTicket>();
+  try {
+    await Promise.all(
+      allTerms.map(async (term) => {
+        const res = await mcp.contextA8C
+          .searchZendeskTickets(term, { limit: 25 })
+          .catch(() => ({ ok: false as const, error: "search failed" }));
+        if (!res.ok) return;
+        for (const t of res.tickets) {
+          if (attachedIds.has(t.id)) continue;
+          if (seen.has(t.id)) continue;
+          seen.set(t.id, {
+            id: t.id,
+            subject: t.subject,
+            status: t.status,
+            updated_at: t.updated_at,
+            matched_term: term,
+          });
+        }
+      }),
+    );
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "search failed",
+    };
+  }
+
+  // Newest first so the most recent tickets are the most actionable.
+  const data = Array.from(seen.values()).sort((a, b) =>
+    (b.updated_at ?? "").localeCompare(a.updated_at ?? ""),
+  );
+  return { ok: true, data };
+}
+
 /**
  * Attach a Zendesk ticket to the project's frontmatter. Accepts either a
  * bare ref (id or URL) or a richer summary object — when the summary
