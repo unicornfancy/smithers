@@ -24,6 +24,8 @@ import type {
   ContextA8CClient,
   MatticspaceGroupMember,
   MatticspaceGroupRoster,
+  P2Post,
+  P2PostFetchQuery,
   PingsQuery,
   ProjectActivityQuery,
 } from "./types";
@@ -1255,6 +1257,123 @@ export class RealContextA8CTransport implements ContextA8CClient {
       },
     );
   }
+
+  /**
+   * Fetch posts from a single A8C P2 via the wpcom provider's
+   * `posts-text` tool. Supports per-slug / per-id targeting plus
+   * inline comments. Internal P2s (wpspecialprojectsp2, to51) are
+   * reachable because ContextA8C runs under the user's A8C session.
+   *
+   * Defensive: returns [] on any failure (auth, parse, network) so
+   * callers can degrade — typical use is "if this comes back empty,
+   * fall back to the user's pasted text".
+   */
+  async fetchP2Posts(query: P2PostFetchQuery): Promise<P2Post[]> {
+    const site = normalizeP2Site(query.site);
+    if (!site) return [];
+    if (!query.slugs?.length && !query.ids?.length) return [];
+
+    const params: Record<string, unknown> = {
+      site,
+      include_comments: query.include_comments ?? false,
+    };
+    if (query.ids?.length) {
+      params.ids = query.ids.slice(0, 100);
+    } else if (query.slugs?.length) {
+      params.slugs = query.slugs.slice(0, 100);
+    }
+    if (query.include_comments && query.max_comments_per_post) {
+      params.max_comments_per_post = Math.min(
+        Math.max(1, query.max_comments_per_post),
+        500,
+      );
+    }
+
+    try {
+      const result = await this.mcp.callJsonTool<P2PostsTextEnvelope>(
+        "context-a8c-execute-tool",
+        { provider: "wpcom", tool: "posts-text", params },
+      );
+      const posts = result?.posts ?? [];
+      return posts.map(mapP2PostRaw).filter((p): p is P2Post => p !== null);
+    } catch {
+      return [];
+    }
+  }
+}
+
+interface P2PostsTextEnvelope {
+  posts?: Array<Record<string, unknown>>;
+}
+
+function normalizeP2Site(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(
+      trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    );
+    return parsed.host || null;
+  } catch {
+    return null;
+  }
+}
+
+function mapP2PostRaw(raw: Record<string, unknown>): P2Post | null {
+  const id = typeof raw["id"] === "number" ? raw["id"] : null;
+  if (id === null) return null;
+  const author = mapAuthorRaw(raw["author"]);
+  const commentsRaw = Array.isArray(raw["comments"])
+    ? (raw["comments"] as Array<Record<string, unknown>>)
+    : [];
+  const comments = commentsRaw
+    .map((c) => {
+      const cid = typeof c["id"] === "number" ? c["id"] : null;
+      if (cid === null) return null;
+      return {
+        id: cid,
+        author: mapAuthorRaw(c["author"]),
+        date: typeof c["date"] === "string" ? (c["date"] as string) : "",
+        content_text:
+          typeof c["content_text"] === "string"
+            ? (c["content_text"] as string)
+            : "",
+      };
+    })
+    .filter((c): c is NonNullable<typeof c> => c !== null);
+  return {
+    id,
+    link: typeof raw["link"] === "string" ? (raw["link"] as string) : "",
+    date: typeof raw["date"] === "string" ? (raw["date"] as string) : "",
+    modified:
+      typeof raw["modified"] === "string" ? (raw["modified"] as string) : "",
+    author,
+    title: typeof raw["title"] === "string" ? (raw["title"] as string) : "",
+    content_text:
+      typeof raw["content_text"] === "string"
+        ? (raw["content_text"] as string)
+        : "",
+    excerpt:
+      typeof raw["excerpt"] === "string" ? (raw["excerpt"] as string) : "",
+    comments,
+    comments_total:
+      typeof raw["comments_total"] === "number"
+        ? (raw["comments_total"] as number)
+        : comments.length,
+    comments_truncated: Boolean(raw["comments_truncated"]),
+  };
+}
+
+function mapAuthorRaw(raw: unknown): { username: string; display_name: string } {
+  if (typeof raw !== "object" || raw === null) {
+    return { username: "", display_name: "" };
+  }
+  const r = raw as Record<string, unknown>;
+  return {
+    username: typeof r["username"] === "string" ? (r["username"] as string) : "",
+    display_name:
+      typeof r["display_name"] === "string" ? (r["display_name"] as string) : "",
+  };
 }
 
 interface MatticspaceGroupMembersRaw {

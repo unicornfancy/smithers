@@ -33,6 +33,7 @@ import type {
   LinearProject,
   LinearProjectMetadata,
   LinearProjectUpdate,
+  P2Post,
   ZendeskSearchResult,
 } from "@smithers/mcp-client";
 import type {
@@ -2681,20 +2682,37 @@ export async function generateProjectLaunchPostAction(
 
   const mcp = await getMcpClient();
   const linearProjectId = project.linear_project_id;
-  const [hmPartner, hmProject, linearProject, linearIssues, linearUpdates] =
-    await Promise.all([
-      vault.getHiveMindPartner(partnerSlug).catch(() => null),
-      vault.getHiveMindProject(partnerSlug, projectSlug).catch(() => null),
-      linearProjectId
-        ? mcp.linear.getProject(linearProjectId).catch(() => null)
-        : Promise.resolve(null),
-      linearProjectId
-        ? mcp.linear.getProjectIssues(linearProjectId).catch(() => [])
-        : Promise.resolve([]),
-      linearProjectId
-        ? mcp.linear.getProjectUpdates(linearProjectId).catch(() => [])
-        : Promise.resolve([]),
-    ]);
+  const p2Target = project.p2_url ? parseP2Url(project.p2_url) : null;
+  const [
+    hmPartner,
+    hmProject,
+    linearProject,
+    linearIssues,
+    linearUpdates,
+    p2Posts,
+  ] = await Promise.all([
+    vault.getHiveMindPartner(partnerSlug).catch(() => null),
+    vault.getHiveMindProject(partnerSlug, projectSlug).catch(() => null),
+    linearProjectId
+      ? mcp.linear.getProject(linearProjectId).catch(() => null)
+      : Promise.resolve(null),
+    linearProjectId
+      ? mcp.linear.getProjectIssues(linearProjectId).catch(() => [])
+      : Promise.resolve([]),
+    linearProjectId
+      ? mcp.linear.getProjectUpdates(linearProjectId).catch(() => [])
+      : Promise.resolve([]),
+    p2Target
+      ? mcp.contextA8C
+          .fetchP2Posts({
+            site: p2Target.site,
+            slugs: [p2Target.slug],
+            include_comments: true,
+            max_comments_per_post: 100,
+          })
+          .catch(() => [])
+      : Promise.resolve([]),
+  ]);
 
   // Pull full detail (incl. comments) for the most recently updated
   // issues so the agent has narrative material — Linear's project
@@ -2724,6 +2742,7 @@ export async function generateProjectLaunchPostAction(
     linearIssues,
     linearUpdates,
     linearIssueDetails,
+    p2Posts,
     preparedBy: cfg.identity.name ?? "TAM",
     userContext: {
       p2: input.p2_context,
@@ -2878,6 +2897,7 @@ function renderLaunchPostInputsMarkdown(args: {
   linearIssues: LinearIssue[];
   linearUpdates: LinearProjectUpdate[];
   linearIssueDetails: LinearIssueDetail[];
+  p2Posts: P2Post[];
   preparedBy: string;
   userContext: {
     p2: string;
@@ -2952,6 +2972,39 @@ function renderLaunchPostInputsMarkdown(args: {
     lines.push("");
   }
 
+  if (args.p2Posts.length > 0) {
+    lines.push(
+      `## P2 launch post + comments (pre-fetched from ${args.project.p2_url ?? "p2_url"})`,
+    );
+    for (const post of args.p2Posts) {
+      lines.push(`### ${post.title || "(untitled post)"}`);
+      lines.push(
+        `Posted: ${post.date.slice(0, 10)} · ${post.author.display_name} (@${post.author.username}) · ${post.link}`,
+      );
+      if (post.content_text.trim()) {
+        lines.push("");
+        lines.push("Body:");
+        lines.push("```text");
+        lines.push(post.content_text.trim());
+        lines.push("```");
+      }
+      if (post.comments.length > 0) {
+        lines.push("");
+        lines.push(
+          `Comments (${post.comments_total}${post.comments_truncated ? "+, truncated" : ""}):`,
+        );
+        for (const c of post.comments) {
+          const when = c.date.slice(0, 10);
+          lines.push(
+            `- **${when}** ${c.author.display_name} (@${c.author.username}):`,
+          );
+          lines.push(indent(c.content_text.trim(), "  "));
+        }
+      }
+      lines.push("");
+    }
+  }
+
   if (args.linearIssueDetails.length > 0) {
     lines.push(
       `## Linear issue detail with comments (top ${args.linearIssueDetails.length} by recency, pre-fetched)`,
@@ -3010,7 +3063,7 @@ function renderLaunchPostInputsMarkdown(args: {
   }
   lines.push("");
 
-  lines.push("## P2 context (pasted)");
+  lines.push("## P2 context (pasted — supplements pre-fetched post above)");
   lines.push(args.userContext.p2.trim() || "(none provided)");
   lines.push("");
 
@@ -3068,4 +3121,28 @@ function indent(text: string, prefix: string): string {
     .split("\n")
     .map((line) => prefix + line)
     .join("\n");
+}
+
+/**
+ * Parse a P2 post URL into the (site, slug) pair the wpcom posts-text
+ * tool needs. A P2 post URL is shaped like
+ * `https://<host>/<YYYY>/<MM>/<DD>/<slug>/` (sometimes with no trailing
+ * slash, sometimes shorter). The slug is the last non-empty path
+ * segment that doesn't look like a date component. Returns null when
+ * the URL is malformed or doesn't carry a slug.
+ */
+function parseP2Url(
+  raw: string,
+): { site: string; slug: string } | null {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw.trim());
+    const segments = url.pathname.split("/").filter(Boolean);
+    if (segments.length === 0) return null;
+    const slug = segments[segments.length - 1] ?? "";
+    if (!slug || /^\d+$/.test(slug)) return null;
+    return { site: url.host, slug };
+  } catch {
+    return null;
+  }
 }

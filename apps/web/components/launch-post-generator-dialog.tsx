@@ -339,12 +339,12 @@ function InputsPhase(props: {
         </div>
       </div>
       <Field
-        label="P2 context"
-        hint="Paste the project's launch post body and any relevant comments from wpspecialprojectsp2 / to51."
+        label="P2 context (optional)"
+        hint="If the project has a p2_url in frontmatter, Smithers fetches the post body and comments automatically. Paste here only when there's an additional thread (e.g. a separate launch comment) the agent should see."
         value={props.p2Context}
         onChange={props.onP2Context}
         disabled={props.disabled}
-        rows={4}
+        rows={2}
       />
       <Field
         label="Linear context (optional)"

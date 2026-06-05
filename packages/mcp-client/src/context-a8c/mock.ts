@@ -674,6 +674,10 @@ export class MockContextA8CTransport implements ContextA8CClient {
       },
     };
   }
+
+  async fetchP2Posts(_query: unknown): Promise<never[]> {
+    return [];
+  }
 }
 
 function shortHash(rng: () => number): string {

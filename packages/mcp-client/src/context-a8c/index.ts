@@ -40,4 +40,8 @@ export type {
   ActivitySourceFilter,
   MatticspaceGroupMember,
   MatticspaceGroupRoster,
+  P2Post,
+  P2PostAuthor,
+  P2PostComment,
+  P2PostFetchQuery,
 } from "./types";

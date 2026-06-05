@@ -229,6 +229,59 @@ export interface ContextA8CClient {
     sinceTs: string,
     slackHandle: string,
   ): Promise<boolean>;
+
+  /**
+   * Fetch posts from an A8C P2 via the wpcom `posts-text` tool. Targets
+   * specific posts by `slugs` or `ids` (preferred) or paginates over a
+   * date range. Optionally includes approved comments inline.
+   *
+   * Internal P2s (wpspecialprojectsp2, to51, etc.) are reachable because
+   * ContextA8C authenticates as the running user. Returns `[]` on parse
+   * or auth failure — callers should degrade rather than crash.
+   */
+  fetchP2Posts(query: P2PostFetchQuery): Promise<P2Post[]>;
+}
+
+export interface P2PostFetchQuery {
+  /** P2 host (bare or with scheme). Examples: "wpspecialprojectsp2.wordpress.com". */
+  site: string;
+  /** Match by post slug (post_name). Up to 100. */
+  slugs?: string[];
+  /** Match by numeric post id. Up to 100. Takes precedence over slugs. */
+  ids?: number[];
+  /** When true, each post carries approved comments inline. */
+  include_comments?: boolean;
+  /** Cap on comments per post when include_comments is true. Default 100, max 500. */
+  max_comments_per_post?: number;
+}
+
+export interface P2PostAuthor {
+  username: string;
+  display_name: string;
+}
+
+export interface P2PostComment {
+  id: number;
+  author: P2PostAuthor;
+  /** ISO timestamp. */
+  date: string;
+  content_text: string;
+}
+
+export interface P2Post {
+  id: number;
+  link: string;
+  /** ISO timestamp of publication. */
+  date: string;
+  /** ISO timestamp of last modification. */
+  modified: string;
+  author: P2PostAuthor;
+  title: string;
+  content_text: string;
+  excerpt: string;
+  comments: P2PostComment[];
+  comments_total: number;
+  comments_truncated: boolean;
 }
 
 export interface LinearProjectMetadata {
