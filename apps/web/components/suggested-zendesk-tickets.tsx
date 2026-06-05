@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, ExternalLink, Loader2, Mail, Plus } from "lucide-react";
 import { toast } from "sonner";
 
-import { zendeskTicketUrl } from "@smithers/mcp-client";
-
 import {
   attachZendeskTicketAction,
   findSuggestedZendeskTicketsAction,
@@ -14,6 +12,14 @@ import {
 } from "@/app/projects/[slug]/actions";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+// Inlined to avoid pulling the @smithers/mcp-client barrel (and its
+// node-only MCP SDK transitive deps) into the client bundle. The URL
+// shape lives in packages/mcp-client/src/context-a8c/zendesk-refs.ts;
+// keep these two in sync if the agent UI domain ever moves.
+function zendeskTicketUrl(ticketId: string): string {
+  return `https://automattic.zendesk.com/agent/tickets/${ticketId}`;
+}
 
 interface Props {
   projectSlug: string;
