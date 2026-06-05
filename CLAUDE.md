@@ -72,6 +72,9 @@ Typecheck: `pnpm --filter @smithers/<pkg> typecheck`. There is no test runner; s
 - `<li>` cannot contain another `<li>` — produces a hydration mismatch error. Hit on Zendesk Threads (ThreadCard's `<li>` wrapping ZendeskRow's `<li>`). Inner row is now a `<div>`.
 - `"use server"` files: only `async` exported functions are valid server actions. Inline non-exported helpers (sync or async) are fine.
 
+**`@smithers/mcp-client` from client components:**
+- `"use client"` files must only `import type` from `@smithers/mcp-client`. A value import (`import { foo } from "@smithers/mcp-client"`) drags the package barrel into the client bundle, and the barrel transitively imports `@modelcontextprotocol/sdk` which requires `child_process` / `node:crypto`. Webpack will fail with `Module not found: Can't resolve 'child_process'`. Fix: inline the helper, or move it to `apps/web/lib/` for client reuse. The existing `serverExternalPackages: ["@modelcontextprotocol/sdk"]` only covers server bundles.
+
 **gray-matter quirks:**
 - `serializeMarkdown` strips trailing whitespace and may re-emit YAML with different formatting on round-trip. Idempotent helpers can still produce diff-noise on re-save. Smokes that compare exact strings will be brittle here.
 - Empty frontmatter writes pure content with no `---` block.
