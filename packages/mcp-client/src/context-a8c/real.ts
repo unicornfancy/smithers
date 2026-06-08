@@ -302,18 +302,18 @@ export class RealContextA8CTransport implements ContextA8CClient {
         tasks.push(this.fetchZendeskTicketComments(query, ref));
       }
     }
-    if (allow("p2")) {
-      // Two complementary P2 paths: posts + comments on the partner's own
-      // P2 (when p2_url is set) AND cross-P2 mentions of the partner via
-      // mgs/search (when partner display string is available). Both
-      // contribute to the same "p2" source filter; the consumer can tell
-      // them apart by event.kind.
-      if (query.refs.p2_url) {
-        tasks.push(this.fetchP2Comments(query));
-      }
-      if (query.refs.partner) {
-        tasks.push(this.fetchP2Mentions(query));
-      }
+    if (allow("p2") && query.refs.p2_url) {
+      // Two complementary P2 paths, both anchored on the partner's own P2:
+      //
+      //   - fetchP2Comments: posts + comments on the partner's P2 itself
+      //   - fetchP2Mentions: posts on OTHER team P2s that link back to the
+      //     partner's P2 (cross-post signal — narrower + higher signal
+      //     than a name-keyword search).
+      //
+      // Both feed the "p2" source filter; consumers tell them apart by
+      // event.kind (p2-post / p2-comment vs p2-mention).
+      tasks.push(this.fetchP2Comments(query));
+      tasks.push(this.fetchP2Mentions(query));
     }
 
     if (tasks.length === 0) {
@@ -685,48 +685,63 @@ export class RealContextA8CTransport implements ContextA8CClient {
   }
 
   /**
-   * Cross-P2 mention discovery via `mgs/search`. Surfaces comments and
-   * posts on OTHER team P2s that mention the partner. Distinct from
-   * `fetchP2Comments`, which only reads the partner's own P2.
+   * Cross-post discovery via `mgs/search`. Finds posts on OTHER team P2s
+   * that link back to the partner's P2 host — a much higher-signal
+   * filter than searching for the partner's name (which hit common
+   * words like "the" and "pocket" and dragged in unrelated chatter).
    *
-   * This wasn't possible on the May 28 cut date — the mgs provider
-   * (Matt's Global Search) is the new search-Elasticsearch surface that
-   * landed since then.
+   * Querying the host string ("foo.wordpress.com") narrows results to
+   * documents that actually reference the partner's P2 by URL. Misses
+   * legitimate prose mentions (no URL) but that's the right trade —
+   * those are usually accompanied by a URL anyway when the team is
+   * cross-posting.
+   *
+   * Requires p2_url; the dispatch above gates this branch on it.
    */
   private async fetchP2Mentions(
     query: ProjectActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>> {
-    const partner = query.refs.partner!;
+    const site = normalizeP2Site(query.refs.p2_url!);
+    if (!site) {
+      return failedResult(
+        "context_a8c.p2",
+        "invalid",
+        `Bad p2_url "${query.refs.p2_url}"`,
+      );
+    }
     return runIsolated(
       { cache: this.cache, health: this.health },
       {
         source: "context_a8c.p2",
-        cacheKey: `real:context_a8c:project_activity:p2_mentions:${partner}`,
+        cacheKey: `real:context_a8c:project_activity:p2_crossposts:${site}`,
         ttl: ACTIVITY_TTL,
         fetcher: async () => {
           const dateFrom = new Date();
           dateFrom.setUTCDate(dateFrom.getUTCDate() - 14);
-          // Deslug the partner so "the-pocket-nyc" hits "the pocket nyc"
-          // in the search index. mgs scores phrase matches well; we don't
-          // need to do anything fancier here.
-          const queryStr = partner.replace(/-/g, " ");
           const result = await this.mcp.callJsonTool<MgsSearchResult>(
             "context-a8c-execute-tool",
             {
               provider: "mgs",
               tool: "search",
               params: {
-                query: queryStr,
-                content_type: "comment",
+                query: site,
+                // Posts likely carry the cross-post URL; comments occasionally
+                // do too. Leave content_type unset so both surface.
                 date_from: dateFrom.toISOString().slice(0, 10),
                 per_page: 10,
                 sort: "date_desc",
               },
             },
           );
+          // Drop hits originating on the partner's own P2 — those are
+          // already covered by fetchP2Comments and would otherwise
+          // double-render here.
+          const hits = asArray<MgsHit>(result?.results).filter(
+            (h) => !h.url || !h.url.includes(site),
+          );
           return mapMgsResultsToActivity(
-            asArray<MgsHit>(result?.results),
-            queryStr,
+            hits,
+            site,
             query.project_slug,
             this.opts.internalEmailDomains,
           );
@@ -2253,7 +2268,7 @@ export function mapP2PostsToActivity(
 
 export function mapMgsResultsToActivity(
   hits: MgsHit[],
-  matchedQuery: string,
+  matchedHost: string,
   projectSlug: string,
   _internalDomains: readonly string[],
 ): ActivityEvent[] {
@@ -2271,17 +2286,17 @@ export function mapMgsResultsToActivity(
       kind: "p2-mention",
       timestamp: h.date,
       actor: h.author ? { name: h.author, is_external: false } : undefined,
-      // Lead with the host P2 so the row reads "Automattic Special Projects ·
-      // <post title>" — distinguishes a cross-P2 mention from a comment on
-      // the partner's own P2 at a glance.
+      // Lead with the host P2 so the row reads "<blog> · <post title>"
+      // — clearly distinguishes a cross-post linking back to the partner's
+      // P2 from comments on the partner's own P2.
       title: truncateText(`${h.blog_name ?? "P2"} · ${postTitle}`, 140),
       excerpt: excerpt
         ? truncateText(excerpt, 240)
-        : `Mentions "${matchedQuery}"`,
+        : `Cross-posts ${matchedHost}`,
       url,
       project_match: {
         project_slug: projectSlug,
-        matched_by: "partner",
+        matched_by: "p2_url",
       },
       is_mock: false,
     });

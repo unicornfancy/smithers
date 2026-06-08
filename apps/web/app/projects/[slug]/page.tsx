@@ -380,14 +380,10 @@ export default async function ProjectWorkbenchPage({
     },
     {
       label: "P2",
-      // Either path alone is enough — partner's own P2 OR cross-P2
-      // mentions via mgs search (which only needs a partner slug).
-      configured: Boolean(detail.p2_url || detail.partner),
-      reason: detail.p2_url
-        ? undefined
-        : detail.partner
-          ? "no P2 url; mentions only"
-          : "no P2 url or partner",
+      // Anchored on the partner's own P2: comments on it + cross-posts
+      // linking back to it. No p2_url → no P2 path at all.
+      configured: Boolean(detail.p2_url),
+      reason: detail.p2_url ? undefined : "no P2 url",
     },
   ];
 
