@@ -475,6 +475,51 @@ export class MockContextA8CTransport implements ContextA8CClient {
     }
 
 
+    if (allow("p2") && (query.refs.p2_url || query.refs.partner)) {
+      // Seed a couple of p2 events: a partner P2 post + a cross-team
+      // mention, so screenshots reflect both halves of the restored P2
+      // path. Only fires when ANY of the two refs is present.
+      if (query.refs.p2_url && rng() < 0.7) {
+        const hoursAgo = 4 + Math.floor(rng() * 36);
+        const partnerLabel = (query.refs.partner ?? "Partner")
+          .replace(/-/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+        events.push({
+          id: `p2:${query.project_slug}:post:0`,
+          source: "p2",
+          kind: "p2-comment",
+          timestamp: new Date(now - hoursAgo * 60 * 60_000).toISOString(),
+          actor: { name: partnerLabel, is_external: true },
+          title: `Re: Q3 roadmap`,
+          excerpt: "Looks good — circling back next week with timeline.",
+          url: query.refs.p2_url,
+          project_match: {
+            project_slug: query.project_slug,
+            matched_by: "p2_url",
+          },
+          is_mock: true,
+        });
+      }
+      if (query.refs.partner && rng() < 0.5) {
+        const hoursAgo = 8 + Math.floor(rng() * 48);
+        events.push({
+          id: `p2-mention:${query.project_slug}:0`,
+          source: "p2",
+          kind: "p2-mention",
+          timestamp: new Date(now - hoursAgo * 60 * 60_000).toISOString(),
+          actor: { name: "alice tam", is_external: false },
+          title: `Automattic Special Projects · Week recap`,
+          excerpt: `Mentions "${query.refs.partner.replace(/-/g, " ")}"`,
+          url: "https://to51.wordpress.com",
+          project_match: {
+            project_slug: query.project_slug,
+            matched_by: "partner",
+          },
+          is_mock: true,
+        });
+      }
+    }
+
     const tickets = query.refs.zendesk_tickets ?? [];
     if (tickets.length > 0 && allow("zendesk")) {
       // One mock comment per configured ticket so the workbench shows

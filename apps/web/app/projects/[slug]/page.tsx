@@ -135,6 +135,7 @@ export default async function ProjectWorkbenchPage({
           zendesk_tickets: detail.zendesk_tickets?.map((t) => t.id),
           slack_channel: detail.slack_channel,
           partner: detail.partner,
+          p2_url: detail.p2_url,
         },
       }),
       detail.partner
@@ -376,6 +377,17 @@ export default async function ProjectWorkbenchPage({
         (detail.zendesk_tickets ?? []).length > 0
           ? undefined
           : "no tickets configured",
+    },
+    {
+      label: "P2",
+      // Either path alone is enough — partner's own P2 OR cross-P2
+      // mentions via mgs search (which only needs a partner slug).
+      configured: Boolean(detail.p2_url || detail.partner),
+      reason: detail.p2_url
+        ? undefined
+        : detail.partner
+          ? "no P2 url; mentions only"
+          : "no P2 url or partner",
     },
   ];
 

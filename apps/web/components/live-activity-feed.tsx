@@ -389,6 +389,7 @@ function ActivityIcon({ event }: { event: ActivityEvent }) {
       return <Square className="size-3.5" />;
     case "p2-post":
     case "p2-comment":
+    case "p2-mention":
       return <Sparkles className="size-3.5" />;
     case "zendesk-ticket":
     case "zendesk-comment":

@@ -113,6 +113,13 @@ export type ActivityKind =
   | "linear-issue-completed"
   | "p2-post"
   | "p2-comment"
+  /**
+   * Cross-P2 mention discovered via `mgs/search` — a comment or post on
+   * some other team P2 that references the partner. Distinct from
+   * `p2-comment` (which is a comment on the partner's own P2). Surfaces
+   * the "someone is talking about your partner elsewhere" signal.
+   */
+  | "p2-mention"
   | "zendesk-ticket"
   | "zendesk-comment";
 

@@ -26,6 +26,7 @@ export type ActivitySourceFilter =
   | "github"
   | "linear"
   | "zendesk"
+  | "p2"
   | "wpcom";
 
 export interface ProjectActivityRefs {
@@ -36,6 +37,15 @@ export interface ProjectActivityRefs {
   zendesk_tickets?: string[];
   slack_channel?: string;
   partner?: string;
+  /**
+   * Full URL or bare domain of the partner's P2 (`p2_url` on vault frontmatter).
+   * Drives `fetchP2Comments` — recent posts on the partner's P2 plus their
+   * approved comments are pulled via `wpcom/posts-text { include_comments }`.
+   * Re-enabled 2026-06-08 after the May 28 cut (1538a03); ContextA8C's wpcom
+   * provider grew the `include_comments` flag on `posts-text`, closing the
+   * gap that forced the original removal.
+   */
+  p2_url?: string;
 }
 
 export interface PingsQuery {

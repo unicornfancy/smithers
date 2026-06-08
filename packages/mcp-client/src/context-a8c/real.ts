@@ -25,6 +25,7 @@ import type {
   MatticspaceGroupMember,
   MatticspaceGroupRoster,
   P2Post,
+  P2PostAuthor,
   P2PostFetchQuery,
   PingsQuery,
   ProjectActivityQuery,
@@ -299,6 +300,19 @@ export class RealContextA8CTransport implements ContextA8CClient {
       // 404 on one ticket doesn't poison the others.
       for (const ref of query.refs.zendesk_tickets!) {
         tasks.push(this.fetchZendeskTicketComments(query, ref));
+      }
+    }
+    if (allow("p2")) {
+      // Two complementary P2 paths: posts + comments on the partner's own
+      // P2 (when p2_url is set) AND cross-P2 mentions of the partner via
+      // mgs/search (when partner display string is available). Both
+      // contribute to the same "p2" source filter; the consumer can tell
+      // them apart by event.kind.
+      if (query.refs.p2_url) {
+        tasks.push(this.fetchP2Comments(query));
+      }
+      if (query.refs.partner) {
+        tasks.push(this.fetchP2Mentions(query));
       }
     }
 
@@ -600,6 +614,119 @@ export class RealContextA8CTransport implements ContextA8CClient {
           return mapZendeskCommentsToActivity(
             asArray<ZendeskComment>(result?.comments ?? result?.result),
             ticketId,
+            query.project_slug,
+            this.opts.internalEmailDomains,
+          );
+        },
+      },
+    );
+  }
+
+  /**
+   * Fetch recent posts + their approved comments from the partner's own
+   * P2 via `wpcom/posts-text { include_comments: true }`. Each comment
+   * becomes a `p2-comment` ActivityEvent; the post itself becomes a
+   * `p2-post`. Goes through runIsolated so a failed P2 fetch doesn't
+   * poison the rest of the activity feed.
+   *
+   * The May 28 cut (1538a03) removed an earlier version that tried
+   * public WP.com REST and 401'd on internal P2s. The provider has
+   * since grown the `include_comments` flag, closing the gap.
+   *
+   * The standalone `fetchP2Posts` method (below) does slug/id-targeted
+   * fetches; this one is the date-windowed activity-feed variant.
+   */
+  private async fetchP2Comments(
+    query: ProjectActivityQuery,
+  ): Promise<SourceResult<ActivityEvent[]>> {
+    const site = normalizeP2Site(query.refs.p2_url!);
+    if (!site) {
+      return failedResult(
+        "context_a8c.p2",
+        "invalid",
+        `Bad p2_url "${query.refs.p2_url}"`,
+      );
+    }
+    return runIsolated(
+      { cache: this.cache, health: this.health },
+      {
+        source: "context_a8c.p2",
+        cacheKey: `real:context_a8c:project_activity:p2_posts:${site}`,
+        ttl: ACTIVITY_TTL,
+        fetcher: async () => {
+          const after = new Date();
+          after.setUTCDate(after.getUTCDate() - 14);
+          const result = await this.mcp.callJsonTool<P2PostsTextEnvelope>(
+            "context-a8c-execute-tool",
+            {
+              provider: "wpcom",
+              tool: "posts-text",
+              params: {
+                site,
+                per_page: 10,
+                after: after.toISOString(),
+                include_comments: true,
+                max_comments_per_post: 20,
+              },
+            },
+          );
+          const posts = (result?.posts ?? [])
+            .map(mapP2PostRaw)
+            .filter((p): p is P2Post => p !== null);
+          return mapP2PostsToActivity(
+            posts,
+            site,
+            query.project_slug,
+            this.opts.internalEmailDomains,
+          );
+        },
+      },
+    );
+  }
+
+  /**
+   * Cross-P2 mention discovery via `mgs/search`. Surfaces comments and
+   * posts on OTHER team P2s that mention the partner. Distinct from
+   * `fetchP2Comments`, which only reads the partner's own P2.
+   *
+   * This wasn't possible on the May 28 cut date — the mgs provider
+   * (Matt's Global Search) is the new search-Elasticsearch surface that
+   * landed since then.
+   */
+  private async fetchP2Mentions(
+    query: ProjectActivityQuery,
+  ): Promise<SourceResult<ActivityEvent[]>> {
+    const partner = query.refs.partner!;
+    return runIsolated(
+      { cache: this.cache, health: this.health },
+      {
+        source: "context_a8c.p2",
+        cacheKey: `real:context_a8c:project_activity:p2_mentions:${partner}`,
+        ttl: ACTIVITY_TTL,
+        fetcher: async () => {
+          const dateFrom = new Date();
+          dateFrom.setUTCDate(dateFrom.getUTCDate() - 14);
+          // Deslug the partner so "the-pocket-nyc" hits "the pocket nyc"
+          // in the search index. mgs scores phrase matches well; we don't
+          // need to do anything fancier here.
+          const queryStr = partner.replace(/-/g, " ");
+          const result = await this.mcp.callJsonTool<MgsSearchResult>(
+            "context-a8c-execute-tool",
+            {
+              provider: "mgs",
+              tool: "search",
+              params: {
+                query: queryStr,
+                content_type: "comment",
+                date_from: dateFrom.toISOString().slice(0, 10),
+                per_page: 10,
+                sort: "date_desc",
+              },
+            },
+          );
+          return mapMgsResultsToActivity(
+            asArray<MgsHit>(result?.results),
+            queryStr,
             query.project_slug,
             this.opts.internalEmailDomains,
           );
@@ -2020,6 +2147,146 @@ function decodeHtmlEntities(s: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'");
+}
+
+// --- P2 (wpcom posts-text + mgs search) ---------------------------------
+//
+// Two activity-feed paths share these helpers:
+//
+//   - fetchP2Comments uses the existing wpcom posts-text shape (P2Post +
+//     P2PostComment from ./types.ts), plus the existing mapP2PostRaw /
+//     normalizeP2Site helpers (defined alongside the standalone
+//     fetchP2Posts method earlier in this file). Only the activity-event
+//     mapper is new.
+//   - fetchP2Mentions consumes the mgs/search response shape, which is
+//     net-new to this codebase.
+
+interface MgsHit {
+  type?: "post" | "page" | "comment";
+  title?: string;
+  post_title?: string;
+  url?: string;
+  post_url?: string;
+  date?: string;
+  author?: string;
+  blog_name?: string;
+  blog_id?: number;
+  post_id?: number;
+  comment_id?: number;
+  excerpt?: string;
+  score?: number;
+}
+
+interface MgsSearchResult {
+  results?: MgsHit[];
+}
+
+function p2PlainContent(s: string | undefined): string {
+  if (!s) return "";
+  // posts-text already returns plaintext, but mgs excerpts can carry
+  // entity-encoded characters from the indexed HTML. Decode + collapse
+  // the runaway whitespace we saw in probe output (\n\n\n\n\n…).
+  return decodeHtmlEntities(s).replace(/\s+/g, " ").trim();
+}
+
+function p2AuthorDisplay(author: P2PostAuthor): string {
+  return author.display_name?.trim() || author.username?.trim() || "P2";
+}
+
+export function mapP2PostsToActivity(
+  posts: P2Post[],
+  p2Domain: string,
+  projectSlug: string,
+  _internalDomains: readonly string[],
+): ActivityEvent[] {
+  const events: ActivityEvent[] = [];
+  for (const post of posts) {
+    if (post.date) {
+      events.push({
+        id: `p2:${p2Domain}:post:${post.id}`,
+        source: "p2",
+        kind: "p2-post",
+        timestamp: post.date,
+        actor: {
+          name: p2AuthorDisplay(post.author),
+          handle: post.author.username || undefined,
+          // P2 authors are all Automatticians; no external case to flag.
+          is_external: false,
+        },
+        title: truncateText(decodeHtmlEntities(post.title || "(untitled)"), 120),
+        excerpt: truncateText(p2PlainContent(post.excerpt || post.content_text), 240),
+        url: post.link,
+        project_match: {
+          project_slug: projectSlug,
+          matched_by: "p2_url",
+        },
+        is_mock: false,
+      });
+    }
+    for (const c of post.comments) {
+      if (!c.date) continue;
+      const body = p2PlainContent(c.content_text);
+      if (!body) continue;
+      events.push({
+        id: `p2:${p2Domain}:comment:${c.id}`,
+        source: "p2",
+        kind: "p2-comment",
+        timestamp: c.date,
+        actor: {
+          name: p2AuthorDisplay(c.author),
+          handle: c.author.username || undefined,
+          is_external: false,
+        },
+        title: truncateText(body, 120),
+        excerpt: body,
+        url: post.link,
+        project_match: {
+          project_slug: projectSlug,
+          matched_by: "p2_url",
+        },
+        is_mock: false,
+      });
+    }
+  }
+  return events;
+}
+
+export function mapMgsResultsToActivity(
+  hits: MgsHit[],
+  matchedQuery: string,
+  projectSlug: string,
+  _internalDomains: readonly string[],
+): ActivityEvent[] {
+  const out: ActivityEvent[] = [];
+  for (const h of hits) {
+    if (!h.date) continue;
+    const url = h.url ?? h.post_url;
+    if (!url) continue;
+    const postTitle = h.post_title ?? h.title ?? "P2 post";
+    const excerpt = p2PlainContent(h.excerpt);
+    const idTail = h.comment_id ?? h.post_id ?? `${h.blog_id}:${h.date}`;
+    out.push({
+      id: `p2-mention:${h.blog_id ?? "unknown"}:${idTail}`,
+      source: "p2",
+      kind: "p2-mention",
+      timestamp: h.date,
+      actor: h.author ? { name: h.author, is_external: false } : undefined,
+      // Lead with the host P2 so the row reads "Automattic Special Projects ·
+      // <post title>" — distinguishes a cross-P2 mention from a comment on
+      // the partner's own P2 at a glance.
+      title: truncateText(`${h.blog_name ?? "P2"} · ${postTitle}`, 140),
+      excerpt: excerpt
+        ? truncateText(excerpt, 240)
+        : `Mentions "${matchedQuery}"`,
+      url,
+      project_match: {
+        project_slug: projectSlug,
+        matched_by: "partner",
+      },
+      is_mock: false,
+    });
+  }
+  return out;
 }
 
 function truncateText(s: string, max: number): string {
