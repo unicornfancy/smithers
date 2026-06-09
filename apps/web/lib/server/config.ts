@@ -104,9 +104,19 @@ export interface SmithersConfig {
       interval_minutes?: number;
     };
     /**
-     * Fathom sync: warms the Fathom recordings cache so /calls + Recent
-     * Calls on /today show new meetings without opening the page.
+     * Transcription sync: warms the configured transcription provider's
+     * recordings cache (Fathom / Granola / …) so /calls + Recent Calls
+     * on /today show new meetings without opening the page.
+     *
+     * Renamed from `fathom_sync` 2026-06-09; the loader falls back to
+     * the old key when the new one isn't set so existing config.local.yaml
+     * files don't break on upgrade.
      */
+    transcription_sync?: {
+      enabled: boolean;
+      interval_minutes?: number;
+    };
+    /** @deprecated Use `transcription_sync`. Kept for backwards compat. */
     fathom_sync?: {
       enabled: boolean;
       interval_minutes?: number;
@@ -187,7 +197,7 @@ const DEFAULTS: SmithersConfig = {
   schedule: {
     daily_briefing: { enabled: false },
     ping_monitor: { enabled: false, interval_minutes: 15 },
-    fathom_sync: { enabled: false, interval_minutes: 60 },
+    transcription_sync: { enabled: false, interval_minutes: 60 },
     hive_mind_sync: { enabled: false, interval_minutes: 30 },
     team_roster_sync: {
       enabled: false,
@@ -340,14 +350,19 @@ function mergeWithDefaults(
           DEFAULTS.schedule?.ping_monitor?.interval_minutes ??
           15,
       },
-      fathom_sync: {
+      transcription_sync: {
+        // Prefer the new key; fall back to the deprecated fathom_sync
+        // so already-deployed config.local.yaml files don't lose their
+        // schedule on upgrade.
         enabled:
+          partial.schedule?.transcription_sync?.enabled ??
           partial.schedule?.fathom_sync?.enabled ??
-          DEFAULTS.schedule?.fathom_sync?.enabled ??
+          DEFAULTS.schedule?.transcription_sync?.enabled ??
           false,
         interval_minutes:
+          partial.schedule?.transcription_sync?.interval_minutes ??
           partial.schedule?.fathom_sync?.interval_minutes ??
-          DEFAULTS.schedule?.fathom_sync?.interval_minutes ??
+          DEFAULTS.schedule?.transcription_sync?.interval_minutes ??
           60,
       },
       hive_mind_sync: {

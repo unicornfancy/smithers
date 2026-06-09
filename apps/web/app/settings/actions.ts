@@ -158,12 +158,22 @@ export async function updateFollowUpAutomationAction(input: {
  */
 /**
  * Patch one of the interval-based background jobs in
- * `schedule.{ping_monitor,fathom_sync,hive_mind_sync}.{enabled,
- * interval_minutes}`. Schedule changes require a dev-server restart
- * to register the new timer.
+ * `schedule.{ping_monitor,transcription_sync,hive_mind_sync,team_roster_sync}.
+ * {enabled, interval_minutes}`. Schedule changes require a dev-server
+ * restart to register the new timer.
+ *
+ * `fathom_sync` is accepted as a legacy alias for `transcription_sync`
+ * — the loader already prefers the new key when both are present, and
+ * we don't migrate the old block on the fly to keep this action a pure
+ * write. Pass the new name from any new caller.
  */
 export async function updateIntervalJobAction(input: {
-  job: "ping_monitor" | "fathom_sync" | "hive_mind_sync" | "team_roster_sync";
+  job:
+    | "ping_monitor"
+    | "transcription_sync"
+    | "hive_mind_sync"
+    | "team_roster_sync"
+    | "fathom_sync";
   enabled?: boolean;
   interval_minutes?: number;
 }): Promise<{ ok: true } | { ok: false; reason: string }> {
@@ -174,8 +184,10 @@ export async function updateIntervalJobAction(input: {
     const scheduleBlock = isObject(next["schedule"])
       ? (next["schedule"] as Record<string, unknown>)
       : {};
-    const jobBlock = isObject(scheduleBlock[input.job])
-      ? (scheduleBlock[input.job] as Record<string, unknown>)
+    // Auto-migrate fathom_sync writes to the canonical name.
+    const targetKey = input.job === "fathom_sync" ? "transcription_sync" : input.job;
+    const jobBlock = isObject(scheduleBlock[targetKey])
+      ? (scheduleBlock[targetKey] as Record<string, unknown>)
       : {};
     if (input.enabled !== undefined) {
       jobBlock["enabled"] = Boolean(input.enabled);
@@ -187,7 +199,12 @@ export async function updateIntervalJobAction(input: {
       }
       jobBlock["interval_minutes"] = Math.round(n);
     }
-    scheduleBlock[input.job] = jobBlock;
+    scheduleBlock[targetKey] = jobBlock;
+    // If the caller passed the legacy fathom_sync name, also clear the
+    // old block so we don't end up with both keys diverging on disk.
+    if (input.job === "fathom_sync") {
+      delete scheduleBlock["fathom_sync"];
+    }
     next["schedule"] = scheduleBlock;
     await writeYamlAtomic(path, next);
     revalidatePath("/settings");

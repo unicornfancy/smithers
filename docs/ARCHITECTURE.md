@@ -66,9 +66,9 @@ graph TB
 - **`packages/vault`** is the only thing that touches the user's markdown files. It exposes typed read helpers (`readDailyNote`, `readDraft`, `listProjects`) and atomic write helpers. It owns the chokidar watcher and stable-identity reconciliation by UUID.
 - **`packages/mcp-client`** wraps every MCP we call. It has typed inputs/outputs, server-side caching with stale-while-revalidate, retry-with-backoff for ContextA8C flakiness, and per-source isolation so one failing provider doesn't take everything down.
 - **`packages/agents`** is the single entry point for AI work. It owns prompt templates (lives next to it in `prompts/`), composes context from vault + MCP outputs, and runs them via the Anthropic SDK or `claude` CLI. `allowedTools` is constrained per agent.
-- **`packages/transcription`** is an adapter pattern: `TranscriptionAdapter { listNewRecordings, getTranscript, isHealthy }`. Fathom, Granola, and Manual paste are fully implemented; Whisper and Gemini are scaffolded stubs.
+- **`packages/transcription`** is an adapter pattern: `TranscriptionAdapter { listRecordings, fetchTranscript, isHealthy }`. Fathom, Granola, and Manual paste are fully implemented; Whisper and Gemini are scaffolded stubs.
 - **`packages/ui`** holds shadcn components shared across apps (currently only `apps/web`).
-- **`scripts/`** contains standalone Node scripts launched by `launchd` (macOS) for scheduled work — briefing, ping monitor, Fathom sync, Hive Mind sync. Cross-platform fallback: `pnpm jobs:run-once <name>`.
+- **`scripts/`** contains standalone Node scripts launched by `launchd` (macOS) for scheduled work — briefing, ping monitor, transcription sync, Hive Mind sync. Cross-platform fallback: `pnpm jobs:run-once <name>`.
 
 ## Data flow
 
@@ -101,7 +101,7 @@ Run by macOS `launchd` (definitions checked into `scripts/launchd/`):
 
 - **morning-briefing** — Mon–Fri 7:30am local: builds /today, generates Monday weekly-update draft.
 - **ping-monitor** — every 30 min during workday hours: scans Slack/Zendesk for new pings to surface.
-- **fathom-sync** — every 10 min: pulls new recordings/transcripts.
+- **transcription-sync** — every 10 min: pulls new recordings/transcripts from the configured provider (Fathom by default).
 - **hive-mind-sync** — every 4h (configurable): `git pull` on Hive Mind clone.
 
 When the web app is running, an in-process `chokidar` watcher handles live vault events.

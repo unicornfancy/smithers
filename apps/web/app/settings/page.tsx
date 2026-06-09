@@ -107,14 +107,15 @@ export default async function SettingsPage() {
               }}
             />
             <IntervalJobCard
-              job="fathom_sync"
-              title="Fathom sync"
-              description="Warms the recordings cache so /calls and Recent Calls on /today show new meetings without opening the page."
-              runNowPath="/api/jobs/fathom-sync"
+              job="transcription_sync"
+              title="Transcription sync"
+              description="Warms the configured provider's recordings cache so /calls and Recent Calls on /today show new meetings without opening the page."
+              runNowPath="/api/jobs/transcription-sync"
               initial={{
-                enabled: cfg.schedule?.fathom_sync?.enabled ?? false,
+                enabled:
+                  cfg.schedule?.transcription_sync?.enabled ?? false,
                 interval_minutes:
-                  cfg.schedule?.fathom_sync?.interval_minutes ?? 60,
+                  cfg.schedule?.transcription_sync?.interval_minutes ?? 60,
               }}
             />
             <IntervalJobCard

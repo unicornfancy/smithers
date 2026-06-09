@@ -74,7 +74,7 @@ working_rhythm:
   workdays: ["mon", "tue", "wed", "thu", "fri"]
   briefing_time: "07:30"
   ping_monitor_interval_minutes: 30
-  fathom_sync_interval_minutes: 10
+  transcription_sync_interval_minutes: 10
 
 stall_thresholds:
   follow_up_nudge_days: 10

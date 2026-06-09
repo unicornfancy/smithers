@@ -8,10 +8,12 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * Legacy alias. Forwards to the renamed transcription-sync job so
- * already-installed crontabs / launchd plists (`com.smithers.fathom-sync`)
- * keep firing after the 2026-06-09 rename. Prefer the new path
- * `/api/jobs/transcription-sync` for anything new.
+ * Manual + scheduled trigger for the transcription-sync job. Warms the
+ * configured provider's recordings cache so /calls and /today's Recent
+ * Calls panel show new meetings without an explicit fetch.
+ *
+ * The legacy `/api/jobs/fathom-sync` endpoint forwards here for
+ * compatibility with already-installed crontabs / launchd plists.
  */
 export async function POST() {
   const result = await runTranscriptionSyncJob();

@@ -5,10 +5,10 @@
  * webpack only compiles its node:* imports for the Node runtime.
  *
  * Registers in-process background jobs when config opts in:
- *   - daily_briefing  → fires once per day at HH:MM (scheduleDaily)
- *   - ping_monitor    → fires every N minutes (scheduleInterval)
- *   - fathom_sync     → fires every N minutes
- *   - hive_mind_sync  → fires every N minutes
+ *   - daily_briefing      → fires once per day at HH:MM (scheduleDaily)
+ *   - ping_monitor        → fires every N minutes (scheduleInterval)
+ *   - transcription_sync  → fires every N minutes
+ *   - hive_mind_sync      → fires every N minutes
  *
  * Schedule changes via /settings require a dev-server restart to
  * take effect — timers are computed once on register.
@@ -17,10 +17,10 @@
 import { loadConfig } from "@/lib/server/config";
 import { runDailyBriefing } from "@/lib/server/briefing";
 import {
-  runFathomSyncJob,
   runHiveMindSyncJob,
   runPingMonitorJob,
   runTeamRosterSyncJob,
+  runTranscriptionSyncJob,
   type JobResult,
 } from "@/lib/server/scheduler-jobs";
 
@@ -43,10 +43,11 @@ export async function setup(): Promise<void> {
     run: runPingMonitorJob,
   });
   registerIntervalJob({
-    label: "fathom sync",
-    enabled: cfg.schedule?.fathom_sync?.enabled,
-    intervalMinutes: cfg.schedule?.fathom_sync?.interval_minutes ?? 60,
-    run: runFathomSyncJob,
+    label: "transcription sync",
+    enabled: cfg.schedule?.transcription_sync?.enabled,
+    intervalMinutes:
+      cfg.schedule?.transcription_sync?.interval_minutes ?? 60,
+    run: runTranscriptionSyncJob,
   });
   registerIntervalJob({
     label: "hive mind sync",

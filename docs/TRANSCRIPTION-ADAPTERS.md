@@ -62,7 +62,7 @@ When implementing, replace the body of `apps/web/lib/server/transcription/gemini
 - **`/setup → API keys`** has a `GRANOLA_API_KEY` row alongside Anthropic + Linear.
 - **`/settings → Workflow → Transcription provider`** picks which adapter is active. Stub providers are visibly tagged so users don't pick one expecting it to work.
 - **`/api/transcription/health`** runs the active adapter's `isHealthy()` — used by the "Test current provider" button on the settings card.
-- **Background job** `fathom_sync` was renamed in copy only — the job key + cron path stay so existing crontabs / launchd plists keep firing. Worth a future rename to `transcription_sync` once the dust settles.
+- **Background job** renamed to `transcription_sync` (config key + API path + launchd plist template). Legacy aliases stay live so already-installed cron entries keep firing: `/api/jobs/fathom-sync` forwards to the new endpoint, and the config loader prefers `schedule.transcription_sync` but falls back to `schedule.fathom_sync` when only the old key is present.
 
 ## Migration notes (for the historical record)
 

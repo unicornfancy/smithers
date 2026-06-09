@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd plist for the Smithers Transcription Sync.
+
+  Hits POST http://localhost:3000/api/jobs/transcription-sync on the
+  configured interval. Fires whether or not `pnpm dev` is running — when
+  dev is down the curl will fail silently (logged to
+  /tmp/smithers-transcription-sync.log).
+
+  Renamed from `fathom-sync` 2026-06-09 — the previous name still works
+  (the /api/jobs/fathom-sync endpoint forwards), but use the new label
+  for any fresh install.
+
+  To install:
+    1. cp this file to ~/Library/LaunchAgents/com.smithers.transcription-sync.plist
+       (drop the .example suffix)
+    2. Edit StartInterval below to match your /settings interval (in seconds).
+    3. launchctl load ~/Library/LaunchAgents/com.smithers.transcription-sync.plist
+
+  To uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.smithers.transcription-sync.plist
+    rm ~/Library/LaunchAgents/com.smithers.transcription-sync.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.smithers.transcription-sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/curl</string>
+        <string>-sS</string>
+        <string>-X</string>
+        <string>POST</string>
+        <string>--max-time</string>
+        <string>60</string>
+        <string>http://localhost:3000/api/jobs/transcription-sync</string>
+    </array>
+
+    <!-- Seconds between fires. 3600 = 1 hour. Match your /settings interval. -->
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/smithers-transcription-sync.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/smithers-transcription-sync.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

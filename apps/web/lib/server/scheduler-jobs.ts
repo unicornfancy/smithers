@@ -68,11 +68,13 @@ export async function runPingMonitorJob(): Promise<JobResult> {
 }
 
 // ---------------------------------------------------------------------------
-// Fathom sync — warms the recordings cache so /calls + /today's Recent Calls
-// surface new meetings without a user-triggered fetch.
+// Transcription sync — warms the configured provider's recordings cache so
+// /calls + /today's Recent Calls surface new meetings without a
+// user-triggered fetch. Originally called "Fathom sync" — renamed
+// 2026-06-09 to reflect that the underlying provider is pluggable.
 // ---------------------------------------------------------------------------
 
-export async function runFathomSyncJob(): Promise<JobResult> {
+export async function runTranscriptionSyncJob(): Promise<JobResult> {
   const started = Date.now();
   try {
     const transcription = await getTranscriptionAdapter();

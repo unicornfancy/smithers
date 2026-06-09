@@ -14,7 +14,7 @@ Names:
 
 - `morning-briefing` — Mon–Fri 7:30am local
 - `ping-monitor` — every 30 min during workday hours
-- `fathom-sync` — every 10 min
+- `transcription-sync` — every 10 min (formerly `fathom-sync`; old name still accepted)
 - `hive-mind-sync` — every 4 hours (configurable)
 
 ## One-shots

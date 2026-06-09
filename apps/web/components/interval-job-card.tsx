@@ -11,9 +11,11 @@ import { cn } from "@/lib/utils";
 
 type JobKey =
   | "ping_monitor"
-  | "fathom_sync"
+  | "transcription_sync"
   | "hive_mind_sync"
-  | "team_roster_sync";
+  | "team_roster_sync"
+  /** Legacy alias for transcription_sync — kept so the type accepts old callers. */
+  | "fathom_sync";
 
 interface Props {
   job: JobKey;
