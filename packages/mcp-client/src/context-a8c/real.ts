@@ -639,35 +639,52 @@ export class RealContextA8CTransport implements ContextA8CClient {
   private async fetchP2Comments(
     query: ProjectActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>> {
-    const site = normalizeP2Site(query.refs.p2_url!);
+    const rawUrl = query.refs.p2_url!;
+    const site = normalizeP2Site(rawUrl);
     if (!site) {
       return failedResult(
         "context_a8c.p2",
         "invalid",
-        `Bad p2_url "${query.refs.p2_url}"`,
+        `Bad p2_url "${rawUrl}"`,
       );
     }
+    // If p2_url points at a specific post (vs a bare host), target that
+    // single post by slug. The schema says "When slugs is provided, ids
+    // empty, per_page/page/before/after are ignored" — so the post + its
+    // comments come back regardless of when the post was published, and
+    // we don't pull in every recent post on the P2 site (which was the
+    // primary noise source for partners whose P2 covers multiple
+    // projects).
+    const targetedSlug = extractP2PostSlug(rawUrl);
     return runIsolated(
       { cache: this.cache, health: this.health },
       {
         source: "context_a8c.p2",
-        cacheKey: `real:context_a8c:project_activity:p2_posts:${site}`,
+        cacheKey: targetedSlug
+          ? `real:context_a8c:project_activity:p2_post_comments:${site}:${targetedSlug}`
+          : `real:context_a8c:project_activity:p2_posts:${site}`,
         ttl: ACTIVITY_TTL,
         fetcher: async () => {
-          const after = new Date();
-          after.setUTCDate(after.getUTCDate() - 14);
+          const params: Record<string, unknown> = {
+            site,
+            include_comments: true,
+            max_comments_per_post: 50,
+          };
+          if (targetedSlug) {
+            params.slugs = [targetedSlug];
+          } else {
+            const after = new Date();
+            after.setUTCDate(after.getUTCDate() - 14);
+            params.per_page = 10;
+            params.after = after.toISOString();
+            params.max_comments_per_post = 20;
+          }
           const result = await this.mcp.callJsonTool<P2PostsTextEnvelope>(
             "context-a8c-execute-tool",
             {
               provider: "wpcom",
               tool: "posts-text",
-              params: {
-                site,
-                per_page: 10,
-                after: after.toISOString(),
-                include_comments: true,
-                max_comments_per_post: 20,
-              },
+              params,
             },
           );
           const posts = (result?.posts ?? [])
@@ -678,6 +695,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
             site,
             query.project_slug,
             this.opts.internalEmailDomains,
+            { omitPostEvents: Boolean(targetedSlug) },
           );
         },
       },
@@ -2236,6 +2254,39 @@ function stripUrlNoise(s: string): string {
   return s.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
 }
 
+/**
+ * Pull the post slug out of a WordPress P2 URL like
+ *   https://wpfoo.wordpress.com/2026/05/15/the-update/
+ * → `"the-update"`. Returns null when no slug-shaped trailing segment
+ * is present (e.g. the user set p2_url to a bare host), in which case
+ * the caller falls back to a date-windowed scan of the whole P2.
+ *
+ * P2 permalinks always end in `/year/month/day/post-slug/`. We grab
+ * the final non-empty path segment after the date, ignoring trailing
+ * slashes and `?p=` style ID links.
+ */
+function extractP2PostSlug(rawUrl: string): string | null {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+  try {
+    const u = new URL(
+      trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    );
+    const segments = u.pathname.split("/").filter(Boolean);
+    if (segments.length === 0) return null;
+    const last = segments[segments.length - 1]!;
+    // Date-only paths ("2026/05/15/") with a trailing date segment are
+    // not posts — bail. P2 slugs are kebab-case alphanum-with-hyphen.
+    if (/^\d+$/.test(last)) return null;
+    // Require at least one alpha character so we don't match random
+    // numeric IDs as slugs.
+    if (!/[a-z]/i.test(last)) return null;
+    return last.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
 function p2PlainContent(s: string | undefined): string {
   if (!s) return "";
   // posts-text already returns plaintext, but mgs excerpts can carry
@@ -2253,10 +2304,21 @@ export function mapP2PostsToActivity(
   p2Domain: string,
   projectSlug: string,
   _internalDomains: readonly string[],
+  opts?: {
+    /**
+     * Skip emitting `p2-post` events for the posts themselves. Set when
+     * we're targeting a known specific post URL — the post is already
+     * known to the user (it's pinned via p2_url); rendering it on every
+     * fetch would be a stale row. Only the *new comments* on the post
+     * carry signal.
+     */
+    omitPostEvents?: boolean;
+  },
 ): ActivityEvent[] {
   const events: ActivityEvent[] = [];
+  const omitPostEvents = opts?.omitPostEvents ?? false;
   for (const post of posts) {
-    if (post.date) {
+    if (post.date && !omitPostEvents) {
       events.push({
         id: `p2:${p2Domain}:post:${post.id}`,
         source: "p2",
