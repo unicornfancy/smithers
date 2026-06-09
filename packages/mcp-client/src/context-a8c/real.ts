@@ -701,19 +701,28 @@ export class RealContextA8CTransport implements ContextA8CClient {
   private async fetchP2Mentions(
     query: ProjectActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>> {
-    const site = normalizeP2Site(query.refs.p2_url!);
-    if (!site) {
+    // Use the raw p2_url as the search needle — this is the project's
+    // specific P2 post URL ("…/2026/05/15/foo/"), not the partner's host.
+    // mgs/search scores documents that contain the URL substring, so
+    // we get tight matches to actual cross-posts of this exact thread
+    // rather than every post that mentions the partner's domain.
+    //
+    // If a user sets a bare host as p2_url, the search degrades to
+    // host-string matching — broader, but their choice.
+    const postUrl = query.refs.p2_url!.trim();
+    if (!postUrl) {
       return failedResult(
         "context_a8c.p2",
         "invalid",
-        `Bad p2_url "${query.refs.p2_url}"`,
+        `Empty p2_url`,
       );
     }
+    const site = normalizeP2Site(postUrl);
     return runIsolated(
       { cache: this.cache, health: this.health },
       {
         source: "context_a8c.p2",
-        cacheKey: `real:context_a8c:project_activity:p2_crossposts:${site}`,
+        cacheKey: `real:context_a8c:project_activity:p2_crossposts:${postUrl}`,
         ttl: ACTIVITY_TTL,
         fetcher: async () => {
           const dateFrom = new Date();
@@ -724,7 +733,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
               provider: "mgs",
               tool: "search",
               params: {
-                query: site,
+                query: postUrl,
                 // Posts likely carry the cross-post URL; comments occasionally
                 // do too. Leave content_type unset so both surface.
                 date_from: dateFrom.toISOString().slice(0, 10),
@@ -733,15 +742,36 @@ export class RealContextA8CTransport implements ContextA8CClient {
               },
             },
           );
-          // Drop hits originating on the partner's own P2 — those are
-          // already covered by fetchP2Comments and would otherwise
-          // double-render here.
-          const hits = asArray<MgsHit>(result?.results).filter(
-            (h) => !h.url || !h.url.includes(site),
-          );
+          // mgs/search tokenizes the query (splits on /, ., etc.) so the
+          // raw response still includes loose keyword matches. Filter
+          // post-hoc to only keep hits whose own URL or excerpt
+          // literally references the project's p2_url — that's the
+          // actual cross-post signal.
+          //
+          // Compare against a normalized form (no trailing slash, no
+          // scheme) so http vs https or a trailing / doesn't lose
+          // legitimate matches.
+          const needle = stripUrlNoise(postUrl);
+          const hits = asArray<MgsHit>(result?.results).filter((h) => {
+            // Drop hits originating on the partner's own P2 — already
+            // covered by fetchP2Comments.
+            if (site && h.url?.includes(site) && h.url === postUrl) {
+              return false;
+            }
+            const corpus = [
+              h.url ?? "",
+              h.post_url ?? "",
+              h.excerpt ?? "",
+              h.title ?? "",
+              h.post_title ?? "",
+            ]
+              .map(stripUrlNoise)
+              .join(" ");
+            return needle.length > 0 && corpus.includes(needle);
+          });
           return mapMgsResultsToActivity(
             hits,
-            site,
+            postUrl,
             query.project_slug,
             this.opts.internalEmailDomains,
           );
@@ -2194,6 +2224,16 @@ interface MgsHit {
 
 interface MgsSearchResult {
   results?: MgsHit[];
+}
+
+/**
+ * Strip scheme + trailing slash from a URL-ish string for substring
+ * comparison. `https://foo.com/bar/` and `http://foo.com/bar` both
+ * normalize to `foo.com/bar`, so a literal-include check survives
+ * http/https drift and trailing slashes.
+ */
+function stripUrlNoise(s: string): string {
+  return s.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
 }
 
 function p2PlainContent(s: string | undefined): string {
