@@ -299,7 +299,7 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
           recording.source_url,
         );
         toast.success(
-          `Added ${r.added} follow-up${r.added === 1 ? "" : "s"} to Follow-ups.md`,
+          `Added ${r.added} follow-up${r.added === 1 ? "" : "s"}`,
         );
         setData((prev) =>
           prev
@@ -334,7 +334,7 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
         );
         if (r.added > 0) {
           toast.success(
-            `Added ${r.added} decision${r.added === 1 ? "" : "s"} to the project body`,
+            `Added ${r.added} decision${r.added === 1 ? "" : "s"} to the project log`,
           );
           setDecisionsAdded(true);
         } else {
@@ -814,7 +814,7 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
                       ) : (
                         <CheckCircle2 className="size-3" />
                       )}
-                      Add {selectedFollowUps.size} to Follow-ups.md
+                      Add {selectedFollowUps.size} to follow-ups
                     </Button>
                   }
                 >
@@ -866,7 +866,7 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
                       )}
                       {decisionsAdded
                         ? "Added"
-                        : `Add ${data.decisions.length} to project body`}
+                        : `Add ${data.decisions.length} to project log`}
                     </Button>
                   }
                 >

@@ -1117,8 +1117,15 @@ export async function acceptCallActionItemsAction(
 
 /**
  * Append a batch of call-derived decisions to the project body's
- * `## Decisions` section as a per-call sub-block. Creates the section
- * if it doesn't exist yet.
+ * `## Decisions` section as a per-call sub-block AND mirror them as a
+ * single entry in the project log (notes.md). The body section keeps
+ * a durable record indexed by call; the log entry is what shows on
+ * the workbench's Project Log panel — without that second write,
+ * decisions are invisible on the page because the panel reads only
+ * from notes.md + Linear updates, not from the body.
+ *
+ * Vault-only projects (no HM) get the body write only — they don't
+ * have a notes.md surface yet.
  */
 export async function acceptCallDecisionsAction(
   slug: string,
@@ -1130,21 +1137,65 @@ export async function acceptCallDecisionsAction(
   if (!slug) throw new Error("slug is required");
   if (decisions.length === 0) return { added: 0 };
   const vault = await getVault();
-  const result = await vault.appendDecisionsToProject(slug, {
-    call_title: callTitle,
-    call_date: callDate,
-    call_url: callUrl,
-    decisions,
-  });
+  const project = await vault.readProject(slug);
+  if (!project) throw new Error(`Project "${slug}" not found`);
+
+  let bodyAdded = 0;
+  // Vault-side body write is HM-incompatible (the helper throws for
+  // HM-kind projects). Only run it for vault-source projects.
+  if (project.source.kind !== "hive-mind") {
+    try {
+      const result = await vault.appendDecisionsToProject(slug, {
+        call_title: callTitle,
+        call_date: callDate,
+        call_url: callUrl,
+        decisions,
+      });
+      if (result.changed) bodyAdded = decisions.length;
+    } catch {
+      // Non-fatal — the project-log mirror below still lets the user
+      // see the decisions on the workbench.
+    }
+  }
+
+  // Mirror to the project log via HM notes.md (the panel's data
+  // source). One entry summarising all decisions from the call so the
+  // log isn't spammed with N rows per call.
+  if (project.hive_mind_partner_slug) {
+    const hmPartner = project.hive_mind_partner_slug;
+    const hmProject = project.hive_mind_project_slug ?? project.slug;
+    const date = (callDate ?? "").slice(0, 10) || new Date().toISOString().slice(0, 10);
+    const heading = callUrl
+      ? `Decisions from [${callTitle}](${callUrl})`
+      : `Decisions from ${callTitle}`;
+    const body = decisions
+      .map((d) => {
+        const main = `- ${d.text.trim()}`;
+        return d.context?.trim() ? `${main}\n  *${d.context.trim()}*` : main;
+      })
+      .join("\n");
+    try {
+      const mcp = await getMcpClient();
+      await mcp.hiveMind.addProjectNote(hmPartner, hmProject, date, heading, body);
+      await mcp.hiveMind.commit(
+        `notes: decisions from "${callTitle}" for ${hmPartner}/${hmProject}`,
+      );
+    } catch {
+      // Non-fatal — body section is still the durable record.
+    }
+  }
+
   revalidatePath(`/projects/${slug}`);
-  return { added: result.changed ? decisions.length : 0 };
+  return { added: Math.max(bodyAdded, decisions.length) };
 }
 
 /**
  * Append a batch of call-derived follow-ups to Follow-ups.md. Project
  * column is taken from the workbench's project name so the matcher
  * picks them up. Source column links back to the recording when a
- * URL was passed.
+ * URL was passed. Dual-writes to HM follow-ups.md when the project
+ * is HM-connected so the workbench (which prefers HM follow-ups when
+ * connected) actually surfaces them.
  */
 export async function acceptCallFollowUpsAction(
   slug: string,
@@ -1178,6 +1229,28 @@ export async function acceptCallFollowUpsAction(
     }
   }
   revalidatePath(`/projects/${slug}`);
+
+  // Mirror the vault Follow-ups.md state to HM follow-ups.md so the
+  // workbench (which reads HM when connected) reflects the new rows.
+  // Mirrors createLinkedFollowUpAction's dual-write path.
+  if (project.hive_mind_partner_slug) {
+    const hmPartner = project.hive_mind_partner_slug;
+    const hmProject = project.hive_mind_project_slug ?? project.slug;
+    try {
+      const mcp = await getMcpClient();
+      await syncFollowUpsToHiveMind(
+        vault,
+        mcp,
+        slug,
+        project.name,
+        hmPartner,
+        hmProject,
+      );
+    } catch {
+      // Non-fatal — vault is the source of truth.
+    }
+  }
+
   return { added };
 }
 
