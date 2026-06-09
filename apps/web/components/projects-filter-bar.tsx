@@ -55,6 +55,20 @@ export function ProjectsFilterBar({
       if (v === null || v === "") params.delete(k);
       else params.set(k, v);
     }
+    // Persist sort choice in a cookie so /projects opens on the last
+    // selection on the next visit. URL still wins when present
+    // (shareable links carry the explicit sort).
+    if ("sort" in updates && typeof document !== "undefined") {
+      const next = updates.sort;
+      const year = 60 * 60 * 24 * 365;
+      if (next) {
+        document.cookie = `smithers_projects_sort=${next}; Max-Age=${year}; Path=/; SameSite=Lax`;
+      } else {
+        // null/empty → reset to default; clear the cookie so the
+        // server-side fallback returns to "name."
+        document.cookie = `smithers_projects_sort=; Max-Age=0; Path=/; SameSite=Lax`;
+      }
+    }
     const qs = params.toString();
     startTransition(() => {
       router.push(qs ? `/projects?${qs}` : "/projects");

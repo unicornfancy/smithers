@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 
 import type { ProjectStatus } from "@smithers/vault";
 
@@ -50,7 +51,19 @@ export default async function ProjectsPage({
 }) {
   const { status: filterStatus, archived, sort: sortParam } = await searchParams;
   const showArchived = archived === "1";
-  const sort: ProjectsSortKey = isSortKey(sortParam) ? sortParam : "name";
+
+  // Sort persistence: URL ?sort= wins (shareable links), then the
+  // cookie written on the last selection, then the "name" default.
+  // The cookie is written client-side by ProjectsFilterBar whenever
+  // the user changes the dropdown.
+  let sort: ProjectsSortKey = "name";
+  if (isSortKey(sortParam)) {
+    sort = sortParam;
+  } else {
+    const cookieStore = await cookies();
+    const cookieSort = cookieStore.get("smithers_projects_sort")?.value;
+    if (isSortKey(cookieSort)) sort = cookieSort;
+  }
 
   const vault = await getVault();
   const status = vault.status();
