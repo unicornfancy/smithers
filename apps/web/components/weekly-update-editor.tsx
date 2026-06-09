@@ -348,10 +348,24 @@ function FactsPanel({ facts }: { facts: WeeklyFacts | null }) {
                     {p.recentDrafts.length === 1 ? "" : "s"}
                   </li>
                 ) : null}
+                {p.myZendeskReplies.length > 0 ? (
+                  <li>
+                    {p.myZendeskReplies.length} my Zendesk repl
+                    {p.myZendeskReplies.length === 1 ? "y" : "ies"}
+                  </li>
+                ) : null}
+                {p.openTasks.length > 0 ? (
+                  <li>
+                    {p.openTasks.length} open task
+                    {p.openTasks.length === 1 ? "" : "s"}
+                  </li>
+                ) : null}
                 {p.events.length === 0 &&
                 p.linearUpdates.length === 0 &&
                 p.recentCalls.length === 0 &&
-                p.recentDrafts.length === 0 ? (
+                p.recentDrafts.length === 0 &&
+                p.myZendeskReplies.length === 0 &&
+                p.openTasks.length === 0 ? (
                   <li className="italic">no activity this week</li>
                 ) : null}
               </ul>

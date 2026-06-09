@@ -65,6 +65,13 @@ export async function generateWeeklyUpdateAction(
     drafts: p.recentDrafts.map((d) => ({
       title: d.title || d.draft_id,
     })),
+    my_zendesk_replies: p.myZendeskReplies,
+    open_tasks: p.openTasks.map((t) => ({
+      text: t.text,
+      section: t.section,
+      priority: t.priority,
+      due_date: t.due_date,
+    })),
   }));
 
   try {

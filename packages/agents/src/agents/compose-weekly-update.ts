@@ -25,6 +25,31 @@ export interface WeeklyUpdateProjectFacts {
   calls: Array<{ title: string; date: string; summary?: string }>;
   /** Drafts touched during the week (title + channel). */
   drafts: Array<{ title: string; channel?: string }>;
+  /**
+   * Zendesk comments authored by the user (i.e. outgoing replies to the
+   * partner) during the week. Load-bearing signal for "did this project
+   * move last week" — when the TAM replies, the project is alive. The
+   * caller filters activity events to internal-actor zendesk-comment
+   * events, ideally matched against identity.email.
+   */
+  my_zendesk_replies: Array<{
+    date: string;
+    ticket_id?: string;
+    subject?: string;
+    excerpt?: string;
+  }>;
+  /**
+   * Open project tasks parsed from `## Open Items` checkboxes in the
+   * project body. Drives the "This Week" section — what's queued.
+   * Capped upstream so the prompt doesn't balloon for long backlog
+   * projects.
+   */
+  open_tasks: Array<{
+    text: string;
+    section?: string;
+    priority?: "high" | "medium" | "low";
+    due_date?: string;
+  }>;
 }
 
 export interface WeeklyUpdateInput {
@@ -90,6 +115,11 @@ Quality rules:
 - Keep "Meetings/Other" terse: comma-separated list of attended meetings + standing items.
 - Do NOT include action items the user owns privately — those live in their personal queue.
 - Do NOT include partner-confidential decisions teammates don't need to see.
+
+Signal weighting for Last Week vs This Week:
+- "Last Week" content is what actually moved. The strongest signal is "My Zendesk replies" (per-project) — those are outbound replies the user sent to the partner, which is direct evidence of project movement. Treat a week with multiple replies as an active project; treat one with no replies + no Linear updates + no calls as a quiet week and either omit the project or note "steady-state, no movement."
+- "This Week" content is forward-looking and should be seeded from "Open tasks" (per-project) — these are the user's queued items for the project. Pick the 1-2 most consequential (typically the highest-priority or earliest-due) for each project's This Week bullet. Skip housekeeping tasks ("file ticket", "update spreadsheet").
+- Don't list every open task verbatim — synthesize into a 1-bullet plan per project.
 
 Always return your output as JSON matching the requested schema. No text outside the JSON.`;
 
@@ -183,6 +213,36 @@ function renderUserPrompt(input: WeeklyUpdateInput): string {
       for (const d of p.drafts) {
         lines.push(`  - ${d.title}${d.channel ? ` (${d.channel})` : ""}`);
       }
+    }
+    if (p.my_zendesk_replies.length > 0) {
+      lines.push(
+        `- My Zendesk replies this week (load-bearing signal for "did this move"):`,
+      );
+      for (const r of p.my_zendesk_replies) {
+        const parts: string[] = [r.date];
+        if (r.ticket_id) parts.push(`#${r.ticket_id}`);
+        if (r.subject) parts.push(r.subject);
+        const head = parts.join(" · ");
+        lines.push(
+          `  - ${head}${r.excerpt ? `: ${truncate(r.excerpt, 200)}` : ""}`,
+        );
+      }
+    } else {
+      lines.push(`- My Zendesk replies this week: none`);
+    }
+    if (p.open_tasks.length > 0) {
+      lines.push(`- Open tasks (queue for This Week):`);
+      for (const t of p.open_tasks) {
+        const tag: string[] = [];
+        if (t.priority) tag.push(`[${t.priority}]`);
+        if (t.due_date) tag.push(`[due ${t.due_date}]`);
+        if (t.section) tag.push(`(${t.section})`);
+        lines.push(
+          `  - ${t.text}${tag.length ? ` ${tag.join(" ")}` : ""}`,
+        );
+      }
+    } else {
+      lines.push(`- Open tasks: none`);
     }
   }
 

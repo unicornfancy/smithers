@@ -4,8 +4,10 @@ import type {
   ActivityEvent,
   LinearProjectUpdate,
 } from "@smithers/mcp-client";
-import type { Draft, Project, RecentCallSlice } from "@smithers/vault";
+import type { Draft, Project, ProjectTask, RecentCallSlice } from "@smithers/vault";
+import { parseProjectTasks, splitTasks } from "@smithers/vault";
 
+import { loadConfig } from "./config";
 import { getMcpClient } from "./mcp";
 import { getVault } from "./vault";
 
@@ -30,6 +32,24 @@ export interface ProjectFacts {
   recentCalls: RecentCallSlice[];
   /** Drafts touched during the week (vault Drafts/), newest first. */
   recentDrafts: Draft[];
+  /**
+   * Outbound Zendesk replies the user (identity.email) sent on this
+   * project during the week. Filtered from `events` so the agent
+   * doesn't have to re-derive the signal from event_lines. Newest
+   * first; capped upstream.
+   */
+  myZendeskReplies: Array<{
+    date: string;
+    ticket_id?: string;
+    subject?: string;
+    excerpt?: string;
+  }>;
+  /**
+   * Currently-open tasks parsed from the project body's checkboxes.
+   * Used by the weekly-update agent to seed the This Week section.
+   * Capped at a sane number so long backlogs don't blow up the prompt.
+   */
+  openTasks: ProjectTask[];
 }
 
 export interface WeeklyFacts {
@@ -113,6 +133,9 @@ export async function collectWeeklyFacts(
 
   const vault = await getVault();
   const mcp = await getMcpClient();
+  const cfg = await loadConfig();
+  const selfEmail = (cfg.identity.email ?? "").trim().toLowerCase();
+  const selfName = (cfg.identity.name ?? "").trim().toLowerCase();
   const allProjects = await vault.listProjects().catch(() => []);
   const inScope = allProjects.filter(
     (p) =>
@@ -151,6 +174,17 @@ export async function collectWeeklyFacts(
       const ts = d.modified_at;
       return ts && ts >= sinceIso && ts < untilIso;
     });
+    const myZendeskReplies = filterMyZendeskReplies(events, selfEmail, selfName);
+    // Read the body fresh — project.body isn't on the listProjects shape.
+    // readProjectDetail is the canonical way to pull the body for parsing.
+    const detail = await vault.readProjectDetail(project.slug).catch(() => null);
+    const openTasks = detail
+      ? (() => {
+          const tasks = parseProjectTasks(detail.body);
+          const { open } = splitTasks(tasks);
+          return open.slice(0, 12);
+        })()
+      : [];
     projectsFacts.push({
       slug: project.slug,
       name: project.name,
@@ -160,6 +194,8 @@ export async function collectWeeklyFacts(
       linearUpdates,
       recentCalls,
       recentDrafts,
+      myZendeskReplies,
+      openTasks,
     });
   }
 
@@ -169,6 +205,48 @@ export async function collectWeeklyFacts(
     week_end: weekEnd,
     projects: projectsFacts,
   };
+}
+
+/**
+ * Pull outbound zendesk replies the user authored from a week's
+ * activity events. Matching is best-effort — zendesk-comment events
+ * carry actor email in handle when the comment originated via the
+ * email channel and actor.name otherwise. Match either way:
+ *
+ *   - actor.handle === identity.email
+ *   - actor.name lowercased === identity.name lowercased
+ *
+ * Falls back to "any internal actor on a zendesk-comment" if neither
+ * identity field is set so the path still produces signal in unconfigured
+ * dev setups (matches the previous "all internal" weak filter).
+ */
+function filterMyZendeskReplies(
+  events: ActivityEvent[],
+  selfEmail: string,
+  selfName: string,
+): Array<{ date: string; ticket_id?: string; subject?: string; excerpt?: string }> {
+  const matches = events.filter((e) => {
+    if (e.source !== "zendesk") return false;
+    if (e.kind !== "zendesk-comment") return false;
+    if (e.actor?.is_external) return false;
+    const handle = e.actor?.handle?.toLowerCase() ?? "";
+    const name = e.actor?.name?.toLowerCase() ?? "";
+    if (selfEmail && handle === selfEmail) return true;
+    if (selfName && name === selfName) return true;
+    // No identity configured → fall back to "any internal actor"
+    return !selfEmail && !selfName;
+  });
+  return matches.slice(0, 8).map((e) => {
+    const ticketId = e.id.startsWith("zendesk:")
+      ? e.id.split(":")[1]
+      : undefined;
+    return {
+      date: e.timestamp.slice(0, 10),
+      ticket_id: ticketId,
+      subject: e.title,
+      excerpt: e.excerpt,
+    };
+  });
 }
 
 async function fetchActivity(
