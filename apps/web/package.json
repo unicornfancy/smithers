@@ -19,6 +19,7 @@
     "@radix-ui/react-tooltip": "^1.1.6",
     "@smithers/agents": "workspace:*",
     "@smithers/mcp-client": "workspace:*",
+    "@smithers/transcription": "workspace:*",
     "@smithers/vault": "workspace:*",
     "better-sqlite3": "^12.9.0",
     "class-variance-authority": "^0.7.1",

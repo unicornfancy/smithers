@@ -45,6 +45,7 @@ import {
 } from "@/lib/server/ping-actioned";
 import { loadPartnerContactsBySlug } from "@/lib/server/partner-contacts";
 import { recordingMatchesProject } from "@/lib/server/recording-match";
+import { getTranscriptionAdapter } from "@/lib/server/transcription";
 import { detectStalls } from "@/lib/server/stalls";
 import {
   computePingImportanceScore,
@@ -127,7 +128,7 @@ export default async function TodayPage() {
           .listGithubMentionPings(githubRepos, githubHandle)
           .catch(() => [] as Ping[])
       : Promise.resolve([] as Ping[]),
-    mcp.fathom.listRecordings({ limit: 20 }),
+    (await getTranscriptionAdapter()).listRecordings({ limit: 20 }),
   ]);
 
   const recentRecordings = recordingsResult.ok

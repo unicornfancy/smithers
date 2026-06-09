@@ -41,6 +41,7 @@ import { loadConfig } from "@/lib/server/config";
 import { getMcpClient } from "@/lib/server/mcp";
 import { findAgendaForPartner } from "@/lib/server/agenda-for-partner";
 import { recordingMatchesProject } from "@/lib/server/recording-match";
+import { getTranscriptionAdapter } from "@/lib/server/transcription";
 import { detectStallsForProject } from "@/lib/server/stalls";
 import { getVault } from "@/lib/server/vault";
 
@@ -141,7 +142,7 @@ export default async function ProjectWorkbenchPage({
       detail.partner
         ? mcp.hiveMind.getPartner({ partner_slug: detail.partner })
         : Promise.resolve(null),
-      mcp.fathom.listRecordings({ limit: 50 }),
+      (await getTranscriptionAdapter()).listRecordings({ limit: 50 }),
       detectStallsForProject(vault, detail.slug, detail.name).catch(() => ({
         items: [],
         counts: {

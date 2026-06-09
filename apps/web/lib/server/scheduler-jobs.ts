@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { loadConfig } from "@/lib/server/config";
 import { getMcpClient } from "@/lib/server/mcp";
 import { recomputeActioned } from "@/lib/server/ping-actioned";
+import { getTranscriptionAdapter } from "@/lib/server/transcription";
 
 /**
  * Background job runners shared by `/api/jobs/<name>` (manual + launchd)
@@ -74,18 +75,18 @@ export async function runPingMonitorJob(): Promise<JobResult> {
 export async function runFathomSyncJob(): Promise<JobResult> {
   const started = Date.now();
   try {
-    const mcp = await getMcpClient();
-    const result = await mcp.fathom.listRecordings({ limit: 50 });
+    const transcription = await getTranscriptionAdapter();
+    const result = await transcription.listRecordings({ limit: 50 });
     if (!result.ok) {
       return {
         ok: false,
-        error: result.error.message ?? "fathom listRecordings failed",
+        error: result.error.message ?? "listRecordings failed",
         duration_ms: Date.now() - started,
       };
     }
     return {
       ok: true,
-      summary: `fetched ${result.data.length} recording(s)`,
+      summary: `fetched ${result.data.length} recording(s) via ${transcription.provider}`,
       duration_ms: Date.now() - started,
     };
   } catch (err) {

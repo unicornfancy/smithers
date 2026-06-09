@@ -47,6 +47,9 @@ importers:
       '@smithers/mcp-client':
         specifier: workspace:*
         version: link:../../packages/mcp-client
+      '@smithers/transcription':
+        specifier: workspace:*
+        version: link:../../packages/transcription
       '@smithers/vault':
         specifier: workspace:*
         version: link:../../packages/vault

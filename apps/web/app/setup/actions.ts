@@ -30,6 +30,7 @@ export interface SetupStatus {
   api_keys: {
     anthropic: { set: boolean };
     linear: { set: boolean };
+    granola: { set: boolean };
   };
   mcps: {
     context_a8c: { enabled: boolean };
@@ -97,6 +98,7 @@ export async function getSetupStatusAction(): Promise<SetupStatus> {
     api_keys: {
       anthropic: { set: nonEmpty(process.env["ANTHROPIC_API_KEY"]) },
       linear: { set: nonEmpty(process.env["LINEAR_API_KEY"]) },
+      granola: { set: nonEmpty(process.env["GRANOLA_API_KEY"]) },
     },
     mcps: {
       context_a8c: { enabled: cfg.mcps.context_a8c.enabled },
@@ -261,11 +263,15 @@ export async function updateMcpsAction(
 }
 
 export async function updateApiKeyAction(input: {
-  name: "ANTHROPIC_API_KEY" | "LINEAR_API_KEY";
+  name: "ANTHROPIC_API_KEY" | "LINEAR_API_KEY" | "GRANOLA_API_KEY";
   value: string;
 }): Promise<ActionResult> {
   try {
-    if (input.name !== "ANTHROPIC_API_KEY" && input.name !== "LINEAR_API_KEY") {
+    if (
+      input.name !== "ANTHROPIC_API_KEY" &&
+      input.name !== "LINEAR_API_KEY" &&
+      input.name !== "GRANOLA_API_KEY"
+    ) {
       return { ok: false, reason: "invalid-key-name" };
     }
     const path = envLocalPath();

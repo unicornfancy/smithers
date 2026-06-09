@@ -240,6 +240,44 @@ export async function updateScheduleAction(input: {
   }
 }
 
+const TRANSCRIPTION_PROVIDERS = [
+  "fathom",
+  "granola",
+  "gemini",
+  "manual",
+  "whisper",
+] as const;
+
+type TranscriptionProvider = (typeof TRANSCRIPTION_PROVIDERS)[number];
+
+export async function updateTranscriptionProviderAction(input: {
+  provider: TranscriptionProvider;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    if (!TRANSCRIPTION_PROVIDERS.includes(input.provider)) {
+      return { ok: false, reason: "unknown provider" };
+    }
+    const path = configLocalPath();
+    const current = await readYamlFile(path);
+    const next = structuredClone(current) as Record<string, unknown>;
+    const block = isObject(next["transcription"])
+      ? (next["transcription"] as Record<string, unknown>)
+      : {};
+    block["provider"] = input.provider;
+    next["transcription"] = block;
+    await writeYamlAtomic(path, next);
+    revalidatePath("/settings");
+    revalidatePath("/calls");
+    revalidatePath("/today");
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "write failed",
+    };
+  }
+}
+
 export async function updateWeeklyUpdateFormatAction(
   template: string,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {

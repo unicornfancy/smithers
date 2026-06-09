@@ -56,6 +56,7 @@ import { buildPartnerKnowledgeFrontmatterUpdate } from "@/lib/server/hive-mind-f
 import { writeLaunchPostImage } from "@/lib/server/launch-post-assets";
 import { getMcpClient } from "@/lib/server/mcp";
 import { loadStyleReference } from "@/lib/server/style";
+import { getTranscriptionAdapter } from "@/lib/server/transcription";
 import { getVault } from "@/lib/server/vault";
 
 /**
@@ -822,7 +823,8 @@ export async function analyzeCallAction(
   if (!runtime) return { ok: false, reason: "not-configured" };
 
   const mcp = await getMcpClient();
-  const transcript = await mcp.fathom
+  const transcription = await getTranscriptionAdapter();
+  const transcript = await transcription
     .fetchTranscript({ recording_id: recordingId, url })
     .catch(() => null);
   if (!transcript) {
@@ -830,7 +832,7 @@ export async function analyzeCallAction(
       ok: false,
       reason: "transcript-missing",
       message:
-        "Couldn't fetch the transcript from Fathom. The recording may not be processed yet, or you may need to re-auth Fathom MCP.",
+        `Couldn't fetch the transcript from ${transcription.provider}. The recording may not be processed yet, or you may need to re-auth.`,
     };
   }
 
@@ -950,7 +952,8 @@ export async function fetchTranscriptAction(
 > {
   if (!recordingId) return { ok: false, message: "recordingId is required" };
   const mcp = await getMcpClient();
-  const transcript = await mcp.fathom
+  const transcription = await getTranscriptionAdapter();
+  const transcript = await transcription
     .fetchTranscript({ recording_id: recordingId, url })
     .catch(() => null);
   if (!transcript) {
@@ -992,14 +995,15 @@ export async function draftP2UpdateFromCallAction(
   if (!project) return { ok: false, reason: "error", message: "Project not found" };
 
   const mcp = await getMcpClient();
-  const transcript = await mcp.fathom
+  const transcription = await getTranscriptionAdapter();
+  const transcript = await transcription
     .fetchTranscript({ recording_id: recordingId, url })
     .catch(() => null);
   if (!transcript) {
     return {
       ok: false,
       reason: "transcript-missing",
-      message: "Couldn't fetch the transcript from Fathom.",
+      message: `Couldn't fetch the transcript from ${transcription.provider}.`,
     };
   }
   const style = (await loadStyleReference()) ?? undefined;
@@ -1051,14 +1055,15 @@ export async function composeCallRecapAction(
   if (!project) return { ok: false, reason: "error", message: "Project not found" };
 
   const mcp = await getMcpClient();
-  const transcript = await mcp.fathom
+  const transcription = await getTranscriptionAdapter();
+  const transcript = await transcription
     .fetchTranscript({ recording_id: recordingId, url })
     .catch(() => null);
   if (!transcript) {
     return {
       ok: false,
       reason: "transcript-missing",
-      message: "Couldn't fetch the transcript from Fathom.",
+      message: `Couldn't fetch the transcript from ${transcription.provider}.`,
     };
   }
   const style = (await loadStyleReference()) ?? undefined;

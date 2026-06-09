@@ -11,6 +11,7 @@ import { getAgentRuntime } from "@/lib/server/agents";
 import { loadConfig } from "@/lib/server/config";
 import { getMcpClient } from "@/lib/server/mcp";
 import { loadStyleReference } from "@/lib/server/style";
+import { getTranscriptionAdapter } from "@/lib/server/transcription";
 import { getVault } from "@/lib/server/vault";
 
 /**
@@ -97,8 +98,8 @@ export async function analyzeTeamCallAction(input: {
   const runtime = await getAgentRuntime();
   if (!runtime) return { ok: false, reason: "not-configured" };
 
-  const mcp = await getMcpClient();
-  const transcript = await mcp.fathom
+  const transcription = await getTranscriptionAdapter();
+  const transcript = await transcription
     .fetchTranscript({ recording_id: recordingId, url: input.url })
     .catch(() => null);
   if (!transcript) {
@@ -106,7 +107,7 @@ export async function analyzeTeamCallAction(input: {
       ok: false,
       reason: "transcript-missing",
       message:
-        "Couldn't fetch the transcript from Fathom. The recording may not be processed yet, or you may need to re-auth Fathom MCP.",
+        `Couldn't fetch the transcript from ${transcription.provider}. The recording may not be processed yet, or you may need to re-auth.`,
     };
   }
 

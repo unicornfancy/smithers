@@ -21,7 +21,7 @@ interface Props {
 
 type PathKey = "vault" | "hive_mind" | "my_voice";
 type McpKey = "context_a8c" | "hive_mind" | "fathom";
-type ApiKeyName = "ANTHROPIC_API_KEY" | "LINEAR_API_KEY";
+type ApiKeyName = "ANTHROPIC_API_KEY" | "LINEAR_API_KEY" | "GRANOLA_API_KEY";
 
 const PATH_FIELDS: { key: PathKey; label: string; hint: string }[] = [
   {
@@ -438,6 +438,18 @@ export function ApiKeysSection({
             setStatus((s) => ({
               ...s,
               api_keys: { ...s.api_keys, linear: { set } },
+            }))
+          }
+        />
+        <ApiKeyRow
+          name="GRANOLA_API_KEY"
+          label="Granola API key"
+          hint="Optional. Required only when transcription.provider is set to 'granola'."
+          isSet={status.api_keys.granola.set}
+          onSaved={(set) =>
+            setStatus((s) => ({
+              ...s,
+              api_keys: { ...s.api_keys, granola: { set } },
             }))
           }
         />

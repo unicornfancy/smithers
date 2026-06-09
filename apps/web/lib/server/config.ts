@@ -168,7 +168,7 @@ const DEFAULTS: SmithersConfig = {
     model: "claude-opus-4-7",
     effort: "high",
   },
-  transcription: { provider: "manual" },
+  transcription: { provider: "fathom" },
   p2: {},
   working_rhythm: {
     timezone: "America/Los_Angeles",

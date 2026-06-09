@@ -3,9 +3,9 @@ import type { CallRecordingRef } from "@smithers/mcp-client";
 import { AppHeader } from "@/components/app-header";
 import { CallsTable } from "@/components/calls-table";
 import { PageShell } from "@/components/page-shell";
-import { getMcpClient } from "@/lib/server/mcp";
 import { loadPartnerContactsBySlug } from "@/lib/server/partner-contacts";
 import { recordingMatchesProject } from "@/lib/server/recording-match";
+import { getTranscriptionAdapter } from "@/lib/server/transcription";
 import { getVault } from "@/lib/server/vault";
 
 export const metadata = {
@@ -22,11 +22,11 @@ export interface CallRow {
 
 export default async function CallsPage() {
   const vault = await getVault();
-  const mcp = await getMcpClient();
+  const transcription = await getTranscriptionAdapter();
 
   const [projects, recordingsResult] = await Promise.all([
     vault.listProjects().catch(() => []),
-    mcp.fathom.listRecordings({ limit: 50 }),
+    transcription.listRecordings({ limit: 50 }),
   ]);
 
   const recordings = recordingsResult.ok

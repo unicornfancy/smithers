@@ -1,77 +1,73 @@
 # Transcription adapters
 
-Smithers supports multiple transcription providers via a thin adapter pattern. The vault watcher's "process new call" trigger is provider-agnostic — it asks the configured adapter for new recordings, gets a `CallTranscript`, and runs the same downstream logic (action items extraction; P2 draft generation if any attendee is external).
+Smithers reads call recordings + transcripts through a per-provider adapter pattern. The interface lives in `@smithers/transcription`; concrete adapters live in `apps/web/lib/server/transcription/<name>.ts`; the dispatcher in `apps/web/lib/server/transcription.ts` picks one based on `config.transcription.provider`. UI surfaces (`/calls`, `/today` Recent Calls, project workbench Recent Calls, Process Call) call the dispatched adapter — they don't know which provider is in use.
 
 ## Interface
 
 ```ts
-// packages/transcription/src/types.ts
+// packages/transcription/src/index.ts
 
-export interface Attendee {
-  name: string;
-  email?: string;
-  isExternal: boolean;  // computed via config.identity.internal_email_domains
-}
-
-export interface CallTranscript {
+export interface TranscriptionRecording {
   recording_id: string;
-  recorded_at: string;       // ISO timestamp
+  recorded_at: string;        // ISO timestamp
   duration_seconds: number;
   title?: string;
-  attendees: Attendee[];
-  transcript_text: string;   // raw plain-text transcript; no AI summary inside
-  source_url?: string;       // back-link to the provider's UI when applicable
+  source_url?: string;
+  attendees?: string;         // raw provider-emitted string
+  is_mock?: boolean;
 }
 
 export interface TranscriptionAdapter {
-  /** Provider name (used in /settings UI). */
-  readonly name: string;
+  readonly provider: TranscriptionProvider;
 
-  /** Fetch any recordings since `since`. */
-  listNewRecordings(since: Date): Promise<CallTranscript[]>;
+  /** Lightweight metadata list — feeds /calls and Recent Calls cards. */
+  listRecordings(
+    query: RecordingsQuery,
+  ): Promise<TranscriptionResult<TranscriptionRecording[]>>;
 
-  /** Fetch a single transcript by id (used for backfill / retry). */
-  getTranscript(recording_id: string): Promise<CallTranscript>;
+  /** Full transcript text. Called when Process Call runs, not on listing. */
+  fetchTranscript(input: {
+    recording_id: string;
+    url?: string;
+  }): Promise<string | null>;
 
-  /** Quick health check; consulted by /settings → MCP Health and the briefing job. */
+  /** Cheap readiness check used by /settings → "Test current provider." */
   isHealthy(): Promise<{ ok: boolean; detail?: string }>;
 }
 ```
 
-## Bundled adapters
+`TranscriptionResult<T>` is structurally compatible with the `SourceResult<T>` shape used elsewhere in mcp-client — `{ ok: true, data, from, fetched_at }` on success and `{ ok: false, error: { kind, message }, cachedData? }` on failure, where `kind` distinguishes auth/network/not-configured/rate-limited/invalid for surfaces that want to render different states.
+
+## Status
 
 | Adapter | Status | Notes |
 |---|---|---|
-| `fathom` | implemented (v1) | Polls Fathom MCP every 10 min by default. Reads attendees from meeting metadata. |
-| `granola` | implemented (v1) | Uses the Granola API (`api_key_env: GRANOLA_API_KEY`). Supports macOS local cache fallback. |
-| `manual` | implemented (v1) | "Paste a transcript" UI in /today. Useful when no provider was running for a call. |
-| `whisper` | stub | Local Whisper transcription from audio files. Implementation deferred. |
-| `gemini` | stub | Google Gemini live-transcription. Implementation deferred. |
+| `fathom` | shipped (v1) | Default. Wraps the existing Fathom MCP client via `FathomAdapter`, so caching + health tracking + mock mode keep working. |
+| `granola` | shipped (v1) | Calls Granola's public API (`https://api.granola.ai/v2`). Auth via `GRANOLA_API_KEY` in `apps/web/.env.local`. |
+| `manual` | shipped (v1) | No upstream — `listRecordings` returns `[]` and `fetchTranscript` returns `null`. The Process Call dialog already has a paste-area fallback, so the page renders cleanly with this provider active. |
+| `gemini` | stub | Surfaces a clear `not-configured` error on every call. See "Picking up Gemini next" below. |
+| `whisper` | stub | Same shape as Gemini — reserved for a future local-audio transcription path. |
 
-Stubs throw `NotImplementedError` and are visible in /settings → Transcription so users can plan around them.
+## Picking up Gemini next
 
-## Configuration
+The intended Gemini implementation surfaces Google Meet + Gemini Assist transcripts, which land as Google Docs in Drive under "Meet Recordings" / "Meet Transcripts." Two open decisions before implementation:
 
-In `config.yaml`:
+- **Auth.** Two options: lean on the per-session `claude.ai_Google_Drive_*` MCP tools (works in the IDE only; not viable for a TAM running Smithers locally), or run our own Google OAuth flow. The latter is the right answer for a real ship.
+- **Mapping.** Doc structure varies — sometimes attendees are in the first paragraph, sometimes embedded as Doc metadata. We'd want at least one example Doc to lock the parser.
 
-```yaml
-transcription:
-  provider: fathom            # one of: fathom | granola | manual | whisper | gemini
-  fathom:
-    api_key_env: "FATHOM_API_KEY"
-  granola:
-    api_key_env: "GRANOLA_API_KEY"
-```
+When implementing, replace the body of `apps/web/lib/server/transcription/gemini.ts` and the dispatcher case automatically picks it up. Nothing else in the app needs to change.
 
-Switching providers is a `/settings` action; Smithers uses the new adapter for new recordings going forward and leaves historical transcripts untouched.
+## Settings + setup wiring
 
-## Adding a new adapter
+- **`/setup → API keys`** has a `GRANOLA_API_KEY` row alongside Anthropic + Linear.
+- **`/settings → Workflow → Transcription provider`** picks which adapter is active. Stub providers are visibly tagged so users don't pick one expecting it to work.
+- **`/api/transcription/health`** runs the active adapter's `isHealthy()` — used by the "Test current provider" button on the settings card.
+- **Background job** `fathom_sync` was renamed in copy only — the job key + cron path stay so existing crontabs / launchd plists keep firing. Worth a future rename to `transcription_sync` once the dust settles.
 
-1. Implement `TranscriptionAdapter` in `packages/transcription/src/adapters/<name>/`.
-2. Register it in `packages/transcription/src/registry.ts`.
-3. Add a `<name>:` block to `config.example.yaml` with any required env vars.
-4. Add a row to the table above and (optionally) a screenshot to docs.
+## Migration notes (for the historical record)
 
-## Why the indirection
+Until 2026-06-09 the UI surfaces called `mcp.fathom.*` directly. The migration was mostly a search-and-replace:
 
-The original system was Fathom-only. Different teams use different transcription tools, and audio→text is genuinely commoditized. Making the trigger provider-agnostic means action-item extraction and P2 drafting work identically regardless of where the transcript came from — including a hand-pasted one.
+- 9 callsites swapped `mcp.fathom.listRecordings` / `mcp.fathom.fetchTranscript` for `(await getTranscriptionAdapter()).listRecordings(...)` / `.fetchTranscript(...)`.
+- `FathomAdapter` wraps the existing `mcp.fathom` client; the MCP transport stays unchanged.
+- The `transcription.provider` config field defaulted to `"manual"` before — flipped to `"fathom"` so existing users see no change after upgrade.
