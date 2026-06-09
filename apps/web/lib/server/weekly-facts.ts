@@ -208,29 +208,37 @@ export async function collectWeeklyFacts(
 }
 
 /**
- * Pull outbound Zendesk comments (Katie's nudges + replies + internal
- * notes) for a week. Anything `kind: "zendesk-comment"` with a
- * non-external actor is "from our side" — captures the case where
- * the partner hasn't replied yet but Katie still pushed the project
- * forward.
+ * Pull outbound Zendesk comments authored by the user (Katie's nudges
+ * + replies). Every team Zendesk reply leaves via the shared persona
+ * `concierge@wordpress.com`, so actor.email / is_external can't
+ * distinguish a Katie reply from another TAM's or from the partner
+ * — they all look "external" because wordpress.com isn't an
+ * Automattic domain.
  *
- * Stricter identity-based matching (handle === identity.email) was
- * over-engineered: Zendesk web-channel replies fall back to
- * actor.name = "Zendesk" because no `from` block is set, so an
- * email/name match silently dropped legitimate outbound nudges. The
- * is_external check is sufficient; partner replies always have an
- * external actor.email.
+ * The only reliable signal is the comment body itself. TAMs sign
+ * their replies; the partner doesn't sign as "Katie McCanna." Match
+ * the user's identity.name as a word-boundary substring of the
+ * comment body — typically the signature line.
+ *
+ * False positives are rare: a partner thanking "Katie" by first
+ * name only would slip through if we matched on first name, so we
+ * require the full name when it's available. Falls back to first
+ * name (with stricter signature-position check) when only first
+ * name is configured.
  */
 function filterMyZendeskReplies(
   events: ActivityEvent[],
   _selfEmail: string,
-  _selfName: string,
+  selfName: string,
 ): Array<{ date: string; ticket_id?: string; subject?: string; excerpt?: string }> {
+  if (!selfName) return [];
+  const nameMatches = makeAuthorNameMatcher(selfName);
+  if (!nameMatches) return [];
   const matches = events.filter(
     (e) =>
       e.source === "zendesk" &&
       e.kind === "zendesk-comment" &&
-      !e.actor?.is_external,
+      nameMatches(e.excerpt ?? ""),
   );
   return matches.slice(0, 8).map((e) => {
     const ticketId = e.id.startsWith("zendesk:")
@@ -243,6 +251,35 @@ function filterMyZendeskReplies(
       excerpt: e.excerpt,
     };
   });
+}
+
+/**
+ * Build a predicate that detects the user's name in a comment body.
+ * Multi-word names get an anywhere-in-body match (signatures almost
+ * always include the surname). Single-word names get the stricter
+ * "appears in the trailing third of the body" check — that's where
+ * signatures sit, and avoids partner-greeting false positives like
+ * "Hi Katie, ..." at the top.
+ */
+function makeAuthorNameMatcher(rawName: string): ((body: string) => boolean) | null {
+  const trimmed = rawName.trim();
+  if (!trimmed) return null;
+  // Escape regex meta in the configured name so an O'Connor or
+  // Smith-Jones doesn't blow up the regex.
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = trimmed.split(/\s+/);
+  if (parts.length >= 2) {
+    const re = new RegExp(`\\b${escaped}\\b`, "i");
+    return (body) => re.test(body);
+  }
+  // Single-word name — only count when it appears in the signature
+  // zone (last ~30% of the body) to avoid partner greetings.
+  const re = new RegExp(`\\b${escaped}\\b`, "i");
+  return (body) => {
+    if (!body) return false;
+    const tail = body.slice(Math.floor(body.length * 0.7));
+    return re.test(tail);
+  };
 }
 
 async function fetchActivity(

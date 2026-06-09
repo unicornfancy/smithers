@@ -61,6 +61,7 @@ Typecheck: `pnpm --filter @smithers/<pkg> typecheck`. There is no test runner; s
 - Zendesk search response uses **`ticket_id`** (not `id`) for the numeric id. Mapper accepts both.
 - Zendesk `id:<n>` filter in search **does not work** — returns 0 or wrong tickets. The workaround is **persist subject + status into frontmatter at attach time** (see `addProjectZendeskTicket`); the panel reads from frontmatter, never from a per-render upstream lookup.
 - ContextA8C sessions expire periodically (`MCP error -32603: Invalid or expired session`). Every callsite wraps in try/catch and degrades gracefully.
+- **Zendesk outbound author is always `concierge@wordpress.com`** — every team reply leaves via the shared persona, so `actor.email` / `is_external` can't tell a Katie reply from another TAM's or a partner inbound. To attribute outbound to a specific TAM, parse the comment body for their name (signature line). `filterMyZendeskReplies` in `weekly-facts.ts` does this for the weekly-update generator.
 
 **Fathom MCP:**
 - `get_meeting_transcript` requires `recording_id` as a **number**, not string. Coerce when all-digits; non-numeric share tokens go through `url` arg only.
