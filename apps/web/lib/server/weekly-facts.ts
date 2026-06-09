@@ -182,7 +182,7 @@ export async function collectWeeklyFacts(
       ? (() => {
           const tasks = parseProjectTasks(detail.body);
           const { open } = splitTasks(tasks);
-          return open.slice(0, 12);
+          return open.slice(0, 25);
         })()
       : [];
     projectsFacts.push({
@@ -208,34 +208,30 @@ export async function collectWeeklyFacts(
 }
 
 /**
- * Pull outbound zendesk replies the user authored from a week's
- * activity events. Matching is best-effort — zendesk-comment events
- * carry actor email in handle when the comment originated via the
- * email channel and actor.name otherwise. Match either way:
+ * Pull outbound Zendesk comments (Katie's nudges + replies + internal
+ * notes) for a week. Anything `kind: "zendesk-comment"` with a
+ * non-external actor is "from our side" — captures the case where
+ * the partner hasn't replied yet but Katie still pushed the project
+ * forward.
  *
- *   - actor.handle === identity.email
- *   - actor.name lowercased === identity.name lowercased
- *
- * Falls back to "any internal actor on a zendesk-comment" if neither
- * identity field is set so the path still produces signal in unconfigured
- * dev setups (matches the previous "all internal" weak filter).
+ * Stricter identity-based matching (handle === identity.email) was
+ * over-engineered: Zendesk web-channel replies fall back to
+ * actor.name = "Zendesk" because no `from` block is set, so an
+ * email/name match silently dropped legitimate outbound nudges. The
+ * is_external check is sufficient; partner replies always have an
+ * external actor.email.
  */
 function filterMyZendeskReplies(
   events: ActivityEvent[],
-  selfEmail: string,
-  selfName: string,
+  _selfEmail: string,
+  _selfName: string,
 ): Array<{ date: string; ticket_id?: string; subject?: string; excerpt?: string }> {
-  const matches = events.filter((e) => {
-    if (e.source !== "zendesk") return false;
-    if (e.kind !== "zendesk-comment") return false;
-    if (e.actor?.is_external) return false;
-    const handle = e.actor?.handle?.toLowerCase() ?? "";
-    const name = e.actor?.name?.toLowerCase() ?? "";
-    if (selfEmail && handle === selfEmail) return true;
-    if (selfName && name === selfName) return true;
-    // No identity configured → fall back to "any internal actor"
-    return !selfEmail && !selfName;
-  });
+  const matches = events.filter(
+    (e) =>
+      e.source === "zendesk" &&
+      e.kind === "zendesk-comment" &&
+      !e.actor?.is_external,
+  );
   return matches.slice(0, 8).map((e) => {
     const ticketId = e.id.startsWith("zendesk:")
       ? e.id.split(":")[1]

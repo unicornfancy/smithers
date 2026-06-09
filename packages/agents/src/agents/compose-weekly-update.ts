@@ -117,9 +117,8 @@ Quality rules:
 - Do NOT include partner-confidential decisions teammates don't need to see.
 
 Signal weighting for Last Week vs This Week:
-- "Last Week" content is what actually moved. The strongest signal is "My Zendesk replies" (per-project) — those are outbound replies the user sent to the partner, which is direct evidence of project movement. Treat a week with multiple replies as an active project; treat one with no replies + no Linear updates + no calls as a quiet week and either omit the project or note "steady-state, no movement."
-- "This Week" content is forward-looking and should be seeded from "Open tasks" (per-project) — these are the user's queued items for the project. Pick the 1-2 most consequential (typically the highest-priority or earliest-due) for each project's This Week bullet. Skip housekeeping tasks ("file ticket", "update spreadsheet").
-- Don't list every open task verbatim — synthesize into a 1-bullet plan per project.
+- "Last Week" content is what actually moved. The strongest signal is "My Zendesk replies" (per-project) — those are outbound comments the user sent on the partner's tickets (nudges, replies, or internal notes). They count as project movement EVEN IF the partner hasn't replied yet — pushing the project forward is movement, not just receiving a reply. A "Re: Q3 launch — checking in on the staging URL" with no inbound after it is still a load-bearing data point. Treat a week with multiple outbound nudges as an active project; treat one with no outbound + no Linear updates + no calls as a quiet week.
+- "This Week" content is forward-looking and should be grounded in the "Open tasks" list (per-project) — these are the user's queued items for the project. Use the tasks as raw material: pull the substantive items into the This Week bullet, in plain English. Include enough specificity that a teammate can scan what's queued — don't reduce to "continue work on X" when the list has concrete items. Reasonable upper bound is 3-4 tasks per project, summarized as a comma-separated clause or short sentence. Drop pure-housekeeping items only if the bullet is getting too long; otherwise keep them.
 
 Always return your output as JSON matching the requested schema. No text outside the JSON.`;
 
