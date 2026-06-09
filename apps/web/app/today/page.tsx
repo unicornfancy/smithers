@@ -140,14 +140,15 @@ export default async function TodayPage() {
   const recentCallRows: RecentCallRow[] = recentRecordings.map((rec) => ({
     recording: rec,
     matchedProjects: projects
-      .filter(
-        (p) =>
-          (p.kind === "partner" || p.kind === "team") &&
-          recordingMatchesProject(rec, {
-            ...p,
-            partner_contact_emails: partnerContactsBySlug.get(p.slug),
-          }),
-      )
+      .filter((p) => {
+        if (p.kind !== "partner" && p.kind !== "team") return false;
+        const signals = partnerContactsBySlug.get(p.slug);
+        return recordingMatchesProject(rec, {
+          ...p,
+          partner_contact_emails: signals?.emails,
+          partner_contact_names: signals?.names,
+        });
+      })
       .map((p) => ({ slug: p.slug, name: p.name })),
   }));
   const unmatchedRecentCalls = recentCallRows.filter(

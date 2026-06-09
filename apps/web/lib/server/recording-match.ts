@@ -36,6 +36,18 @@ export function recordingMatchesProject(
      * because first names are too generic to discriminate partners.
      */
     partner_contact_emails?: string[];
+    /**
+     * Partner contact full names (from the same `contacts: []`
+     * frontmatter). Each name is added to the token set as a
+     * *phrase* — e.g. `"Martin Porter"` becomes a single
+     * `"martin porter"` substring lookup. This catches the
+     * calendar-link case where the meeting title is generic
+     * ("Automattic Special Projects - Katie McCanna (Martin Porter)")
+     * but the partner contact's name appears verbatim. Single-word
+     * names are dropped because first-name collisions across partners
+     * are too common.
+     */
+    partner_contact_names?: string[];
   },
 ): boolean {
   if (!recording.title && !recording.attendees) return false;
@@ -67,6 +79,14 @@ export function recordingMatchesProject(
     for (const t of extractEmailDomainTokens(email)) {
       if (t.length >= 3 && !STOP_TOKENS.has(t)) tokens.add(t);
     }
+  }
+  for (const name of project.partner_contact_names ?? []) {
+    const cleaned = name.trim().toLowerCase();
+    // Multi-word names go in as a phrase — "martin porter" stays joined
+    // so the haystack must contain the full sequence, not just "martin"
+    // or "porter" alone (which collide across partners). Single-word
+    // names (e.g. just "Martin") are skipped.
+    if (cleaned.split(/\s+/).length >= 2) tokens.add(cleaned);
   }
   for (const t of tokens) {
     if (haystack.includes(t)) return true;

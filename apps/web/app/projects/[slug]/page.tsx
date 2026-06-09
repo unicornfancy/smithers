@@ -263,6 +263,9 @@ export default async function ProjectWorkbenchPage({
         partner_contact_emails: (hiveMindPartner?.contacts ?? []).map(
           (c) => c.email,
         ),
+        partner_contact_names: (hiveMindPartner?.contacts ?? [])
+          .map((c) => c.name?.trim())
+          .filter((n): n is string => Boolean(n)),
       }),
     )
     .slice(0, 8);
