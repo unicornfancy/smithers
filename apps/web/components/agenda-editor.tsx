@@ -130,7 +130,7 @@ export function AgendaEditor({ agenda }: Props) {
                     checked={item.checked}
                     onChange={(e) => handleToggle(item.id, e.target.checked)}
                     disabled={pending}
-                    className="mt-1 accent-foreground"
+                    className="size-4 mt-[3px] shrink-0 accent-foreground"
                   />
                   <div
                     className={
@@ -139,7 +139,10 @@ export function AgendaEditor({ agenda }: Props) {
                         : "flex-1 text-sm"
                     }
                   >
-                    <Markdown source={item.text} />
+                    <Markdown
+                      source={item.text}
+                      className="[&_p:first-child]:mt-0 [&_p:last-child]:mb-0"
+                    />
                   </div>
                 </li>
               ))}

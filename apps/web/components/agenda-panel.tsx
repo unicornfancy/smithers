@@ -312,7 +312,7 @@ function Group({
                 checked={item.checked}
                 onChange={(e) => onToggle(item.id, e.target.checked)}
                 disabled={pending}
-                className="mt-1 accent-foreground"
+                className="size-4 mt-[3px] shrink-0 accent-foreground"
               />
               <div
                 className={cn(

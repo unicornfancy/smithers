@@ -152,7 +152,7 @@ export function TabbedWorkbench({ projectSlug, sections }: Props) {
       <div
         role="tablist"
         aria-label="Workbench sections"
-        className="bg-muted/30 sticky top-[var(--workbench-header-h,8rem)] z-10 -mx-3 flex items-center gap-1 border-b px-3 py-1"
+        className="bg-background/95 backdrop-blur sticky top-[var(--workbench-header-h,8rem)] z-20 -mx-3 flex items-center gap-1 border-b px-3 py-1.5"
       >
         {TABS.map((tab) => {
           const isActive = tab.id === active;

@@ -8,9 +8,12 @@ import type { ProjectStatus } from "@smithers/vault";
 
 import { cn } from "@/lib/utils";
 
+export type ProjectsSortKey = "name" | "status" | "activity";
+
 interface Props {
   currentStatus: string;
   showArchived: boolean;
+  currentSort: ProjectsSortKey;
   /** Counts per status across the unfiltered project list. */
   counts: Partial<Record<ProjectStatus, number>>;
 }
@@ -27,9 +30,16 @@ const STATUS_ORDER: ProjectStatus[] = [
   "archived",
 ];
 
+const SORT_LABEL: Record<ProjectsSortKey, string> = {
+  name: "Name",
+  status: "Status",
+  activity: "Activity",
+};
+
 export function ProjectsFilterBar({
   currentStatus,
   showArchived,
+  currentSort,
   counts,
 }: Props) {
   const router = useRouter();
@@ -72,6 +82,26 @@ export function ProjectsFilterBar({
         </select>
       </label>
 
+      <label className="flex items-center gap-2">
+        <span className="text-muted-foreground text-xs uppercase tracking-wide">
+          Sort
+        </span>
+        <select
+          value={currentSort}
+          onChange={(e) =>
+            pushWith({ sort: e.target.value === "name" ? null : e.target.value })
+          }
+          disabled={pending}
+          className="rounded-md border bg-background px-2 py-1 text-sm"
+        >
+          {(Object.keys(SORT_LABEL) as ProjectsSortKey[]).map((key) => (
+            <option key={key} value={key}>
+              {SORT_LABEL[key]}
+            </option>
+          ))}
+        </select>
+      </label>
+
       <label className="flex items-center gap-1.5 text-xs">
         <input
           type="checkbox"
@@ -94,10 +124,12 @@ export function ProjectsFilterBar({
         <Loader2 className="text-muted-foreground size-3.5 animate-spin" />
       ) : null}
 
-      {currentStatus !== "all" || showArchived ? (
+      {currentStatus !== "all" || showArchived || currentSort !== "name" ? (
         <button
           type="button"
-          onClick={() => pushWith({ status: null, archived: null })}
+          onClick={() =>
+            pushWith({ status: null, archived: null, sort: null })
+          }
           disabled={pending}
           className={cn(
             "text-muted-foreground hover:text-foreground ml-auto text-xs underline-offset-2 hover:underline",
