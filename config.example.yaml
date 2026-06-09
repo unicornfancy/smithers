@@ -8,6 +8,7 @@ identity:
   slack_handle: ""
   internal_email_domains:
     - automattic.com
+    - a8c.com
 
 paths:
   # Where your vault (markdown notes) lives. Obsidian-compatible but not required.

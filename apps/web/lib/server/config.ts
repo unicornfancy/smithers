@@ -147,7 +147,10 @@ export interface SmithersConfig {
 const DEFAULTS: SmithersConfig = {
   identity: {
     name: "",
-    internal_email_domains: ["automattic.com"],
+    // Both "automattic.com" and "a8c.com" are real Automattic email
+    // domains in use across the team (the shorter form is the alias).
+    // Either reads as internal for the Zendesk inbound/outbound check.
+    internal_email_domains: ["automattic.com", "a8c.com"],
   },
   paths: {
     vault: "~/Documents/A8C Claude",
