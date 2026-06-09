@@ -53,12 +53,22 @@ export interface WeeklyUpdateProjectFacts {
 }
 
 export interface WeeklyUpdateInput {
-  /** ISO week id, e.g. "2026-W19". */
+  /**
+   * ISO week id of the *posting* week (e.g. "2026-W24"). The update
+   * labelled "Week N" debriefs Week N-1 and plans Week N's work.
+   */
   iso_week: string;
-  /** Monday of the week (YYYY-MM-DD). */
+  /** Monday of the posting week (YYYY-MM-DD). */
   week_start: string;
-  /** Sunday of the week (YYYY-MM-DD). */
+  /** Sunday of the posting week (YYYY-MM-DD). */
   week_end: string;
+  /**
+   * Monday of the *debrief* week (Week N-1) — the period being
+   * recapped in "Last Week."
+   */
+  debrief_week_start: string;
+  /** Sunday of the debrief week. */
+  debrief_week_end: string;
   /** Per-project facts assembled by the caller. */
   projects: WeeklyUpdateProjectFacts[];
   /**
@@ -101,6 +111,12 @@ const DEFAULT_FORMAT = `Use this structure:
 Tone: brief, scannable, casual professional. One short sentence or fragment per bullet — not a paragraph. Use Slack-style @handle mentions when teammates collaborated.`;
 
 const SYSTEM_PROMPT = `You are Smithers, drafting Katie's weekly update for the team P2. The team posts a single weekly thread each Monday and every TAM adds their update as a comment. This is internal — written for teammates, not partners.
+
+Time-frame convention (load-bearing):
+- The header reads "Week N (posting_week_range)". N is the POSTING week — the week the update is being published in.
+- The "## Last Week" section debriefs the *previous* week (Week N-1). All per-project facts you receive — activity events, Zendesk replies, calls, Linear updates, drafts — were pulled from this debrief window.
+- The "## This Week" section is forward-looking and refers to Week N (the posting week). It's sourced from the "Open tasks" list, not from activity. The user's per-run "user_notes" can override or add to it.
+- Don't confuse the two: a Zendesk reply from Week N-1 belongs in Last Week. An open task belongs in This Week.
 
 Voice rules:
 - Sound like a TAM giving teammates a status update. Brief, scannable, specific.
@@ -158,12 +174,24 @@ export async function composeWeeklyUpdate(
 }
 
 function renderUserPrompt(input: WeeklyUpdateInput): string {
-  const { iso_week, week_start, week_end, projects, format_instructions, style, user_notes } = input;
+  const {
+    iso_week,
+    week_start,
+    week_end,
+    debrief_week_start,
+    debrief_week_end,
+    projects,
+    format_instructions,
+    style,
+    user_notes,
+  } = input;
   const lines: string[] = [];
 
   lines.push(`# Week`);
-  lines.push(`- ID: ${iso_week}`);
-  lines.push(`- Date range: ${week_start} → ${week_end}`);
+  lines.push(`- Posting week (this update covers it): ${iso_week} · ${week_start} → ${week_end}`);
+  lines.push(
+    `- Debrief window (Last Week section content): ${debrief_week_start} → ${debrief_week_end}`,
+  );
   if (user_notes) {
     lines.push("");
     lines.push(`# User notes for this run`);

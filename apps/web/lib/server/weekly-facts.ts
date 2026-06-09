@@ -53,12 +53,24 @@ export interface ProjectFacts {
 }
 
 export interface WeeklyFacts {
-  /** ISO week id, e.g. "2026-W19". */
+  /**
+   * ISO week id of the *posting* week — when the update is published,
+   * not when the activity happened. The update labelled "Week N"
+   * debriefs Week N-1's activity and plans Week N's work.
+   */
   iso_week: string;
-  /** Monday of the week (UTC, YYYY-MM-DD). */
+  /** Monday of the posting week (UTC, YYYY-MM-DD). */
   week_start: string;
-  /** Sunday of the week (UTC, YYYY-MM-DD). */
+  /** Sunday of the posting week (UTC, YYYY-MM-DD). */
   week_end: string;
+  /**
+   * Monday of the debrief week (UTC) — i.e. the previous week, which
+   * the activity events + outbound replies in `projects` were pulled
+   * from. The agent's "Last Week" section covers this range.
+   */
+  debrief_week_start: string;
+  /** Sunday of the debrief week (UTC). */
+  debrief_week_end: string;
   projects: ProjectFacts[];
 }
 
@@ -122,14 +134,30 @@ export function isoWeekToMonday(isoWeek: string): Date | null {
 export async function collectWeeklyFacts(
   isoWeek: string,
 ): Promise<WeeklyFacts | null> {
-  const monday = isoWeekToMonday(isoWeek);
-  if (!monday) return null;
-  const sunday = new Date(monday);
-  sunday.setUTCDate(monday.getUTCDate() + 6);
-  const weekStart = monday.toISOString().slice(0, 10);
-  const weekEnd = sunday.toISOString().slice(0, 10);
-  const sinceIso = monday.toISOString();
-  const untilIso = new Date(sunday.getTime() + 86_400_000).toISOString();
+  // isoWeek = the *posting* week. The update labelled "Week N" debriefs
+  // the previous week (Week N-1) and plans Week N's work — so activity
+  // collection targets Week N-1's date range, not Week N's. Today
+  // (Tuesday of W24) generating an update means: header reads Week 24,
+  // Last Week content covers W23 activity, This Week content forecasts
+  // W24 plans.
+  const postingMonday = isoWeekToMonday(isoWeek);
+  if (!postingMonday) return null;
+  const postingSunday = new Date(postingMonday);
+  postingSunday.setUTCDate(postingMonday.getUTCDate() + 6);
+  const weekStart = postingMonday.toISOString().slice(0, 10);
+  const weekEnd = postingSunday.toISOString().slice(0, 10);
+
+  const debriefMonday = new Date(postingMonday);
+  debriefMonday.setUTCDate(postingMonday.getUTCDate() - 7);
+  const debriefSunday = new Date(debriefMonday);
+  debriefSunday.setUTCDate(debriefMonday.getUTCDate() + 6);
+  const debriefWeekStart = debriefMonday.toISOString().slice(0, 10);
+  const debriefWeekEnd = debriefSunday.toISOString().slice(0, 10);
+
+  // Activity window is the DEBRIEF week (Week N-1) — that's the period
+  // being recapped.
+  const sinceIso = debriefMonday.toISOString();
+  const untilIso = new Date(debriefSunday.getTime() + 86_400_000).toISOString();
 
   const vault = await getVault();
   const mcp = await getMcpClient();
@@ -203,6 +231,8 @@ export async function collectWeeklyFacts(
     iso_week: isoWeek,
     week_start: weekStart,
     week_end: weekEnd,
+    debrief_week_start: debriefWeekStart,
+    debrief_week_end: debriefWeekEnd,
     projects: projectsFacts,
   };
 }

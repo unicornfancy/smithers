@@ -79,6 +79,8 @@ export async function generateWeeklyUpdateAction(
       iso_week: facts.iso_week,
       week_start: facts.week_start,
       week_end: facts.week_end,
+      debrief_week_start: facts.debrief_week_start,
+      debrief_week_end: facts.debrief_week_end,
       projects: projectFacts,
       format_instructions: cfg.weekly_update?.format_template,
       style,
