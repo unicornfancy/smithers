@@ -19,9 +19,18 @@ export default async function WeeklyUpdatesPage() {
   const past = await vault.listWeeklyUpdates().catch(() => []);
 
   const today = new Date();
-  const thisWeekId = isoWeekId(today);
-  const { week: thisWeekNumber } = isoWeekParts(today);
-  const hasThisWeek = past.some((p) => p.iso_week === thisWeekId);
+  // The Monday weekly-update debriefs the week that *just ended* — so
+  // the default draft button targets the previous ISO week, not the
+  // calendar week you're currently in. If you draft on Tuesday June 9
+  // (W24), you're recapping W23 (June 1-7) and planning W24 forward.
+  const lastWeekMonday = new Date(today);
+  lastWeekMonday.setUTCDate(today.getUTCDate() - 7);
+  const debriefWeekId = isoWeekId(lastWeekMonday);
+  const { week: debriefWeekNumber } = isoWeekParts(lastWeekMonday);
+  const currentWeekId = isoWeekId(today);
+  const { week: currentWeekNumber } = isoWeekParts(today);
+  const hasDebriefWeek = past.some((p) => p.iso_week === debriefWeekId);
+  const hasCurrentWeek = past.some((p) => p.iso_week === currentWeekId);
 
   // Display newest first.
   const sorted = [...past].sort((a, b) => b.iso_week.localeCompare(a.iso_week));
@@ -37,8 +46,8 @@ export default async function WeeklyUpdatesPage() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <Sparkles className="text-muted-foreground size-4" />
-              This week — Week {thisWeekNumber}
-              {hasThisWeek ? (
+              Last week — Week {debriefWeekNumber}
+              {hasDebriefWeek ? (
                 <span className="text-muted-foreground text-xs font-normal">
                   · saved draft exists
                 </span>
@@ -46,12 +55,25 @@ export default async function WeeklyUpdatesPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <Button asChild size="sm" className="gap-1.5">
-              <Link href={`/weekly-updates/${thisWeekId}`}>
-                {hasThisWeek ? "Open this week's draft" : "Draft this week"}
-                <ArrowRight className="size-3.5" />
-              </Link>
-            </Button>
+            <p className="text-muted-foreground mb-2 text-xs">
+              Debriefs week {debriefWeekNumber}&apos;s activity and plans the
+              week ahead. This is the typical Monday-morning draft.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button asChild size="sm" className="gap-1.5">
+                <Link href={`/weekly-updates/${debriefWeekId}`}>
+                  {hasDebriefWeek ? "Open last week's draft" : "Draft last week"}
+                  <ArrowRight className="size-3.5" />
+                </Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
+                <Link href={`/weekly-updates/${currentWeekId}`}>
+                  {hasCurrentWeek
+                    ? `Open this week's draft (Week ${currentWeekNumber})`
+                    : `Draft this week (Week ${currentWeekNumber})`}
+                </Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
