@@ -260,6 +260,9 @@ export default async function ProjectWorkbenchPage({
         partner_display_name: partnerProfile?.display_name,
         fathom_search_terms: detail.fathom_search_terms,
         fathom_excluded_recording_ids: detail.fathom_excluded_recording_ids,
+        partner_contact_emails: (hiveMindPartner?.contacts ?? []).map(
+          (c) => c.email,
+        ),
       }),
     )
     .slice(0, 8);

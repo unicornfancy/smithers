@@ -4,6 +4,7 @@ import { AppHeader } from "@/components/app-header";
 import { CallsTable } from "@/components/calls-table";
 import { PageShell } from "@/components/page-shell";
 import { getMcpClient } from "@/lib/server/mcp";
+import { loadPartnerContactsBySlug } from "@/lib/server/partner-contacts";
 import { recordingMatchesProject } from "@/lib/server/recording-match";
 import { getVault } from "@/lib/server/vault";
 
@@ -32,13 +33,21 @@ export default async function CallsPage() {
     ? recordingsResult.data
     : (recordingsResult.cachedData ?? []);
 
+  const partnerContactsBySlug = await loadPartnerContactsBySlug(
+    vault,
+    projects,
+  );
+
   const rows: CallRow[] = recordings.map((rec) => ({
     recording: rec,
     matchedProjects: projects
       .filter(
         (p) =>
           (p.kind === "partner" || p.kind === "team") &&
-          recordingMatchesProject(rec, p),
+          recordingMatchesProject(rec, {
+            ...p,
+            partner_contact_emails: partnerContactsBySlug.get(p.slug),
+          }),
       )
       .map((p) => ({ slug: p.slug, name: p.name })),
   }));

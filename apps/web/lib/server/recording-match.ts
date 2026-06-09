@@ -28,6 +28,14 @@ export function recordingMatchesProject(
     partner_display_name?: string;
     fathom_search_terms?: string[];
     fathom_excluded_recording_ids?: string[];
+    /**
+     * Emails from the partner's HM partner-knowledge.md `contacts: []`
+     * frontmatter. Tokenized to domain mid-segments — e.g.
+     * `martin@thepocketnyc.com` contributes the `thepocketnyc` token,
+     * not `martin` or `com`. The local-part is intentionally dropped
+     * because first names are too generic to discriminate partners.
+     */
+    partner_contact_emails?: string[];
   },
 ): boolean {
   if (!recording.title && !recording.attendees) return false;
@@ -55,10 +63,34 @@ export function recordingMatchesProject(
       if (t.length >= 3 && !STOP_TOKENS.has(t)) tokens.add(t);
     }
   }
+  for (const email of project.partner_contact_emails ?? []) {
+    for (const t of extractEmailDomainTokens(email)) {
+      if (t.length >= 3 && !STOP_TOKENS.has(t)) tokens.add(t);
+    }
+  }
   for (const t of tokens) {
     if (haystack.includes(t)) return true;
   }
   return false;
+}
+
+/**
+ * Pull discriminating tokens from an email's domain — i.e. drop the
+ * local-part (`martin`) and the TLD (`com`), keep the middle segments
+ * (`thepocketnyc`, plus subdomains if present). The local-part is
+ * almost always too generic (a first name or "info" / "support"),
+ * and TLDs match every email; the middle is where partner identity
+ * actually lives.
+ */
+function extractEmailDomainTokens(email: string): string[] {
+  const trimmed = email.trim().toLowerCase();
+  const at = trimmed.lastIndexOf("@");
+  if (at < 0) return [];
+  const domain = trimmed.slice(at + 1);
+  if (!domain) return [];
+  const parts = domain.split(".").filter(Boolean);
+  if (parts.length <= 1) return parts;
+  return parts.slice(0, -1);
 }
 
 const STOP_TOKENS = new Set([
@@ -87,4 +119,11 @@ const STOP_TOKENS = new Set([
   "redesign",
   "migration",
   "build",
+  // Common TLDs that survive the >=3-char filter from the email-domain
+  // token path. Without these, every email contributes a `com` / `org`
+  // token and the matcher matches every recording.
+  "com",
+  "org",
+  "net",
+  "app",
 ]);
