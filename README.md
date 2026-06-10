@@ -75,6 +75,22 @@ The `/setup` wizard configures three things:
 
 After saving any field, **restart `pnpm dev`** — Next.js reads config and env vars once at boot. Then visit `/today` for the daily dashboard.
 
+### Don't have a vault yet?
+
+Totally fine — Smithers doesn't require an existing Obsidian vault. Make an empty folder anywhere, point the wizard at it, and you're done:
+
+```bash
+mkdir -p ~/Smithers-Vault
+# then in the /setup wizard: Paths → Vault → ~/Smithers-Vault → Save
+```
+
+Smithers creates the subfolders it needs (`Projects/`, `Daily Notes/`, `Drafts/`, `Call Notes/`, `Agendas/`, `Weekly Updates/`, `Follow-ups.md`) on first write — you don't need to scaffold them upfront. The expected shape is documented in [`templates/vault/README.md`](templates/vault/README.md) if you want to mirror it by hand.
+
+Add your first project once the wizard is green:
+
+- **`/projects/onboard`** — joins your Linear projects, Hive Mind partners, and any existing vault scratchpads into one table with per-row Import / Connect / Set up actions. The right entry point if you already have partners in Hive Mind.
+- **`/projects/new`** — minimal form to create a vault-only project (team or personal). Use this for internal initiatives that don't have a Hive Mind partner.
+
 The full walkthrough lives in [`ONBOARDING.md`](ONBOARDING.md), including expected output at each step and the most common errors.
 
 ## Repo layout
