@@ -19,7 +19,7 @@ If pnpm is missing: `npm install -g pnpm` or `corepack enable && corepack prepar
 
 You also need:
 
-- An **Anthropic API key** — get one at <https://console.anthropic.com/settings/keys>. Save it where you keep credentials; Smithers reads it from `apps/web/.env.local`.
+- An **Anthropic API key** — get one by following the instructions in the Field Guide <https://fieldguide.automattic.com/claude-enterprise/#enterprise-uses-sso-not-api-keys>. Save it where you keep credentials; Smithers reads it from `apps/web/.env.local`.
 - (Recommended) A local clone of **`a8cteam51/Team51-Hive-Mind`** somewhere convenient — e.g. `~/Team51-Hive-Mind`. Smithers reads partner project data from there.
 - (Optional) A **Linear API key** for direct Linear writes (project status, sub-tasks, viewer-id ping filtering). Without it, ContextA8C still gives you read-only Linear data.
 

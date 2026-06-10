@@ -2,7 +2,7 @@
 
 > _A loyal, slightly fussy butler for your work._
 
-Smithers is a project-centric personal-assistant workbench for **Automattic Team51 TAMs**. It runs locally on your machine and pulls together everything that lives in different tools — your vault notes, partner knowledge from [Team51-Hive-Mind](https://github.com/a8cteam51/Team51-Hive-Mind), GitHub repos, Linear designs, P2 threads, Slack conversations, Zendesk escalations, Fathom call transcripts — and surfaces them as **per-project workbenches** with AI-assisted drafting, follow-up tracking, agendas, weekly updates, and a derived `/today` dashboard.
+Smithers is a project-centric personal-assistant workbench for **Automattic Team51 Launch TAMs**. It runs locally on your machine and pulls together everything that lives in different tools — your vault notes, partner knowledge from [Team51-Hive-Mind](https://github.com/a8cteam51/Team51-Hive-Mind), GitHub repos, Linear designs, P2 threads, Slack conversations, Zendesk escalations, call transcripts — and surfaces them as **per-project workbenches** with AI-assisted drafting, follow-up tracking, agendas, weekly updates, and a derived `/today` dashboard.
 
 Markdown is the source of truth. SQLite at `~/.smithers/state.db` is cache + UI state only.
 

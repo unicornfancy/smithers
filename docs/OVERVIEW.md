@@ -173,7 +173,11 @@ Three ways to do it; pick whichever fits how you're working.
 Configurable from `/settings → Workflow`. All defaults off until you opt in.
 
 - **Daily briefing** — fires at a configured HH:MM each day. Pre-warms Top 3
-  + Realistic Shape + writes a snippet to today's daily note in your vault.
+  + Realistic Shape and mirrors them to today's daily note in your vault as a
+  permanent archive (Obsidian-friendly markdown, fenced in `<!-- smithers:* -->`
+  blocks so your own notes around them survive re-runs). Nothing else in
+  Smithers reads the daily note — `/today` is computed live from project state,
+  not from the file. Safe to ignore or curate as a personal day-log.
 - **Ping monitor** — re-checks every Pings-to-Action item so the feed auto-
   hides items you've already replied to.
 - **Transcription sync** — warms the configured provider's recordings cache
