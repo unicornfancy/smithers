@@ -6,19 +6,17 @@
 
 ## What it is
 
-Smithers is a personal-assistant workbench for a TAM. It runs locally as a
-Next.js app, reads your existing Obsidian-compatible markdown vault, and pulls
-in live data from the tools you already use — Hive Mind, Linear, GitHub,
-Slack, Zendesk, P2, Fathom / Granola call transcripts — so everything that
-matters about a project sits on one page.
+Smithers is designed to be a workbench (and assistant) for a Team 51 Launch TAM. It runs locally as a
+Next.js app, reads from an Obsidian-compatible markdown vault, and pulls
+in live data from the tools you already use in your daily work (and maybe one new one) — Hive Mind, Linear, GitHub,
+Slack, Zendesk, P2, Fathom / Granola call transcripts — allowing everything that
+matters about a project to appear on one page.
 
 It is **not** a notes app, a CRM, or a chatbot. It's a workbench: a
 project-centric surface that turns scattered context into a daily-actionable
-view, plus a small set of AI affordances that draft outbound work for you to
-review.
+view, plus a small set of AI helpers that draft outbound communication for you to review.
 
-[TODO: drop in your own one-liner / hype paragraph here for the audience you're
-sharing this with]
+Smithers was designed to hold all the pieces of a project in one easy spot, and save you time!
 
 ## Mental model
 
@@ -27,7 +25,7 @@ Three ideas do most of the work:
 1. **Markdown is the source of truth.** Project files, follow-ups, agendas,
    drafts, weekly updates, call notes — all plain markdown with YAML
    frontmatter. SQLite at `~/.smithers/state.db` is cache + UI state only.
-   You can keep using Obsidian alongside Smithers, or drop Obsidian entirely.
+   You can use Obsidian alongside Smithers if you prefer to work in the MD files directly, or drop Obsidian entirely and work withint he Smither UI.
 2. **The project is the unit.** Every surface is project-centric: a workbench
    page per project assembles status, open items, follow-ups, recent calls,
    threads, drafts, and partner knowledge. `/today` is a derived dashboard
@@ -36,19 +34,19 @@ Three ideas do most of the work:
    Zendesk / P2 / mgs), Hive Mind (the team's shared partner knowledge
    repo), and the configured transcription provider all sit behind typed
    MCP clients. Anything that's unconfigured falls back to mock data, so the
-   UI keeps working while you finish setup.
+   UI keeps working while you're setting things up on your first use.
 
 Three project kinds, one rendering:
 
 - **partner** — sourced from
   [Team51-Hive-Mind](https://github.com/a8cteam51/Team51-Hive-Mind) plus a
   vault scratchpad for your personal tracking.
-- **team** — internal initiatives that live entirely in your vault.
-- **personal** — individual projects that live entirely in your vault.
+- **team** — internal initiatives that live entirely in your vault (eg: task force work).
+- **personal** — individual projects that live entirely in your vault (eg: personal development or personal projects that align with your daily work).
 
 ## The daily flow
 
-A typical day looks like this:
+A typical day could look like this:
 
 1. **Open `/today`.** Top 3 picks, Realistic Shape, Hot Pings (Slack / Linear
    / Zendesk / GitHub), Stalls, Recent Calls. Half the surfaces are scored
@@ -67,7 +65,7 @@ A typical day looks like this:
    Call on the recording. Smithers fetches the transcript, runs analysis,
    and offers action items, decisions, and follow-ups for you to accept
    into the right surfaces.
-5. **End the week with a weekly update.** `/weekly-updates` pre-computes
+5. **Start the week with a weekly update.** `/weekly-updates` pre-computes
    per-project facts (your outbound Zendesk replies, open tasks, Linear
    updates, calls, drafts) and drafts the team-P2 post for you to edit and
    copy.
@@ -83,11 +81,11 @@ A quick read-this-to-know-what's-there reference for the routes:
 | `/projects/[slug]` | The workbench. Tabs or single page; this is where the work happens. |
 | `/calls` | All recent Fathom / Granola recordings, matched to projects (with manual override). |
 | `/drafts` | Saved drafts (Zendesk replies, follow-up nudges, P2 posts). |
-| `/agendas` | Per-partner agendas, editable inline. |
+| `/agendas` | Per-partner call agendas, editable inline. |
 | `/follow-ups` | The full follow-ups table (active + resolved). |
 | `/weekly-updates` | Monday weekly update drafting + history. |
 | `/partner-knowledge/[slug]` | In-app editor for partner-knowledge.md (body + contacts). |
-| `/style-guide` | Voice + style files Smithers feeds to every drafting agent. |
+| `/style-guide` | Voice + style files Smithers feeds to every drafting agent. Editable in app. |
 | `/settings` | All tunable knobs in one tabbed page (Workflow / Setup / Diagnostics / Skills / About). |
 | `/setup` | First-run wizard — paths, identity, API keys, MCP toggles. |
 | Cmd-K | Ask Smithers palette: search projects / follow-ups / pages, take structured actions (Add task, Set status, Resolve follow-up…), or ask in natural language. |
@@ -133,8 +131,6 @@ What's available (non-exhaustive):
   projects + follow-ups, or runs a free-form query through a small
   dispatcher agent that confirms before writing.
 
-[TODO: link to a one-page "AI affordances by surface" matrix if you want
-something denser]
 
 ## What you configure once
 
@@ -147,20 +143,37 @@ something denser]
   ("did Katie reply to this Zendesk thread?"), and quick-link defaults.
 - **API keys** — `ANTHROPIC_API_KEY` (required for any AI affordance),
   `LINEAR_API_KEY` (optional but lights up direct Linear writes),
-  `GRANOLA_API_KEY` (only if you switch transcription provider).
+  `GRANOLA_API_KEY` (needed for Granola transcriptions).
 - **MCP toggles** — turn ContextA8C / Hive Mind / Fathom on once the
   corresponding path / auth is set. Each MCP independently falls back to
-  mock if disabled.
+  mock data if disabled.
 
 After saving any field, **restart `pnpm dev`** — Next.js reads config and env
 vars once at boot.
+
+### How to restart the dev server
+
+Three ways to do it; pick whichever fits how you're working.
+
+**1. In-app (easiest)** — `/settings → Diagnostics → Restart dev server → Restart → Yes, restart`. The current process exits, a fresh `pnpm dev` is spawned in the background, and the page reloads automatically once the new server answers (usually 5–10 seconds). One thing to know: the terminal that originally hosted `pnpm dev` will look like it exited (the log stream stops). That's expected — the new process runs detached. If you want logs again, re-run `pnpm dev` in a terminal whenever; the in-app button is just for quick config refreshes.
+
+**2. Terminal**
+
+- Find the window where you originally ran `pnpm dev`. It should be showing a stream of log lines.
+- Press `Ctrl+C` (use `Ctrl`, not `Cmd`, even on a Mac). You'll see `^C` appear and the log stream stop.
+- Type `pnpm dev` and press Enter. After a few seconds you'll see `▲ Next.js` followed by `Ready in Nms` — reload `localhost:3000` in your browser.
+
+**3. VS Code / Cursor / other editor with a built-in terminal**
+
+- If you started Smithers from your editor's built-in terminal, look for a small trash-can icon at the top-right of the terminal panel. Clicking it kills the process — same as `Ctrl+C` above.
+- Open a fresh terminal (`Terminal → New Terminal`) and run `pnpm dev` again.
 
 ## What runs in the background
 
 Configurable from `/settings → Workflow`. All defaults off until you opt in.
 
 - **Daily briefing** — fires at a configured HH:MM each day. Pre-warms Top 3
-  + Realistic Shape + writes a snippet to today's daily note.
+  + Realistic Shape + writes a snippet to today's daily note in your vault.
 - **Ping monitor** — re-checks every Pings-to-Action item so the feed auto-
   hides items you've already replied to.
 - **Transcription sync** — warms the configured provider's recordings cache
