@@ -26,7 +26,6 @@ interface ActiveRun {
 
 interface Props {
   projectSlug: string;
-  devUrl: string;
   stagingUrl: string;
   productionUrl: string;
   detection: {
@@ -46,14 +45,13 @@ const TEST_LABEL: Record<TestType, string> = {
 
 export function QaLauncherCard({
   projectSlug,
-  devUrl,
   stagingUrl,
   productionUrl,
   detection,
   activeRun,
 }: Props) {
   const router = useRouter();
-  const [url, setUrl] = React.useState(devUrl || stagingUrl || productionUrl);
+  const [url, setUrl] = React.useState(stagingUrl || productionUrl);
   const [pendingType, setPendingType] = React.useState<TestType | null>(null);
   const [pendingIngestType, setPendingIngestType] = React.useState<TestType | null>(null);
 
@@ -144,9 +142,6 @@ export function QaLauncherCard({
             disabled={disabled}
           />
           <div className="flex flex-wrap gap-2 text-xs">
-            {devUrl ? (
-              <UrlPreset label="Dev" url={devUrl} onClick={setUrl} />
-            ) : null}
             {stagingUrl ? (
               <UrlPreset label="Staging" url={stagingUrl} onClick={setUrl} />
             ) : null}

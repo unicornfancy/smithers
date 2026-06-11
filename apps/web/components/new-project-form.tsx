@@ -33,7 +33,7 @@ interface FormState {
   partner_slug: string;
   linear_url: string;
   github_input: string;
-  dev_url: string;
+  staging_url: string;
   slack_channel: string;
   zendesk_tickets_text: string;
   p2_url: string;
@@ -50,7 +50,7 @@ const initial: FormState = {
   partner_slug: "",
   linear_url: "",
   github_input: "",
-  dev_url: "",
+  staging_url: "",
   slack_channel: "",
   zendesk_tickets_text: "",
   p2_url: "",
@@ -100,7 +100,7 @@ export function NewProjectForm() {
         partner_slug: state.partner_slug || undefined,
         linear_url: state.linear_url || undefined,
         github_input: state.github_input || undefined,
-        dev_url: state.dev_url || undefined,
+        staging_url: state.staging_url || undefined,
         slack_channel: state.slack_channel || undefined,
         zendesk_tickets_text: state.zendesk_tickets_text || undefined,
         p2_url: state.p2_url || undefined,
@@ -219,14 +219,14 @@ export function NewProjectForm() {
             />
           </Field>
           <Field
-            label="Dev URL"
-            hint="The live site URL Kosh QA runs against (Pressable staging, local tunnel, etc)."
+            label="Staging URL"
+            hint="The site URL Kosh QA runs against (Pressable staging, local tunnel, etc)."
           >
             <input
               type="url"
               className={inputClass}
-              value={state.dev_url}
-              onChange={(e) => update("dev_url", e.target.value)}
+              value={state.staging_url}
+              onChange={(e) => update("staging_url", e.target.value)}
               placeholder="https://pocket-nyc.mystagingwebsite.com"
             />
           </Field>
@@ -402,7 +402,7 @@ function buildPreviewYaml(s: PreviewState): string {
   }
   const githubRepo = previewGithub(s.github_input);
   if (githubRepo) lines.push(`github_repo: ${githubRepo}`);
-  if (s.dev_url.trim()) lines.push(`dev_url: ${s.dev_url.trim()}`);
+  if (s.staging_url.trim()) lines.push(`staging_url: ${s.staging_url.trim()}`);
   if (s.slack_channel.trim()) {
     const ch = s.slack_channel.trim().replace(/^#/, "");
     lines.push(`slack_channel: ${ch}`);

@@ -52,8 +52,6 @@ export interface ProjectFrontmatter {
   github_repo?: string;
   staging_url?: string;
   production_url?: string;
-  /** Live URL the project is currently being built against — fed to Kosh QA runs and the workbench header quick-link. */
-  dev_url?: string;
   /** Figma file or project URL — surfaced as a quick-link in the workbench header. */
   figma_url?: string;
   linear_project_id?: string;
@@ -133,8 +131,6 @@ export interface Project {
   github_repo?: string;
   staging_url?: string;
   production_url?: string;
-  /** Live URL the project is currently being built against — fed to Kosh QA runs and the workbench header quick-link. */
-  dev_url?: string;
   /** Figma file or project URL — surfaced as a quick-link in the workbench header. */
   figma_url?: string;
   linear_project_id?: string;

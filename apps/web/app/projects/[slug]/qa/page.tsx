@@ -67,7 +67,6 @@ export default async function ProjectQaPage({
       <PageShell>
         <QaLauncherCard
           projectSlug={slug}
-          devUrl={project.dev_url ?? ""}
           stagingUrl={project.staging_url ?? ""}
           productionUrl={project.production_url ?? ""}
           detection={{

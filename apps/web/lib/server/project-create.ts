@@ -110,8 +110,8 @@ export interface CreateProjectFormInput {
   linear_url?: string;
   /** Free-form GitHub URL or owner/repo. */
   github_input?: string;
-  /** Live URL the project is currently being built against — fed to Kosh QA runs. */
-  dev_url?: string;
+  /** Site URL Kosh QA runs against (Pressable staging, local tunnel, etc). */
+  staging_url?: string;
   slack_channel?: string;
   /**
    * Zendesk threads (Automattic Zendesk). One per line, raw IDs or
@@ -151,7 +151,7 @@ export function buildProjectFrontmatterFromForm(
     const repo = parseGithubInput(input.github_input);
     if (repo) out.github_repo = repo;
   }
-  if (input.dev_url?.trim()) out.dev_url = input.dev_url.trim();
+  if (input.staging_url?.trim()) out.staging_url = input.staging_url.trim();
   if (input.slack_channel?.trim()) {
     out.slack_channel = normalizeSlackChannel(input.slack_channel);
   }

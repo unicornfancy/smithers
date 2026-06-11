@@ -249,13 +249,6 @@ function collectQuickLinks(p: Project): QuickLink[] {
       icon: <LifeBuoy className="size-3.5" />,
     });
   }
-  if (p.dev_url) {
-    out.push({
-      label: "Dev",
-      href: p.dev_url,
-      icon: <Server className="size-3.5" />,
-    });
-  }
   if (p.staging_url) {
     out.push({
       label: "Staging",
