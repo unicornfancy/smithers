@@ -135,3 +135,12 @@ export {
   type InterpretPaletteOpenTaskHint,
   type InterpretPaletteOpenFollowUpHint,
 } from "./agents/interpret-palette-query";
+
+export {
+  suggestWeeklyHighlights,
+  type HighlightCandidateInput,
+  type HighlightCategory,
+  type SuggestWeeklyHighlightsInput,
+  type SuggestWeeklyHighlightsOutput,
+  type WeeklyHighlightSuggestion,
+} from "./agents/suggest-weekly-highlights";

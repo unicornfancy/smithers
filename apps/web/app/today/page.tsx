@@ -24,6 +24,7 @@ import {
 } from "@/components/recent-calls-card";
 import { StallsCard } from "@/components/stalls-card";
 import { SectionList, type SectionDef } from "@/components/section-list";
+import { HighlightBanner } from "@/components/today/highlight-banner";
 import { HotPings } from "@/components/today/hot-pings";
 import {
   MovingFastStrip,
@@ -59,6 +60,7 @@ import {
   buildTopThreeCandidates,
   type TopThreeCandidate,
 } from "@/lib/server/top-three";
+import { isoWeekId } from "@/lib/server/weekly-facts";
 import {
   listDismissedIds,
   listEntityIdsWithAction,
@@ -284,6 +286,8 @@ export default async function TodayPage() {
   }
   const actionedCheckedAt = await getMostRecentCheckedAt().catch(() => null);
 
+  const highlightBanner = await computeHighlightBanner({ vault });
+
   return (
     <>
       <AppHeader
@@ -338,6 +342,7 @@ export default async function TodayPage() {
               dailyNotesCount: dailyNotes.length,
               latestDailyNoteDate: latestDailyNote?.date,
               cachedShape,
+              highlightBanner,
             })}
           />
         ) : null}
@@ -374,8 +379,22 @@ function buildTodaySections(args: {
   dailyNotesCount: number;
   latestDailyNoteDate: string | undefined;
   cachedShape: { output: RealisticShapeOutput } | null;
+  highlightBanner: { isoWeek: string; windowLabel: string } | null;
 }): SectionDef[] {
   const sections: SectionDef[] = [];
+
+  if (args.highlightBanner) {
+    sections.push({
+      id: "highlight-banner",
+      title: "Weekly highlight prompt",
+      node: (
+        <HighlightBanner
+          isoWeek={args.highlightBanner.isoWeek}
+          windowLabel={args.highlightBanner.windowLabel}
+        />
+      ),
+    });
+  }
 
   if (args.hotPings.length > 0) {
     sections.push({
@@ -656,6 +675,32 @@ function StatCard({
       {body}
     </Link>
   );
+}
+
+/**
+ * Decide whether to show the Friday-PM / Monday-AM nudge on /today.
+ * Returns null on quiet days, when a highlight already exists for the
+ * current iso-week, or when the vault helper isn't reachable. The
+ * banner itself handles per-week dismissal in localStorage.
+ */
+async function computeHighlightBanner(args: {
+  vault: Awaited<ReturnType<typeof getVault>>;
+}): Promise<{ isoWeek: string; windowLabel: string } | null> {
+  const now = new Date();
+  const day = now.getDay(); // 0 Sun ... 5 Fri ... 6 Sat
+  const hour = now.getHours();
+  let windowLabel: string | null = null;
+  if (day === 5 && hour >= 14) windowLabel = "Friday afternoon";
+  else if (day === 1 && hour < 14) windowLabel = "Monday morning";
+  if (!windowLabel) return null;
+  const isoWeek = isoWeekId(now);
+  try {
+    const existing = await args.vault.readWeeklyHighlight(isoWeek);
+    if (existing && existing.body.trim().length > 0) return null;
+  } catch {
+    return null;
+  }
+  return { isoWeek, windowLabel };
 }
 
 /**

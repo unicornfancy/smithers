@@ -18,6 +18,7 @@ export type AgentName =
   | "analyze-call-transcript"
   | "learn-style-from-archives"
   | "run-skill"
+  | "suggest-weekly-highlights"
   | "interpret-palette-query";
 
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";

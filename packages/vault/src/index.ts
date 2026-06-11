@@ -152,6 +152,20 @@ import {
   type WeeklyUpdateRow,
   type WeeklyUpdateWithDiff,
 } from "./weekly-updates";
+import {
+  listWeeklyHighlights,
+  readPersonalDevelopment,
+  readWeeklyHighlight,
+  savePersonalDevelopment,
+  saveWeeklyHighlight,
+  type PersonalDevelopment,
+  type SavePersonalDevelopmentResult,
+  type SaveWeeklyHighlightInput,
+  type SaveWeeklyHighlightResult,
+  type WeeklyHighlight,
+  type WeeklyHighlightFrontmatter,
+  type WeeklyHighlightRow,
+} from "./personal-digest";
 
 export * from "./types";
 export * from "./config";
@@ -298,6 +312,11 @@ export {
   listWeeklyUpdatesWithDiffs,
   readWeeklyUpdate,
   saveWeeklyUpdate,
+  listWeeklyHighlights,
+  readWeeklyHighlight,
+  saveWeeklyHighlight,
+  readPersonalDevelopment,
+  savePersonalDevelopment,
   watchVault,
 };
 
@@ -308,6 +327,13 @@ export type {
   WeeklyUpdateFrontmatter,
   WeeklyUpdateRow,
   WeeklyUpdateWithDiff,
+  PersonalDevelopment,
+  SavePersonalDevelopmentResult,
+  SaveWeeklyHighlightInput,
+  SaveWeeklyHighlightResult,
+  WeeklyHighlight,
+  WeeklyHighlightFrontmatter,
+  WeeklyHighlightRow,
 };
 
 export interface Vault {
@@ -367,6 +393,17 @@ export interface Vault {
   saveWeeklyUpdate: (
     input: SaveWeeklyUpdateInput,
   ) => ReturnType<typeof saveWeeklyUpdate>;
+  listWeeklyHighlights: () => ReturnType<typeof listWeeklyHighlights>;
+  readWeeklyHighlight: (
+    isoWeek: string,
+  ) => ReturnType<typeof readWeeklyHighlight>;
+  saveWeeklyHighlight: (
+    input: SaveWeeklyHighlightInput,
+  ) => ReturnType<typeof saveWeeklyHighlight>;
+  readPersonalDevelopment: () => ReturnType<typeof readPersonalDevelopment>;
+  savePersonalDevelopment: (
+    body: string,
+  ) => ReturnType<typeof savePersonalDevelopment>;
   toggleProjectTask: (
     slug: string,
     taskId: string,
@@ -536,6 +573,11 @@ export function createVault(options: VaultOptions): Vault {
     saveWeeklyUpdate: (input) => saveWeeklyUpdate(resolved, input),
     listWeeklyUpdatesWithDiffs: (limit) =>
       listWeeklyUpdatesWithDiffs(resolved, limit),
+    listWeeklyHighlights: () => listWeeklyHighlights(resolved),
+    readWeeklyHighlight: (isoWeek) => readWeeklyHighlight(resolved, isoWeek),
+    saveWeeklyHighlight: (input) => saveWeeklyHighlight(resolved, input),
+    readPersonalDevelopment: () => readPersonalDevelopment(resolved),
+    savePersonalDevelopment: (body) => savePersonalDevelopment(resolved, body),
     toggleProjectTask: (slug, taskId, done) =>
       toggleProjectTask(resolved, slug, taskId, done),
     appendProjectTask: (slug, text, markers) =>

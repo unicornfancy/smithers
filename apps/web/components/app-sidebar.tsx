@@ -14,6 +14,7 @@ import {
   PhoneCall,
   Sparkles,
   Settings,
+  Star,
   Wand2,
 } from "lucide-react";
 
@@ -33,6 +34,7 @@ const NAV: NavItem[] = [
   { href: "/agendas", label: "Agendas", icon: ListChecks },
   { href: "/follow-ups", label: "Follow-ups", icon: Inbox },
   { href: "/weekly-updates", label: "Weekly Updates", icon: Newspaper },
+  { href: "/digest", label: "Personal Digest", icon: Star },
   { href: "/style-guide", label: "Style Guide", icon: FileText },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/setup", label: "Setup", icon: Wand2 },

@@ -34,6 +34,13 @@ export interface VaultPaths {
   weeklyUpdates: string;
   templates: string;
   followUps: string;
+  /**
+   * Personal Digest folder — partner-NDA-safe personal reflection
+   * surface. Holds weekly highlight files (YYYY-WNN.md) and a single
+   * Development.md tracker for goals / skills / things to revisit.
+   */
+  personalDigest: string;
+  personalDevelopment: string;
 }
 
 export function vaultPaths(opts: ResolvedVaultOptions): VaultPaths {
@@ -50,5 +57,7 @@ export function vaultPaths(opts: ResolvedVaultOptions): VaultPaths {
     weeklyUpdates: join(root, "Weekly Updates"),
     templates: join(root, "Templates"),
     followUps: join(root, "Follow-ups.md"),
+    personalDigest: join(root, "Personal Digest"),
+    personalDevelopment: join(root, "Personal Digest", "Development.md"),
   };
 }
