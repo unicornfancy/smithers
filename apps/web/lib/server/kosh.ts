@@ -291,6 +291,10 @@ async function launchSubprocess(args: {
     `[${new Date().toISOString()}] starting /kosh:${testType} ${url} (env=${env})\n`,
   );
 
+  // Best-effort `git pull --ff-only` so plugins/skill prompts stay current.
+  // Failures (dirty tree, no remote, offline) log but don't block the run.
+  await maybeUpdateKosh(koshPath, logPath);
+
   // Wipe any stale kosh output JSON from a prior run — otherwise a
   // failed run would silently "succeed" against the old file.
   const expectedJson = join(
@@ -308,24 +312,26 @@ async function launchSubprocess(args: {
   }
 
   const prompt = `/kosh:${testType} ${url} ${env}`;
-  // --print runs in headless / one-shot mode; --dangerously-skip-permissions
-  // is required because kosh's Playwright MCP tools aren't pre-approved
-  // in our session. (Kosh's own .claude/settings.json approves them, but
-  // claude --print doesn't pick those up the same way an interactive
-  // session does — this is the documented escape hatch.)
+  // --plugin-dir loads kosh's commands/skills/hooks for this session;
+  // --dangerously-skip-permissions pre-approves the Playwright MCP tools
+  // (kosh's own .claude/settings.json approves them in an interactive
+  // session, but --print doesn't honor those the same way). Prompt is
+  // piped via stdin since --print + positional prompt argument can be
+  // ambiguous when other flags are present.
   const cliArgs = [
     "--print",
-    "--dangerously-skip-permissions",
-    "--add-dir",
+    "--plugin-dir",
     koshPath,
-    prompt,
+    "--dangerously-skip-permissions",
   ];
 
   const child = spawn(claudeCli, cliArgs, {
     cwd: koshPath,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     env: process.env,
   });
+  child.stdin?.write(prompt);
+  child.stdin?.end();
 
   const db = await getDb();
   db.prepare(
@@ -374,6 +380,45 @@ async function launchSubprocess(args: {
       );
     }
   });
+}
+
+/**
+ * `git pull --ff-only` against the kosh clone so commands/skills stay
+ * fresh. Skips on a dirty tree (we don't want to fight conflicts) and
+ * on a missing remote / offline. Output goes to the run log.
+ *
+ * Kosh ships as a Claude Code plugin — only its commands/skills/scripts
+ * are loaded at runtime, so a successful pull is enough to pick up new
+ * test logic. No npm install needed.
+ */
+async function maybeUpdateKosh(
+  koshPath: string,
+  logPath: string,
+): Promise<void> {
+  try {
+    const { stdout: status } = await execFileAsync(
+      "git",
+      ["-C", koshPath, "status", "--porcelain"],
+      { timeout: 5_000 },
+    );
+    if (status.trim().length > 0) {
+      await appendLog(
+        logPath,
+        `[kosh update] skipped — working tree has local changes\n`,
+      );
+      return;
+    }
+    const { stdout: pullOut, stderr: pullErr } = await execFileAsync(
+      "git",
+      ["-C", koshPath, "pull", "--ff-only"],
+      { timeout: 15_000 },
+    );
+    const summary = (pullOut || pullErr || "").trim().split("\n").slice(0, 4).join(" | ");
+    await appendLog(logPath, `[kosh update] ${summary || "ok"}\n`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await appendLog(logPath, `[kosh update] skipped — ${msg.split("\n")[0]}\n`);
+  }
 }
 
 async function appendLog(logPath: string, text: string): Promise<void> {
