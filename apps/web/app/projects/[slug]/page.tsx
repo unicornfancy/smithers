@@ -12,6 +12,7 @@ import {
 export type LinkedFollowUpEntry = FollowUp & { has_activity: boolean };
 export type LinkedFollowUpMap = Map<string, LinkedFollowUpEntry>;
 
+import { QaWorkbenchTile } from "@/components/qa/qa-workbench-tile";
 import { LiveActivityFeed } from "@/components/live-activity-feed";
 import { NeedsDecisionPanel } from "@/components/needs-decision-panel";
 import { ZendeskThreadsPanel } from "@/components/zendesk-threads-panel";
@@ -38,6 +39,7 @@ import {
 import { ForYouTodayPanel } from "@/components/for-you-today-panel";
 import { getAgentRuntimeStatus } from "@/lib/server/agents";
 import { loadConfig } from "@/lib/server/config";
+import { listQaRuns } from "@/lib/server/kosh";
 import { getMcpClient } from "@/lib/server/mcp";
 import { findAgendaForPartner } from "@/lib/server/agenda-for-partner";
 import { recordingMatchesProject } from "@/lib/server/recording-match";
@@ -120,6 +122,7 @@ export default async function ProjectWorkbenchPage({
     hiveMindBrief,
     hiveMindProject,
     agendaForPartner,
+    qaRuns,
   ] = await Promise.all([
       vault.listDrafts().catch(() => []),
       vault
@@ -171,6 +174,7 @@ export default async function ProjectWorkbenchPage({
       vault.getHiveMindBrief(hmPartnerSlug, hmProjectSlug).catch(() => null),
       vault.getHiveMindProject(hmPartnerSlug, hmProjectSlug).catch(() => null),
       findAgendaForPartner(detail.partner).catch(() => null),
+      listQaRuns(detail.slug).catch(() => []),
     ]);
 
   // Find the active phase (first started issue) and fetch its subtasks.
@@ -439,6 +443,27 @@ export default async function ProjectWorkbenchPage({
       />
     ),
   });
+
+  {
+    const completed = qaRuns.filter((r) => r.status === "completed");
+    const last = qaRuns[0] ?? null;
+    const hasOpen = completed.some(
+      (r) => (r.counts_critical ?? 0) + (r.counts_high ?? 0) > 0,
+    );
+    sections.push({
+      id: "qa-reports",
+      title: "QA Reports",
+      node: (
+        <QaWorkbenchTile
+          projectSlug={detail.slug}
+          totalRuns={qaRuns.length}
+          lastRunAt={last?.started_at ?? null}
+          lastTestType={last?.test_type ?? null}
+          hasOpenIssues={hasOpen}
+        />
+      ),
+    });
+  }
 
   if (linearProject) {
     sections.push({

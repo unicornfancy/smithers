@@ -29,6 +29,13 @@ export interface SmithersConfig {
     hive_mind: string;
     data: string;
     my_voice?: string;
+    /**
+     * Path to a local clone of the Kosh plugin (https://github.com/a8cteam51/kosh).
+     * Used by the per-project QA Reports workbench to launch
+     * `claude --plugin-dir <kosh>` runs against a dev URL.
+     * Empty = QA UI shows fallback "install kosh" guidance.
+     */
+    kosh?: string;
   };
   mcps: {
     context_a8c: { enabled: boolean; endpoint?: string };
@@ -167,6 +174,7 @@ const DEFAULTS: SmithersConfig = {
     hive_mind: "~/Team51-Hive-Mind",
     data: "~/.smithers",
     my_voice: "",
+    kosh: "~/kosh",
   },
   mcps: {
     context_a8c: { enabled: false },
@@ -281,6 +289,7 @@ function resolvePaths(
       my_voice: cfg.paths.my_voice
         ? resolveOne(cfg.paths.my_voice, repoRoot)
         : "",
+      kosh: cfg.paths.kosh ? resolveOne(cfg.paths.kosh, repoRoot) : "",
     },
   };
 }
@@ -309,6 +318,7 @@ function mergeWithDefaults(
       ...DEFAULTS.paths,
       ...partial.paths,
       my_voice: partial.paths?.my_voice ?? DEFAULTS.paths.my_voice ?? "",
+      kosh: partial.paths?.kosh ?? DEFAULTS.paths.kosh ?? "",
     },
     mcps: {
       context_a8c: { ...DEFAULTS.mcps.context_a8c, ...partial.mcps?.context_a8c },

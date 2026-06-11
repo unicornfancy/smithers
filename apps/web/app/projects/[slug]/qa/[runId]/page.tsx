@@ -1,0 +1,150 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { ArrowLeft, ExternalLink } from "lucide-react";
+
+import { AppHeader } from "@/components/app-header";
+import { Markdown } from "@/components/markdown";
+import { PageShell } from "@/components/page-shell";
+import { QaRunControls } from "@/components/qa/qa-run-controls";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { readQaRunReport } from "@/lib/server/kosh";
+
+interface Params {
+  slug: string;
+  runId: string;
+}
+
+export const dynamic = "force-dynamic";
+
+const TEST_LABEL: Record<string, string> = {
+  "functional-design": "Functional & design",
+  performance: "Performance",
+  a11y: "Accessibility",
+};
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<Params>;
+}) {
+  const { runId } = await params;
+  return { title: `QA run ${runId.slice(0, 12)} · Smithers` };
+}
+
+export default async function QaRunDetailPage({
+  params,
+}: {
+  params: Promise<Params>;
+}) {
+  const { slug, runId } = await params;
+  const result = await readQaRunReport(runId);
+  if (!result) notFound();
+  const { run, md, log, json } = result;
+  if (run.project_slug !== slug) notFound();
+
+  const isActive = run.status === "queued" || run.status === "running";
+
+  return (
+    <>
+      <AppHeader
+        title={`${TEST_LABEL[run.test_type] ?? run.test_type} · ${run.target_url}`}
+        subtitle={`Run started ${run.started_at} · status: ${run.status}`}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href={`/projects/${slug}/qa`}>
+                <ArrowLeft className="mr-1 size-3.5" />
+                Back to QA
+              </Link>
+            </Button>
+            {run.report_json_relpath ? (
+              <Button variant="outline" size="sm" asChild>
+                <Link
+                  href={`/api/qa-runs/${runId}/json`}
+                  prefetch={false}
+                  target="_blank"
+                >
+                  JSON
+                  <ExternalLink className="ml-1 size-3.5" />
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+        }
+      />
+      <PageShell>
+        {isActive ? (
+          <QaRunControls
+            runId={run.id}
+            projectSlug={slug}
+            status={run.status}
+          />
+        ) : null}
+
+        {run.status === "failed" ? (
+          <Card className="border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/20">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Run failed</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <pre className="whitespace-pre-wrap text-xs">
+                {run.error_message ?? "(no error message captured)"}
+              </pre>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {md ? (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Report</CardTitle>
+              <p className="text-muted-foreground text-xs">
+                Saved to Hive Mind at{" "}
+                <code className="bg-muted rounded px-1 text-[11px]">
+                  {run.report_md_relpath}
+                </code>
+              </p>
+            </CardHeader>
+            <CardContent>
+              <article className="prose prose-sm dark:prose-invert max-w-none">
+                <Markdown source={md} />
+              </article>
+            </CardContent>
+          </Card>
+        ) : run.status === "completed" ? (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Report (JSON only)</CardTitle>
+              <p className="text-muted-foreground text-xs">
+                Markdown generation failed or kosh&apos;s script wasn&apos;t
+                available — the JSON below was saved to Hive Mind at{" "}
+                <code className="bg-muted rounded px-1 text-[11px]">
+                  {run.report_json_relpath}
+                </code>
+              </p>
+            </CardHeader>
+            <CardContent>
+              <pre className="bg-muted overflow-x-auto rounded p-3 text-xs">
+                {JSON.stringify(json, null, 2)}
+              </pre>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {log ? (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Run log</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <pre className="bg-muted max-h-96 overflow-auto rounded p-3 text-xs">
+                {log}
+              </pre>
+            </CardContent>
+          </Card>
+        ) : null}
+      </PageShell>
+    </>
+  );
+}

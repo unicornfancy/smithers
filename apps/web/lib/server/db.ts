@@ -7,7 +7,7 @@ import Database, { type Database as DB } from "better-sqlite3";
 
 import { loadConfig } from "./config";
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 let cached: DB | null = null;
 let cachedPath: string | null = null;
@@ -74,7 +74,8 @@ function applyMigrations(db: DB): void {
   if (current < 1) migrationV1(db);
   if (current < 2) migrationV2(db);
   if (current < 3) migrationV3(db);
-  // Future migrations land here as `if (current < 4) migrationV4(db); ...`
+  if (current < 4) migrationV4(db);
+  // Future migrations land here as `if (current < 5) migrationV5(db); ...`
 
   db.prepare(
     "INSERT INTO meta(key, value) VALUES('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -128,5 +129,39 @@ function migrationV3(db: DB): void {
       actioned INTEGER NOT NULL,
       checked_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+  `);
+}
+
+function migrationV4(db: DB): void {
+  // Kosh QA runs. One row per `claude --plugin-dir kosh -p "/kosh:<type> <url>"`
+  // launch. Status walks queued → running → completed | failed | cancelled.
+  // `pid` is recorded so the server can attempt SIGTERM on cancel, but a
+  // stale pid is harmless (we never reuse a row's pid after the process exits).
+  // `report_json_relpath` and `report_md_relpath` are relative to the Hive
+  // Mind clone root (under the partner/project) so the detail page can
+  // resolve them via the configured hiveMindPath.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS qa_runs (
+      id TEXT PRIMARY KEY,
+      project_slug TEXT NOT NULL,
+      test_type TEXT NOT NULL,
+      target_url TEXT NOT NULL,
+      env TEXT NOT NULL,
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT,
+      pid INTEGER,
+      log_path TEXT,
+      report_json_relpath TEXT,
+      report_md_relpath TEXT,
+      counts_critical INTEGER,
+      counts_high INTEGER,
+      counts_medium INTEGER,
+      counts_low INTEGER,
+      error_message TEXT,
+      source TEXT NOT NULL DEFAULT 'cli'
+    );
+    CREATE INDEX IF NOT EXISTS idx_qa_runs_project
+      ON qa_runs(project_slug, started_at DESC);
   `);
 }

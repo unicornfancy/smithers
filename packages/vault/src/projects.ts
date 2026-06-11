@@ -215,6 +215,7 @@ async function projectFromFile(
     github_repo: fm.github_repo,
     staging_url: fm.staging_url,
     production_url: fm.production_url,
+    dev_url: fm.dev_url,
     figma_url: fm.figma_url,
     linear_project_id: fm.linear_project_id,
     linear_project_slug: fm.linear_project_slug,
@@ -761,6 +762,7 @@ export interface UpdateProjectFrontmatterPatch {
   github_repo?: string;
   staging_url?: string;
   production_url?: string;
+  dev_url?: string;
   figma_url?: string;
   linear_project_id?: string;
   linear_project_slug?: string;
