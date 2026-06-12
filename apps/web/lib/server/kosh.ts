@@ -14,6 +14,8 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
+import type { Database as DB } from "better-sqlite3";
+
 import { loadConfig } from "./config";
 import { getDb } from "./db";
 import { getMcpClient } from "./mcp";
@@ -202,21 +204,42 @@ export async function getActiveQaRun(
   return row ? rowToQaRun(row) : null;
 }
 
+/**
+ * Pending + running runs for a project, oldest first — feeds the UI's
+ * "in progress" panel so the user can see what's queued behind the
+ * currently-running test.
+ */
+export async function listPendingQaRuns(
+  projectSlug: string,
+): Promise<QaRunRow[]> {
+  const db = await getDb();
+  const rows = db
+    .prepare(
+      `SELECT * FROM qa_runs
+       WHERE project_slug = ?
+         AND status IN ('queued', 'running')
+       ORDER BY started_at ASC`,
+    )
+    .all(projectSlug) as Record<string, unknown>[];
+  return rows.map(rowToQaRun);
+}
+
 // --- Launching a run -------------------------------------------------------
 
 /**
- * Start a kosh QA run in the background. Returns the new run id.
- * The actual subprocess + log capture runs detached from the calling
- * request — by the time the action returns, the row is queued/running.
- * Status walks forward via finishRun() when the child exits.
+ * Enqueue a kosh QA run. Returns the new run id. Multiple runs can be
+ * queued at once (per project or across projects) — the drainQueue()
+ * loop runs them strictly one-at-a-time so we don't fight over kosh's
+ * hardcoded reports/data/qa-report-<type>.json paths or saturate the
+ * machine with parallel Playwright sessions.
  */
 export async function startQaRun(
   input: StartQaRunInput,
 ): Promise<
-  | { ok: true; run_id: string }
+  | { ok: true; run_id: string; queued_behind: number }
   | {
       ok: false;
-      reason: "kosh-not-ready" | "already-running" | "bad-url" | "error";
+      reason: "kosh-not-ready" | "bad-url" | "error";
       message?: string;
     }
 > {
@@ -228,11 +251,6 @@ export async function startQaRun(
   const detect = await detectKosh();
   if (!detect.ready || !detect.claude_cli || !detect.kosh_path) {
     return { ok: false, reason: "kosh-not-ready", message: detect.reason };
-  }
-
-  const active = await getActiveQaRun(input.project_slug);
-  if (active) {
-    return { ok: false, reason: "already-running", message: `Run ${active.id} is still ${active.status}` };
   }
 
   const env = input.env ?? inferEnv(url);
@@ -255,23 +273,88 @@ export async function startQaRun(
     logPath,
   );
 
-  // Fire and forget. We deliberately do NOT await launchSubprocess —
-  // it stays alive across multiple request cycles. Status mutations
-  // land via DB inserts inside its own promise chain.
-  launchSubprocess({
-    runId,
-    koshPath: detect.kosh_path,
-    claudeCli: detect.claude_cli,
-    testType: input.test_type,
-    url,
-    env,
-    logPath,
-    projectSlug: input.project_slug,
-  }).catch((err) => {
-    void recordError(runId, err);
-  });
+  const queuedBehind = countRunsAheadOf(db, runId);
+  // Fire and forget — drainQueue is a no-op if something's already running.
+  void drainQueue(detect.kosh_path, detect.claude_cli);
+  return { ok: true, run_id: runId, queued_behind: queuedBehind };
+}
 
-  return { ok: true, run_id: runId };
+function countRunsAheadOf(db: DB, runId: string): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) as c FROM qa_runs
+       WHERE status IN ('queued', 'running')
+         AND id != ?
+         AND started_at <= (SELECT started_at FROM qa_runs WHERE id = ?)`,
+    )
+    .get(runId, runId) as { c: number } | undefined;
+  return row?.c ?? 0;
+}
+
+/**
+ * Atomically promote the oldest queued run to running and spawn the
+ * subprocess. Returns immediately if a run is already in flight — we
+ * only allow one subprocess at a time.
+ *
+ * Called on initial enqueue, and again from launchSubprocess's child-
+ * exit handler so the queue drains without polling.
+ */
+let drainInFlight = false;
+async function drainQueue(
+  koshPath: string,
+  claudeCli: string,
+): Promise<void> {
+  if (drainInFlight) return;
+  drainInFlight = true;
+  try {
+    const db = await getDb();
+    const claim = db.transaction(() => {
+      const running = db
+        .prepare(`SELECT 1 FROM qa_runs WHERE status = 'running' LIMIT 1`)
+        .get();
+      if (running) return null;
+      const next = db
+        .prepare(
+          `SELECT * FROM qa_runs
+           WHERE status = 'queued'
+           ORDER BY started_at ASC
+           LIMIT 1`,
+        )
+        .get() as Record<string, unknown> | undefined;
+      if (!next) return null;
+      // Mark running here so a concurrent drain call sees it. The pid
+      // gets written once spawn() actually returns one.
+      db.prepare(`UPDATE qa_runs SET status = 'running' WHERE id = ?`).run(
+        next.id as string,
+      );
+      return rowToQaRun(next);
+    });
+
+    const claimed = claim();
+    if (!claimed) return;
+
+    void launchSubprocess({
+      runId: claimed.id,
+      koshPath,
+      claudeCli,
+      testType: claimed.test_type,
+      url: claimed.target_url,
+      env: claimed.env,
+      logPath: claimed.log_path ?? join(
+        (await loadConfig()).paths.data,
+        "kosh-logs",
+        `${claimed.id}.log`,
+      ),
+      projectSlug: claimed.project_slug,
+    }).catch((err) => {
+      void recordError(
+        claimed.id,
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    });
+  } finally {
+    drainInFlight = false;
+  }
 }
 
 async function launchSubprocess(args: {
@@ -333,10 +416,13 @@ async function launchSubprocess(args: {
   child.stdin?.write(prompt);
   child.stdin?.end();
 
+  // Row was already marked running by drainQueue's atomic claim; just
+  // stamp the pid now that spawn() has handed one back.
   const db = await getDb();
-  db.prepare(
-    `UPDATE qa_runs SET status = 'running', pid = ? WHERE id = ?`,
-  ).run(child.pid ?? null, runId);
+  db.prepare(`UPDATE qa_runs SET pid = ? WHERE id = ?`).run(
+    child.pid ?? null,
+    runId,
+  );
 
   child.stdout?.on("data", (chunk) => {
     void appendLog(logPath, chunk.toString());
@@ -354,30 +440,36 @@ async function launchSubprocess(args: {
       logPath,
       `\n[${new Date().toISOString()}] child exited code=${code} signal=${signal ?? "none"}\n`,
     );
-    // If the row was already marked cancelled, don't overwrite it.
-    const cur = await getQaRun(runId);
-    if (cur?.status === "cancelled") return;
+    try {
+      // If the row was already marked cancelled, don't overwrite it.
+      const cur = await getQaRun(runId);
+      if (cur?.status === "cancelled") return;
 
-    if (code === 0 || code === null) {
-      // Success path — pick up the report JSON, push to HM.
-      try {
-        await finalizeSuccess({
-          runId,
-          koshPath,
-          testType,
-          projectSlug: args.projectSlug,
-        });
-      } catch (err) {
+      if (code === 0 || code === null) {
+        // Success path — pick up the report JSON, push to HM.
+        try {
+          await finalizeSuccess({
+            runId,
+            koshPath,
+            testType,
+            projectSlug: args.projectSlug,
+          });
+        } catch (err) {
+          await recordError(
+            runId,
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
+      } else {
         await recordError(
           runId,
-          err instanceof Error ? err : new Error(String(err)),
+          new Error(`kosh exited with code ${code} signal ${signal ?? "none"}`),
         );
       }
-    } else {
-      await recordError(
-        runId,
-        new Error(`kosh exited with code ${code} signal ${signal ?? "none"}`),
-      );
+    } finally {
+      // Pick up the next queued run, if any. Errors swallowed — the
+      // next row stays queued and the user can trigger another start.
+      void drainQueue(koshPath, claudeCli).catch(() => undefined);
     }
   });
 }

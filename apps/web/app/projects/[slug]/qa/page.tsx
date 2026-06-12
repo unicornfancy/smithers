@@ -7,7 +7,11 @@ import { PageShell } from "@/components/page-shell";
 import { QaLauncherCard } from "@/components/qa/qa-launcher-card";
 import { QaRunHistoryCard } from "@/components/qa/qa-run-history-card";
 import { Button } from "@/components/ui/button";
-import { detectKosh, getActiveQaRun, listQaRuns } from "@/lib/server/kosh";
+import {
+  detectKosh,
+  listPendingQaRuns,
+  listQaRuns,
+} from "@/lib/server/kosh";
 import { getVault } from "@/lib/server/vault";
 
 interface Params {
@@ -44,9 +48,9 @@ export default async function ProjectQaPage({
   const project = await vault.readProject(slug);
   if (!project) notFound();
 
-  const [detection, activeRun, history] = await Promise.all([
+  const [detection, pending, history] = await Promise.all([
     detectKosh(),
-    getActiveQaRun(slug),
+    listPendingQaRuns(slug),
     listQaRuns(slug),
   ]);
 
@@ -75,17 +79,13 @@ export default async function ProjectQaPage({
             claudeCli: detection.claude_cli,
             koshPath: detection.kosh_path,
           }}
-          activeRun={
-            activeRun
-              ? {
-                  id: activeRun.id,
-                  test_type: activeRun.test_type,
-                  target_url: activeRun.target_url,
-                  status: activeRun.status,
-                  started_at: activeRun.started_at,
-                }
-              : null
-          }
+          pendingRuns={pending.map((r) => ({
+            id: r.id,
+            test_type: r.test_type,
+            target_url: r.target_url,
+            status: r.status,
+            started_at: r.started_at,
+          }))}
         />
         <QaRunHistoryCard
           projectSlug={slug}

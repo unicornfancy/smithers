@@ -2,11 +2,20 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Loader2, PlayCircle, Sparkles, Terminal } from "lucide-react";
+import {
+  AlertTriangle,
+  Clock,
+  ListPlus,
+  Loader2,
+  PlayCircle,
+  Sparkles,
+  Terminal,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
   ingestQaRunAction,
+  queueAllQaRunsAction,
   startQaRunAction,
 } from "@/app/projects/[slug]/qa/actions";
 import { Button } from "@/components/ui/button";
@@ -16,7 +25,7 @@ import { cn } from "@/lib/utils";
 type TestType = "functional-design" | "performance" | "a11y";
 type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
-interface ActiveRun {
+interface PendingRun {
   id: string;
   test_type: TestType;
   target_url: string;
@@ -34,7 +43,7 @@ interface Props {
     claudeCli: string | null;
     koshPath: string | null;
   };
-  activeRun: ActiveRun | null;
+  pendingRuns: PendingRun[];
 }
 
 const TEST_LABEL: Record<TestType, string> = {
@@ -48,22 +57,26 @@ export function QaLauncherCard({
   stagingUrl,
   productionUrl,
   detection,
-  activeRun,
+  pendingRuns,
 }: Props) {
   const router = useRouter();
   const [url, setUrl] = React.useState(stagingUrl || productionUrl);
   const [pendingType, setPendingType] = React.useState<TestType | null>(null);
   const [pendingIngestType, setPendingIngestType] = React.useState<TestType | null>(null);
+  const [queueingAll, setQueueingAll] = React.useState(false);
+
+  const activeRun = pendingRuns.find((r) => r.status === "running") ?? null;
+  const queuedRuns = pendingRuns.filter((r) => r.status === "queued");
 
   React.useEffect(() => {
-    // Light polling while a run is active — refreshes the page so the
-    // active-run state walks forward and history picks up the result.
-    if (!activeRun) return;
+    // Light polling while anything is in flight — refreshes the page
+    // so queued runs walk forward and history picks up results.
+    if (pendingRuns.length === 0) return;
     const id = setInterval(() => router.refresh(), 5000);
     return () => clearInterval(id);
-  }, [activeRun, router]);
+  }, [pendingRuns.length, router]);
 
-  const disabled = !detection.ready || Boolean(activeRun);
+  const disabled = !detection.ready;
 
   async function handleStart(type: TestType) {
     if (!url.trim()) {
@@ -78,13 +91,40 @@ export function QaLauncherCard({
         target_url: url.trim(),
       });
       if (res.ok) {
-        toast.success(`Started ${TEST_LABEL[type]} test`);
+        const behind = res.data.queued_behind;
+        toast.success(
+          behind === 0
+            ? `Started ${TEST_LABEL[type]} test`
+            : `Queued ${TEST_LABEL[type]} (${behind} ahead)`,
+        );
         router.refresh();
       } else {
         toast.error(res.message ?? res.reason);
       }
     } finally {
       setPendingType(null);
+    }
+  }
+
+  async function handleQueueAll() {
+    if (!url.trim()) {
+      toast.error("Pick a URL first");
+      return;
+    }
+    setQueueingAll(true);
+    try {
+      const res = await queueAllQaRunsAction({
+        project_slug: projectSlug,
+        target_url: url.trim(),
+      });
+      if (res.ok) {
+        toast.success("Queued all 3 audits");
+        router.refresh();
+      } else {
+        toast.error(res.message ?? res.reason);
+      }
+    } finally {
+      setQueueingAll(false);
     }
   }
 
@@ -155,23 +195,25 @@ export function QaLauncherCard({
           <NotReadyBanner reason={detection.reason} />
         ) : null}
 
-        {activeRun ? (
-          <div className="bg-muted/40 flex items-center gap-3 rounded-md border p-3">
-            <Loader2 className="text-muted-foreground size-4 animate-spin" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">
-                {TEST_LABEL[activeRun.test_type]} test{" "}
-                <span className="text-muted-foreground font-normal">
-                  · {activeRun.status}
-                </span>
-              </p>
-              <p className="text-muted-foreground truncate text-xs">
-                {activeRun.target_url}
-              </p>
-            </div>
-            <Button asChild size="sm" variant="ghost">
-              <a href={`/projects/${projectSlug}/qa/${activeRun.id}`}>View</a>
-            </Button>
+        {pendingRuns.length > 0 ? (
+          <div className="space-y-1.5">
+            {activeRun ? (
+              <PendingRunRow
+                run={activeRun}
+                slug={projectSlug}
+                label={`Running: ${TEST_LABEL[activeRun.test_type]}`}
+                tone="active"
+              />
+            ) : null}
+            {queuedRuns.map((q, i) => (
+              <PendingRunRow
+                key={q.id}
+                run={q}
+                slug={projectSlug}
+                label={`Up next${queuedRuns.length > 1 ? ` (#${i + 1})` : ""}: ${TEST_LABEL[q.test_type]}`}
+                tone="queued"
+              />
+            ))}
           </div>
         ) : null}
 
@@ -181,7 +223,7 @@ export function QaLauncherCard({
               key={t}
               variant="default"
               size="sm"
-              disabled={disabled || pendingType !== null}
+              disabled={disabled || pendingType !== null || queueingAll}
               onClick={() => handleStart(t)}
               className="justify-start gap-2"
             >
@@ -194,6 +236,21 @@ export function QaLauncherCard({
             </Button>
           ))}
         </div>
+
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={disabled || queueingAll || pendingType !== null}
+          onClick={handleQueueAll}
+          className="w-full justify-center gap-2"
+        >
+          {queueingAll ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <ListPlus className="size-3.5" />
+          )}
+          Queue all three (runs sequentially)
+        </Button>
 
         <details className="text-muted-foreground border-t pt-3 text-xs">
           <summary className="flex cursor-pointer items-center gap-1.5 font-medium">
@@ -230,6 +287,44 @@ export function QaLauncherCard({
         </details>
       </CardContent>
     </Card>
+  );
+}
+
+function PendingRunRow({
+  run,
+  slug,
+  label,
+  tone,
+}: {
+  run: PendingRun;
+  slug: string;
+  label: string;
+  tone: "active" | "queued";
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 rounded-md border p-3",
+        tone === "active"
+          ? "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50"
+          : "bg-muted/30",
+      )}
+    >
+      {tone === "active" ? (
+        <Loader2 className="text-amber-700 dark:text-amber-300 size-4 shrink-0 animate-spin" />
+      ) : (
+        <Clock className="text-muted-foreground size-4 shrink-0" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-muted-foreground truncate text-xs">
+          {run.target_url}
+        </p>
+      </div>
+      <Button asChild size="sm" variant="ghost">
+        <a href={`/projects/${slug}/qa/${run.id}`}>View</a>
+      </Button>
+    </div>
   );
 }
 
