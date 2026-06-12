@@ -9,6 +9,8 @@ import { useWorkbenchLayout } from "@/lib/use-workbench-layout";
 interface Props {
   projectSlug: string;
   sections: SectionDef[];
+  /** Count of QA runs (any status) — drives the "QA Reports (N)" tab chip. */
+  qaRunsCount?: number;
 }
 
 /**
@@ -20,11 +22,21 @@ interface Props {
  * Default is single-page (see useWorkbenchLayout), so existing users
  * see no change unless they opt into tabs via /settings.
  */
-export function WorkbenchLayoutSwitcher({ projectSlug, sections }: Props) {
+export function WorkbenchLayoutSwitcher({
+  projectSlug,
+  sections,
+  qaRunsCount,
+}: Props) {
   const [layout] = useWorkbenchLayout();
 
   if (layout === "tabs") {
-    return <TabbedWorkbench projectSlug={projectSlug} sections={sections} />;
+    return (
+      <TabbedWorkbench
+        projectSlug={projectSlug}
+        sections={sections}
+        qaRunsCount={qaRunsCount}
+      />
+    );
   }
   return <SectionList scope="project" sections={sections} />;
 }

@@ -1,8 +1,11 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
+  ArrowUpRight,
   CheckSquare,
+  ClipboardCheck,
   FileText,
   MessageSquare,
   Sparkles,
@@ -101,9 +104,15 @@ function writeActiveTab(projectSlug: string, tab: WorkbenchTabId): void {
 interface Props {
   projectSlug: string;
   sections: SectionDef[];
+  /** Run count drives the "QA Reports (N)" link chip. Optional — chip still renders without it. */
+  qaRunsCount?: number;
 }
 
-export function TabbedWorkbench({ projectSlug, sections }: Props) {
+export function TabbedWorkbench({
+  projectSlug,
+  sections,
+  qaRunsCount,
+}: Props) {
   const [active, setActive] = React.useState<WorkbenchTabId>("now");
 
   // Hydrate the active tab from localStorage after mount so SSR + first
@@ -176,6 +185,22 @@ export function TabbedWorkbench({ projectSlug, sections }: Props) {
             </button>
           );
         })}
+        <Link
+          href={`/projects/${projectSlug}/qa`}
+          className={cn(
+            "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+          )}
+        >
+          <ClipboardCheck className="size-3.5" />
+          QA Reports
+          {qaRunsCount !== undefined && qaRunsCount > 0 ? (
+            <span className="text-muted-foreground/80 font-normal">
+              · {qaRunsCount}
+            </span>
+          ) : null}
+          <ArrowUpRight className="text-muted-foreground/60 size-3" />
+        </Link>
       </div>
 
       {TABS.map((tab) => {

@@ -12,7 +12,6 @@ import {
 export type LinkedFollowUpEntry = FollowUp & { has_activity: boolean };
 export type LinkedFollowUpMap = Map<string, LinkedFollowUpEntry>;
 
-import { QaWorkbenchTile } from "@/components/qa/qa-workbench-tile";
 import { LiveActivityFeed } from "@/components/live-activity-feed";
 import { NeedsDecisionPanel } from "@/components/needs-decision-panel";
 import { ZendeskThreadsPanel } from "@/components/zendesk-threads-panel";
@@ -444,27 +443,6 @@ export default async function ProjectWorkbenchPage({
     ),
   });
 
-  {
-    const completed = qaRuns.filter((r) => r.status === "completed");
-    const last = qaRuns[0] ?? null;
-    const hasOpen = completed.some(
-      (r) => (r.counts_critical ?? 0) + (r.counts_high ?? 0) > 0,
-    );
-    sections.push({
-      id: "qa-reports",
-      title: "QA Reports",
-      node: (
-        <QaWorkbenchTile
-          projectSlug={detail.slug}
-          totalRuns={qaRuns.length}
-          lastRunAt={last?.started_at ?? null}
-          lastTestType={last?.test_type ?? null}
-          hasOpenIssues={hasOpen}
-        />
-      ),
-    });
-  }
-
   if (linearProject) {
     sections.push({
       id: "project-status",
@@ -678,7 +656,11 @@ export default async function ProjectWorkbenchPage({
         counts={workbenchCounts}
       />
       <PageShell className="max-w-5xl">
-        <WorkbenchLayoutSwitcher projectSlug={detail.slug} sections={sections} />
+        <WorkbenchLayoutSwitcher
+          projectSlug={detail.slug}
+          sections={sections}
+          qaRunsCount={qaRuns.length}
+        />
       </PageShell>
     </>
   );

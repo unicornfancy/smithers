@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   CheckSquare,
+  ClipboardCheck,
   Clock,
   ExternalLink,
   Figma,
@@ -119,6 +120,12 @@ export function WorkbenchHeader({
               label="Handoff"
             />
           ) : null}
+          <Button variant="ghost" size="sm" asChild className="gap-1.5">
+            <Link href={`/projects/${project.slug}/qa`}>
+              <ClipboardCheck className="size-4" />
+              QA
+            </Link>
+          </Button>
           <ProjectMetadataModal project={project} />
           <ThemeToggle />
         </div>

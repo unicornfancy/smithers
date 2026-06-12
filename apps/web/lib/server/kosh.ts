@@ -847,15 +847,7 @@ export async function readQaRunReport(
 
   const tryRead = async (rel: string | null): Promise<string | null> => {
     if (!rel || !hivePath || !partnerSlug || !projectSlugHm) return null;
-    const abs = join(
-      hivePath,
-      "knowledge",
-      "partners",
-      partnerSlug,
-      "projects",
-      projectSlugHm,
-      rel,
-    );
+    const abs = hmProjectAbsPath(hivePath, partnerSlug, projectSlugHm, rel);
     try {
       return await readFile(abs, "utf-8");
     } catch {
@@ -888,7 +880,61 @@ export async function readQaRunReport(
   return { run, json, md, log };
 }
 
+/**
+ * Resolve a completed QA run to its on-disk absolute paths inside the
+ * Hive Mind clone. Used by the detail page's "Open in vault" / "Copy
+ * path" affordances so the TAM can grab the markdown directly for
+ * pasting into Linear or sharing externally.
+ */
+export async function getQaRunVaultPaths(
+  runId: string,
+): Promise<{
+  json_abs_path: string | null;
+  md_abs_path: string | null;
+} | null> {
+  const run = await getQaRun(runId);
+  if (!run) return null;
+  const cfg = await loadConfig();
+  const hivePath = cfg.paths.hive_mind ? expandHome(cfg.paths.hive_mind) : null;
+  const vault = await getVault();
+  const project = await vault.readProject(run.project_slug);
+  const partnerSlug =
+    project?.hive_mind_partner_slug ?? project?.partner ?? null;
+  const projectSlugHm = project?.hive_mind_project_slug ?? project?.slug ?? null;
+  if (!hivePath || !partnerSlug || !projectSlugHm) {
+    return { json_abs_path: null, md_abs_path: null };
+  }
+  return {
+    json_abs_path: run.report_json_relpath
+      ? hmProjectAbsPath(hivePath, partnerSlug, projectSlugHm, run.report_json_relpath)
+      : null,
+    md_abs_path: run.report_md_relpath
+      ? hmProjectAbsPath(hivePath, partnerSlug, projectSlugHm, run.report_md_relpath)
+      : null,
+  };
+}
+
 // --- helpers ---------------------------------------------------------------
+
+function hmProjectAbsPath(
+  hivePath: string,
+  partnerSlug: string,
+  projectSlugHm: string,
+  relPath: string,
+): string {
+  // HM project files live at:
+  //   <hive>/knowledge/partners/<partner>/<project>/<file>
+  // (no `projects/` intermediate segment — that was an earlier bug here
+  // and is the reason the JSON download 404'd.)
+  return join(
+    hivePath,
+    "knowledge",
+    "partners",
+    partnerSlug,
+    projectSlugHm,
+    relPath,
+  );
+}
 
 function expandHome(p: string): string {
   if (!p) return p;
