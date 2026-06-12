@@ -5,11 +5,14 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { Markdown } from "@/components/markdown";
 import { PageShell } from "@/components/page-shell";
+import { QaFindingsIssueBuilder } from "@/components/qa/qa-findings-issue-builder";
 import { QaRunControls } from "@/components/qa/qa-run-controls";
 import { QaVaultPathChips } from "@/components/qa/qa-vault-path-chips";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getQaRunVaultPaths, readQaRunReport } from "@/lib/server/kosh";
+import { parseKoshFindings } from "@/lib/server/kosh-findings";
+import { getVault } from "@/lib/server/vault";
 
 interface Params {
   slug: string;
@@ -39,13 +42,18 @@ export default async function QaRunDetailPage({
   params: Promise<Params>;
 }) {
   const { slug, runId } = await params;
-  const [result, vaultPaths] = await Promise.all([
+  const [result, vaultPaths, vault] = await Promise.all([
     readQaRunReport(runId),
     getQaRunVaultPaths(runId),
+    getVault(),
   ]);
   if (!result) notFound();
   const { run, md, log, json } = result;
   if (run.project_slug !== slug) notFound();
+
+  const findings = parseKoshFindings(json);
+  const project = await vault.readProject(slug).catch(() => null);
+  const githubRepo = project?.github_repo ?? null;
 
   const isActive = run.status === "queued" || run.status === "running";
 
@@ -103,6 +111,15 @@ export default async function QaRunDetailPage({
           <QaVaultPathChips
             jsonAbsPath={vaultPaths.json_abs_path}
             mdAbsPath={vaultPaths.md_abs_path}
+          />
+        ) : null}
+
+        {run.status === "completed" && findings.length > 0 ? (
+          <QaFindingsIssueBuilder
+            projectSlug={slug}
+            runId={run.id}
+            findings={findings}
+            githubRepo={githubRepo}
           />
         ) : null}
 
