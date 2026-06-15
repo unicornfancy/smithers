@@ -278,18 +278,41 @@ function collectQuickLinks(p: Project): QuickLink[] {
     });
   }
   if (p.slack_channel) {
+    const link = slackChannelLink(p.slack_channel);
     out.push({
-      label: p.slack_channel,
-      href: `https://app.slack.com/client/T024FPGFE/${slackChannelSlug(p.slack_channel)}`,
+      label: link.label,
+      href: link.href,
       icon: <Slack className="size-3.5" />,
     });
   }
   return out;
 }
 
-function slackChannelSlug(channel: string): string {
-  // Slack deep-links use a name slug without leading `#`. We don't know the
-  // channel id from the name alone, so we pass a generic search-like URL with
-  // the bare name; Slack will redirect to the channel if it exists.
-  return channel.replace(/^#+/, "");
+/**
+ * Build a chip-ready label + href for the `slack_channel` frontmatter
+ * value. Accepts three forms:
+ *   - A bare name (`team-51` / `#team-51`) — deep-link to Slack search.
+ *   - A channel-archive URL (`https://<ws>.slack.com/archives/<id>`) —
+ *     link straight at the URL, label down to "Slack · <id>".
+ *   - A bare ID (`C0981BSREQ0`) — link via the standard client URL.
+ */
+function slackChannelLink(value: string): { label: string; href: string } {
+  const trimmed = value.trim();
+  const urlMatch = /^https?:\/\/[^/]+\.slack\.com\/archives\/([A-Z0-9]{8,})/i.exec(
+    trimmed,
+  );
+  if (urlMatch) {
+    return { label: `Slack · ${urlMatch[1]}`, href: trimmed };
+  }
+  if (/^[CG][A-Z0-9]{8,}$/.test(trimmed)) {
+    return {
+      label: `Slack · ${trimmed}`,
+      href: `https://app.slack.com/client/T024FPGFE/${trimmed}`,
+    };
+  }
+  const name = trimmed.replace(/^#+/, "");
+  return {
+    label: `#${name}`,
+    href: `https://app.slack.com/client/T024FPGFE/${name}`,
+  };
 }

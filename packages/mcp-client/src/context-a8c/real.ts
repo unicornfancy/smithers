@@ -1164,11 +1164,23 @@ export class RealContextA8CTransport implements ContextA8CClient {
   }
 
   /**
-   * Resolve a Slack channel name to its ID. Cached for an hour because
-   * the channel list rarely changes and pulling the whole workspace
-   * (1000+ channels paginated) is expensive.
+   * Resolve a Slack channel identifier to its ID. Accepts:
+   *   - A bare channel ID like `C0981BSREQ0` (8+ chars, starts with C/G)
+   *   - A channel-archive URL: `https://<workspace>.slack.com/archives/<id>`
+   *   - A channel name like `team-51` or `#team-51`
+   *
+   * The first two extract the ID directly. The name form does a lookup
+   * against the workspace's `channels` list, cached for an hour (the
+   * a8c workspace has thousands of channels — pulling pages is slow).
    */
   private async resolveSlackChannelId(name: string): Promise<string | null> {
+    // Channel-archive URL — pull the ID out of the path.
+    const urlMatch = /\/archives\/([A-Z0-9]{8,})(?:[/?#]|$)/.exec(name);
+    if (urlMatch && urlMatch[1]) return urlMatch[1];
+    // Bare ID — Slack channel/group IDs are uppercase alphanumeric, 9-11
+    // chars, starting with C (channel) or G (private group).
+    if (/^[CG][A-Z0-9]{8,}$/.test(name)) return name;
+
     const cached = this.slackChannelMap;
     if (cached && Date.now() < this.slackChannelMapExpiresAt) {
       return cached.get(name) ?? null;
