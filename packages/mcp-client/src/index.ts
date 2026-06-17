@@ -24,11 +24,13 @@ import {
 } from "./config";
 import { HealthRegistry } from "./health";
 import { createContextA8CClient } from "./context-a8c/index";
+import { createGoogleDriveClient } from "./google-drive/index";
 import { createHiveMindClient } from "./hive-mind/index";
 import { createFathomClient } from "./fathom/index";
 import { createLinearClient } from "./linear/index";
 
 import type { ContextA8CClient } from "./context-a8c/index";
+import type { GoogleDriveClient } from "./google-drive/index";
 import type { HiveMindClient } from "./hive-mind/index";
 import type { FathomClient } from "./fathom/index";
 import type { LinearClient } from "./linear/index";
@@ -39,6 +41,7 @@ export interface McpClient {
   hiveMind: HiveMindClient;
   fathom: FathomClient;
   linear: LinearClient;
+  googleDrive: GoogleDriveClient;
 
   /** Snapshot of all known source health, for /settings → MCP Health. */
   health(): SourceHealth[];
@@ -58,12 +61,14 @@ export function createMcpClient(opts: McpClientOptions = {}): McpClient {
   const hiveMind = createHiveMindClient(resolved, cache, healthRegistry);
   const fathom = createFathomClient(resolved, cache, healthRegistry);
   const linear = createLinearClient(resolved);
+  const googleDrive = createGoogleDriveClient(resolved, cache, healthRegistry);
 
   return {
     contextA8C,
     hiveMind,
     fathom,
     linear,
+    googleDrive,
     config: resolved,
     health: () => healthRegistry.snapshot(),
     hasIssues: () => healthRegistry.hasIssues(),
@@ -131,4 +136,8 @@ export type {
   LinearIssueDetail,
   LinearProjectUpdate,
 } from "./linear/index";
+export type {
+  GoogleDriveClient,
+  DriveFolderActivityQuery,
+} from "./google-drive/index";
 export { McpClientError } from "./isolation";

@@ -185,6 +185,7 @@ function sourceLabelFor(source: ActivityEvent["source"]): string {
     zendesk: "Zendesk",
     p2: "P2",
     wpcom: "WP.com",
+    google_drive: "Drive",
   };
   return map[source] ?? source;
 }

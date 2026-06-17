@@ -19,6 +19,21 @@ export interface McpClientOptions {
   mockHiveMind?: boolean;
   /** Override the default for Linear only. */
   mockLinear?: boolean;
+  /** Override the default for Google Drive only. */
+  mockGoogleDrive?: boolean;
+  /**
+   * Absolute path to the OAuth client keys JSON downloaded from Google
+   * Cloud (`{installed: {...}}` shape). Read by the
+   * `@modelcontextprotocol/server-gdrive` MCP server via the
+   * `GDRIVE_OAUTH_PATH` env var. Empty disables real Drive transport.
+   */
+  googleDriveOAuthPath?: string;
+  /**
+   * Absolute path to the refresh-token JSON written by `server-gdrive auth`.
+   * Read by the MCP server via `GDRIVE_CREDS_PATH`. Empty disables real
+   * Drive transport.
+   */
+  googleDriveCredsPath?: string;
   /**
    * Email domains treated as internal — used to classify activity actors.
    * Defaults to ["automattic.com"].
@@ -60,9 +75,12 @@ export interface ResolvedMcpClientOptions {
   mockFathom: boolean;
   mockHiveMind: boolean;
   mockLinear: boolean;
+  mockGoogleDrive: boolean;
   internalEmailDomains: string[];
   selfEmail: string;
   hiveMindServerPath: string | null;
+  googleDriveOAuthPath: string | null;
+  googleDriveCredsPath: string | null;
   ttl: DefaultTtls;
 }
 
@@ -81,18 +99,29 @@ export function resolveMcpClientOptions(
   const mockFathom = opts.mockFathom ?? defaultMock;
   const mockHiveMind = opts.mockHiveMind ?? defaultMock;
   const mockLinear = opts.mockLinear ?? defaultMock;
+  // Drive defaults to mock UNTIL both OAuth + creds paths are provided —
+  // even if mock=false at the top level, an unconfigured Drive transport
+  // would just fail to spawn its MCP subprocess.
+  const driveConfigured = Boolean(
+    opts.googleDriveOAuthPath?.trim() && opts.googleDriveCredsPath?.trim(),
+  );
+  const mockGoogleDrive =
+    opts.mockGoogleDrive ?? (driveConfigured ? defaultMock : true);
   return {
     mock: mockContextA8C,
     mockContextA8C,
     mockFathom,
     mockHiveMind,
     mockLinear,
+    mockGoogleDrive,
     internalEmailDomains:
       opts.internalEmailDomains?.length
         ? opts.internalEmailDomains
         : ["automattic.com"],
     selfEmail: opts.selfEmail?.trim().toLowerCase() ?? "",
     hiveMindServerPath: opts.hiveMindServerPath ?? null,
+    googleDriveOAuthPath: opts.googleDriveOAuthPath?.trim() || null,
+    googleDriveCredsPath: opts.googleDriveCredsPath?.trim() || null,
     ttl: {
       activity: { ...DEFAULT_TTLS.activity, ...(opts.ttl?.activity ?? {}) },
       pings: { ...DEFAULT_TTLS.pings, ...(opts.ttl?.pings ?? {}) },

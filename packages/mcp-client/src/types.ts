@@ -51,7 +51,8 @@ export type McpSourceId =
   | "context_a8c.p2"
   | "context_a8c.wpcom"
   | "hive_mind"
-  | "fathom";
+  | "fathom"
+  | "google_drive";
 
 /**
  * Per-source health snapshot. Surfaced in /settings → MCP Health and in the
@@ -96,7 +97,8 @@ export type ActivitySource =
   | "linear"
   | "zendesk"
   | "p2"
-  | "wpcom";
+  | "wpcom"
+  | "google_drive";
 
 export type ActivityKind =
   | "message" // Slack message in channel
@@ -121,7 +123,14 @@ export type ActivityKind =
    */
   | "p2-mention"
   | "zendesk-ticket"
-  | "zendesk-comment";
+  | "zendesk-comment"
+  /**
+   * Drive file event — created, modified, or commented on. Mapped from
+   * the file's `modifiedTime` (which advances on any of these changes).
+   * Single kind is enough for v1; if we need to split, the Drive API's
+   * `kind` / `mimeType` can drive that later.
+   */
+  | "drive-file";
 
 export interface ActivityActor {
   name: string;

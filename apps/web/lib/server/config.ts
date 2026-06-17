@@ -41,6 +41,18 @@ export interface SmithersConfig {
     context_a8c: { enabled: boolean; endpoint?: string };
     hive_mind: { enabled: boolean; endpoint?: string };
     fathom: { enabled: boolean; endpoint?: string };
+    /**
+     * Google Drive MCP via `@modelcontextprotocol/server-gdrive`.
+     * Both paths must point at readable files for activity ingestion
+     * to work. Defaults to `~/.smithers/gcp-oauth.keys.json` +
+     * `~/.smithers/gdrive-server-credentials.json` — the locations
+     * the setup playbook writes to.
+     */
+    google_drive: {
+      enabled: boolean;
+      oauth_keys_path?: string;
+      creds_path?: string;
+    };
   };
   agents: {
     api_key_env: string;
@@ -180,6 +192,11 @@ const DEFAULTS: SmithersConfig = {
     context_a8c: { enabled: false },
     hive_mind: { enabled: false },
     fathom: { enabled: false },
+    google_drive: {
+      enabled: true,
+      oauth_keys_path: "~/.smithers/gcp-oauth.keys.json",
+      creds_path: "~/.smithers/gdrive-server-credentials.json",
+    },
   },
   agents: {
     api_key_env: "ANTHROPIC_API_KEY",
@@ -324,6 +341,10 @@ function mergeWithDefaults(
       context_a8c: { ...DEFAULTS.mcps.context_a8c, ...partial.mcps?.context_a8c },
       hive_mind: { ...DEFAULTS.mcps.hive_mind, ...partial.mcps?.hive_mind },
       fathom: { ...DEFAULTS.mcps.fathom, ...partial.mcps?.fathom },
+      google_drive: {
+        ...DEFAULTS.mcps.google_drive,
+        ...partial.mcps?.google_drive,
+      },
     },
     agents: { ...DEFAULTS.agents, ...partial.agents },
     transcription: { ...DEFAULTS.transcription, ...partial.transcription },

@@ -24,6 +24,13 @@ next-env.d.ts
 .env.development
 .env.production
 
+# credentials / secrets — never commit these even if dropped by mistake
+*oauth*.json
+*credentials*.json
+*client_secret*.json
+*.keys.json
+gcp-*.json
+
 # user config
 config.yaml
 config.local.yaml

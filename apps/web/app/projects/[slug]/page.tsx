@@ -124,6 +124,7 @@ export default async function ProjectWorkbenchPage({
     agendaForPartner,
     qaRuns,
     processedCallNotes,
+    driveActivityResult,
   ] = await Promise.all([
       vault.listDrafts().catch(() => []),
       vault
@@ -177,6 +178,39 @@ export default async function ProjectWorkbenchPage({
       findAgendaForPartner(detail.partner).catch(() => null),
       listQaRuns(detail.slug).catch(() => []),
       vault.listCallNotesForProject(detail.slug).catch(() => []),
+      (async () => {
+        // Drive activity rides alongside the context-a8c feed when a
+        // folder URL is set and the Drive MCP is configured. Parse the
+        // folder id out of the URL; if either is missing, short-circuit
+        // to an empty fresh result so the feed doesn't render a
+        // "Drive degraded" badge for projects without Drive.
+        const folderId = parseDriveFolderId(detail.google_drive_url);
+        if (!folderId) {
+          return {
+            ok: true as const,
+            data: [],
+            from: "fresh" as const,
+            fetched_at: new Date().toISOString(),
+          };
+        }
+        const since = new Date(
+          Date.now() - 14 * 24 * 60 * 60 * 1000,
+        ).toISOString();
+        return mcp.googleDrive
+          .listFolderActivity({
+            folder_id: folderId,
+            project_slug: detail.slug,
+            project_display: detail.name,
+            since,
+            limit: 20,
+          })
+          .catch(() => ({
+            ok: true as const,
+            data: [],
+            from: "fresh" as const,
+            fetched_at: new Date().toISOString(),
+          }));
+      })(),
     ]);
 
   // Find the active phase (first started issue) and fetch its subtasks.
@@ -326,11 +360,34 @@ export default async function ProjectWorkbenchPage({
       }
     : projectFollowUps;
 
+  // Merge Drive events into the activity feed. Drive lives in its own
+  // MCP / cache, but the UI consumes a single feed so we splice it in
+  // here, preserving the context-a8c result's ok/from status as the
+  // source of truth (Drive degradation just thins out the feed).
+  const driveEvents = driveActivityResult.ok
+    ? driveActivityResult.data
+    : (driveActivityResult.cachedData ?? []);
+  const mergedActivityResult = activityResult.ok
+    ? {
+        ...activityResult,
+        data: [...activityResult.data, ...driveEvents].sort(
+          (a, b) => b.timestamp.localeCompare(a.timestamp),
+        ),
+      }
+    : {
+        ...activityResult,
+        cachedData: [
+          ...(activityResult.cachedData ?? []),
+          ...driveEvents,
+        ].sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
+      };
+
   // Build a map from source_ref → follow-up + whether the source shows activity
   // that arrived after the follow-up was sent (= response detected).
   const linkedFollowUpMap: LinkedFollowUpMap = new Map();
-  const activityEvents =
-    activityResult.ok ? activityResult.data : (activityResult.cachedData ?? []);
+  const activityEvents = mergedActivityResult.ok
+    ? mergedActivityResult.data
+    : (mergedActivityResult.cachedData ?? []);
   for (const fu of projectFollowUps.active) {
     if (!fu.source_type || !fu.source_ref) continue;
     let has_activity = false;
@@ -435,7 +492,7 @@ export default async function ProjectWorkbenchPage({
     title: "Live activity",
     node: (
       <LiveActivityFeed
-        result={activityResult}
+        result={mergedActivityResult}
         configured={configuredSources}
         linkedFollowUps={linkedFollowUpMap}
         projectSlug={detail.slug}
@@ -693,4 +750,16 @@ function agendaSlug(filename: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Extract the folder ID from a Google Drive folder URL. Drive folder
+ * URLs always look like `https://drive.google.com/drive/folders/<id>`
+ * (with optional `?usp=…` trailing). Returns null when the input is
+ * empty or doesn't match.
+ */
+function parseDriveFolderId(url: string | undefined): string | null {
+  if (!url) return null;
+  const m = /\/folders\/([A-Za-z0-9_-]+)/.exec(url);
+  return m?.[1] ?? null;
 }

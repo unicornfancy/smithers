@@ -5,6 +5,7 @@ import {
   Activity,
   AlertTriangle,
   ExternalLink,
+  FileText,
   GitCommit,
   GitMerge,
   GitPullRequest,
@@ -49,6 +50,7 @@ const SOURCE_BY_LABEL: Record<string, ActivitySource> = {
   Zendesk: "zendesk",
   P2: "p2",
   wpcom: "wpcom",
+  Drive: "google_drive",
 };
 
 export function LiveActivityFeed({
@@ -394,6 +396,8 @@ function ActivityIcon({ event }: { event: ActivityEvent }) {
     case "zendesk-ticket":
     case "zendesk-comment":
       return <LifeBuoy className="size-3.5" />;
+    case "drive-file":
+      return <FileText className="size-3.5" />;
     default:
       return <MessageSquare className="size-3.5" />;
   }
@@ -407,6 +411,7 @@ function SourceLabel({ source }: { source: ActivitySource }) {
     zendesk: "Zendesk",
     p2: "P2",
     wpcom: "wpcom",
+    google_drive: "Drive",
   };
   return (
     <span className="text-muted-foreground inline-flex items-center gap-1">
