@@ -225,6 +225,50 @@ export async function listRecentCallSlices(
   return out;
 }
 
+/**
+ * All-time index of saved call notes whose frontmatter `project_slug`
+ * matches the given slug. Returns frontmatter-only slices (recording id,
+ * recorded_at, title, summary) sorted newest first — same shape as
+ * `listRecentCallSlices` but un-windowed by date.
+ *
+ * Workbench uses this so processed calls persist on the project page
+ * regardless of whether the underlying Fathom recording still appears
+ * in the transcription adapter's recent list.
+ */
+export async function listCallNotesForProject(
+  opts: ResolvedVaultOptions,
+  projectSlug: string,
+): Promise<RecentCallSlice[]> {
+  if (!projectSlug) return [];
+  const paths = vaultPaths(opts);
+  const files = await listMarkdownFiles(paths.callNotes);
+  const out: RecentCallSlice[] = [];
+  for (const f of files) {
+    const abs = join(paths.callNotes, f);
+    const raw = await tryReadFile(abs);
+    if (!raw) continue;
+    const { data } = parseMarkdown(raw);
+    const slug =
+      typeof data["project_slug"] === "string" ? data["project_slug"] : "";
+    if (slug !== projectSlug) continue;
+    const recordedAt =
+      typeof data["recorded_at"] === "string" ? data["recorded_at"] : null;
+    if (!recordedAt) continue;
+    const analysis = data["analysis"] as { summary?: string } | undefined;
+    out.push({
+      recording_id:
+        typeof data["recording_id"] === "string" ? data["recording_id"] : "",
+      project_slug: slug,
+      recorded_at: recordedAt,
+      title: typeof data["title"] === "string" ? data["title"] : f,
+      summary:
+        typeof analysis?.summary === "string" ? analysis.summary : undefined,
+    });
+  }
+  out.sort((a, b) => b.recorded_at.localeCompare(a.recorded_at));
+  return out;
+}
+
 // --- internals ---
 
 function parseSavedFrontmatter(

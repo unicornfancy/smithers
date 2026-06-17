@@ -610,6 +610,7 @@ export function CallNotesPanel({
   recordings,
   savedNotesByRecordingId,
   callTranscripts,
+  processedCallNotes,
 }: {
   projectSlug: string;
   projectName: string;
@@ -625,17 +626,42 @@ export function CallNotesPanel({
     { relative_path: string; analyzed_at: string }
   >;
   callTranscripts?: HiveMindCallTranscript[];
+  /**
+   * All-time list of saved Call Notes files (`project_slug` matches
+   * this project) sorted newest first. These persist on the workbench
+   * even after the underlying Fathom recording rolls out of the
+   * adapter's recent list, so older calls don't vanish.
+   */
+  processedCallNotes?: Array<{
+    recording_id: string;
+    recorded_at: string;
+    title: string;
+    summary?: string;
+  }>;
 }) {
-  if (recordings.length === 0) {
+  // Split recordings into "matched but not processed yet" and
+  // (already-processed ones are de-duped against processedCallNotes).
+  const processedIds = new Set(
+    (processedCallNotes ?? []).map((p) => p.recording_id).filter(Boolean),
+  );
+  const unprocessedRecordings = recordings.filter(
+    (r) => !processedIds.has(r.recording_id),
+  );
+
+  if (
+    recordings.length === 0 &&
+    (!processedCallNotes || processedCallNotes.length === 0)
+  ) {
     return (
       <Section
         icon={<Phone className="size-4" />}
-        title="Recent calls"
-        meta="Last 30 days"
+        title="Calls"
+        meta="No matches"
       >
         <p className="text-muted-foreground text-sm">
-          No recent calls matched to {projectName}. Fathom recordings whose
-          titles include the project or partner name will surface here.
+          No calls matched to {projectName}. Recordings whose titles or
+          attendees include the project or partner will surface here; processed
+          calls also persist across time.
         </p>
       </Section>
     );
@@ -649,67 +675,205 @@ export function CallNotesPanel({
   return (
     <Section
       icon={<Phone className="size-4" />}
-      title="Recent calls"
-      count={recordings.length}
-      meta="Last 30 days · via Fathom"
+      title="Calls"
+      count={recordings.length + (processedCallNotes?.length ?? 0)}
+      meta={`${processedCallNotes?.length ?? 0} processed · ${unprocessedRecordings.length} unprocessed`}
     >
-      <ul className="flex flex-col divide-y">
-        {recordings.map((r) => {
-          const savedNotes = savedNotesByRecordingId?.[r.recording_id];
-          const matchedTranscript = r.source_url ? transcriptByUrl.get(r.source_url) : undefined;
-          return (
-            <li
-              key={r.recording_id}
-              className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0"
-            >
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <p className="text-sm leading-snug">
-                  {r.title ?? r.recording_id}
-                </p>
-                <p className="text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs tabular-nums">
-                  <span>
-                    {new Date(r.recorded_at).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </span>
-                  {savedNotes ? (
-                    <span
-                      className="inline-flex items-center gap-1 rounded bg-emerald-100/60 px-1.5 py-0.5 text-[10px] font-medium text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
-                      title={`Saved at ${savedNotes.relative_path} · analyzed ${formatRelative(savedNotes.analyzed_at)}`}
-                    >
-                      Notes saved
-                    </span>
-                  ) : null}
-                </p>
-                {matchedTranscript ? (
-                  <ViewTranscriptButton transcript={matchedTranscript} />
-                ) : null}
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <ProcessCallDialog projectSlug={projectSlug} recording={r} />
-                {r.source_url ? (
-                  <a
-                    href={r.source_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
+      <div className="space-y-3">
+        {(processedCallNotes ?? []).length > 0 ? (
+          <ProcessedCallsList
+            notes={processedCallNotes ?? []}
+            savedNotesByRecordingId={savedNotesByRecordingId}
+            recordingsById={Object.fromEntries(
+              recordings.map((r) => [r.recording_id, r]),
+            )}
+            projectSlug={projectSlug}
+          />
+        ) : null}
+
+        {unprocessedRecordings.length > 0 ? (
+          <div className="space-y-1">
+            <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+              Unprocessed · matched recordings
+            </p>
+            <ul className="flex flex-col divide-y">
+              {unprocessedRecordings.map((r) => {
+                const matchedTranscript = r.source_url
+                  ? transcriptByUrl.get(r.source_url)
+                  : undefined;
+                return (
+                  <li
+                    key={r.recording_id}
+                    className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0"
                   >
-                    Open
-                  </a>
-                ) : null}
-                <DetachRecordingButton
-                  projectSlug={projectSlug}
-                  recordingId={r.recording_id}
-                  recordingLabel={r.title ?? undefined}
-                />
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <p className="text-sm leading-snug">
+                        {r.title ?? r.recording_id}
+                      </p>
+                      <p className="text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs tabular-nums">
+                        <span>
+                          {new Date(r.recorded_at).toLocaleDateString(
+                            undefined,
+                            { month: "short", day: "numeric", year: "numeric" },
+                          )}
+                        </span>
+                      </p>
+                      {matchedTranscript ? (
+                        <ViewTranscriptButton transcript={matchedTranscript} />
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <ProcessCallDialog
+                        projectSlug={projectSlug}
+                        recording={r}
+                      />
+                      {r.source_url ? (
+                        <a
+                          href={r.source_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
+                        >
+                          Open
+                        </a>
+                      ) : null}
+                      <DetachRecordingButton
+                        projectSlug={projectSlug}
+                        recordingId={r.recording_id}
+                        recordingLabel={r.title ?? undefined}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
+      </div>
     </Section>
+  );
+}
+
+function ProcessedCallsList({
+  notes,
+  savedNotesByRecordingId,
+  recordingsById,
+  projectSlug,
+}: {
+  notes: Array<{
+    recording_id: string;
+    recorded_at: string;
+    title: string;
+    summary?: string;
+  }>;
+  savedNotesByRecordingId?: Record<
+    string,
+    { relative_path: string; analyzed_at: string }
+  >;
+  recordingsById: Record<string, CallRecordingRef>;
+  projectSlug: string;
+}) {
+  // Show the most recent 8 inline; collapse the rest behind a disclosure
+  // so the workbench doesn't grow unbounded when Katie has dozens of
+  // processed calls.
+  const TOP_N = 8;
+  const visible = notes.slice(0, TOP_N);
+  const hidden = notes.slice(TOP_N);
+  return (
+    <div className="space-y-1">
+      <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+        Processed · all-time
+      </p>
+      <ul className="flex flex-col divide-y">
+        {visible.map((n) => (
+          <ProcessedCallRow
+            key={n.recording_id || n.title}
+            note={n}
+            savedRelPath={savedNotesByRecordingId?.[n.recording_id]?.relative_path}
+            recording={recordingsById[n.recording_id]}
+            projectSlug={projectSlug}
+          />
+        ))}
+      </ul>
+      {hidden.length > 0 ? (
+        <details>
+          <summary className="text-muted-foreground hover:text-foreground cursor-pointer text-xs">
+            Show {hidden.length} older processed call{hidden.length === 1 ? "" : "s"}
+          </summary>
+          <ul className="mt-1 flex flex-col divide-y">
+            {hidden.map((n) => (
+              <ProcessedCallRow
+                key={n.recording_id || n.title}
+                note={n}
+                savedRelPath={savedNotesByRecordingId?.[n.recording_id]?.relative_path}
+                recording={recordingsById[n.recording_id]}
+                projectSlug={projectSlug}
+              />
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function ProcessedCallRow({
+  note,
+  savedRelPath,
+  recording,
+  projectSlug,
+}: {
+  note: {
+    recording_id: string;
+    recorded_at: string;
+    title: string;
+    summary?: string;
+  };
+  savedRelPath: string | undefined;
+  recording: CallRecordingRef | undefined;
+  projectSlug: string;
+}) {
+  return (
+    <li className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p className="text-sm leading-snug">{note.title}</p>
+        <p className="text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs tabular-nums">
+          <span>
+            {new Date(note.recorded_at).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </span>
+          <span
+            className="inline-flex items-center gap-1 rounded bg-emerald-100/60 px-1.5 py-0.5 text-[10px] font-medium text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
+            title={savedRelPath ? `Saved at ${savedRelPath}` : undefined}
+          >
+            Notes saved
+          </span>
+        </p>
+        {note.summary ? (
+          <p className="text-muted-foreground line-clamp-2 text-xs italic">
+            {note.summary}
+          </p>
+        ) : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {recording ? (
+          <ProcessCallDialog projectSlug={projectSlug} recording={recording} />
+        ) : null}
+        {recording?.source_url ? (
+          <a
+            href={recording.source_url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
+          >
+            Open
+          </a>
+        ) : null}
+      </div>
+    </li>
   );
 }
 

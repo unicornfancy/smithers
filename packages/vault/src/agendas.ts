@@ -432,3 +432,58 @@ export async function agendaExists(
   const paths = vaultPaths(opts);
   return fileExists(join(paths.agendas, filename));
 }
+
+export interface CreateAgendaInput {
+  /** Display name used in the H1 + filename ("Pocket NYC" → "Pocket NYC.md"). */
+  title: string;
+  /** Partner slug to write into frontmatter — wires this agenda to every project under the partner. */
+  partnerSlug: string;
+}
+
+export interface CreateAgendaResult {
+  filename: string;
+  relative_path: string;
+  /** False when a file at that filename already existed and was preserved. */
+  created: boolean;
+}
+
+/**
+ * Scaffold a per-partner agenda file at `Agendas/<title>.md` with the
+ * partner slug already wired into frontmatter (so `findAgendaForPartner`
+ * picks it up on first load) and the standard Open Items section ready
+ * for the workbench to start appending to.
+ *
+ * Idempotent: if a file with the same name already exists, returns
+ * `created: false` and leaves the file untouched. Caller decides
+ * whether to surface that as "already exists" or "ok, opening it".
+ */
+export async function createAgendaForPartner(
+  opts: ResolvedVaultOptions,
+  input: CreateAgendaInput,
+): Promise<CreateAgendaResult> {
+  const title = input.title.trim();
+  if (!title) throw new Error("Agenda title is required");
+  const partnerSlug = input.partnerSlug.trim();
+  if (!partnerSlug) throw new Error("Partner slug is required");
+
+  const paths = vaultPaths(opts);
+  // Filenames keep the literal title (Katie's existing agendas use display
+  // names like "Pocket NYC.md", not slugs). Strip slashes / leading dots
+  // so we never escape the agendas dir.
+  const safeName = title.replace(/[/\\]/g, "-").replace(/^\.+/, "");
+  const filename = `${safeName}.md`;
+  const abs = join(paths.agendas, filename);
+  const relPath = relative(opts.vaultPath, abs);
+
+  const existing = await tryReadFile(abs);
+  if (existing !== null) {
+    return { filename, relative_path: relPath, created: false };
+  }
+
+  const body = `# ${title} — Call Agenda\n\n## Open Items\n\n---\n`;
+  await writeFileAtomic(
+    abs,
+    serializeMarkdown({ partner: partnerSlug }, body),
+  );
+  return { filename, relative_path: relPath, created: true };
+}

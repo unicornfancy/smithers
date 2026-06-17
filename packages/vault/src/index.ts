@@ -20,6 +20,7 @@ import {
   addAgendaItem,
   agendaExists,
   archiveCheckedAgendaItems,
+  createAgendaForPartner,
   listAgendas,
   readAgenda,
   setAgendaItemChecked,
@@ -28,11 +29,14 @@ import {
   type AgendaItem,
   type AgendaMutationResult,
   type AgendaRef,
+  type CreateAgendaInput,
+  type CreateAgendaResult,
 } from "./agendas";
 import {
   appendChatToCallNotes,
   findCallNotesByRecordingId,
   listCallNotes,
+  listCallNotesForProject,
   listRecentCallSlices,
   saveCallNotes,
   type AppendChatToCallNotesResult,
@@ -264,6 +268,7 @@ export {
   addAgendaItem,
   agendaExists,
   archiveCheckedAgendaItems,
+  createAgendaForPartner,
   listAgendas,
   readAgenda,
   setAgendaItemChecked,
@@ -272,7 +277,10 @@ export {
   type AgendaItem,
   type AgendaMutationResult,
   type AgendaRef,
+  type CreateAgendaInput,
+  type CreateAgendaResult,
   listCallNotes,
+  listCallNotesForProject,
   listRecentCallSlices,
   listDailyNotes,
   listDrafts,
@@ -364,6 +372,9 @@ export interface Vault {
   listRecentCallSlices: (
     range: Parameters<typeof listRecentCallSlices>[1],
   ) => ReturnType<typeof listRecentCallSlices>;
+  listCallNotesForProject: (
+    projectSlug: string,
+  ) => ReturnType<typeof listCallNotesForProject>;
   listAgendas: () => ReturnType<typeof listAgendas>;
   readAgenda: (filename: string) => ReturnType<typeof readAgenda>;
   agendaExists: (filename: string) => ReturnType<typeof agendaExists>;
@@ -381,6 +392,9 @@ export interface Vault {
     filename: string,
     dateLabel: string,
   ) => ReturnType<typeof archiveCheckedAgendaItems>;
+  createAgendaForPartner: (
+    input: CreateAgendaInput,
+  ) => ReturnType<typeof createAgendaForPartner>;
   readStyleGuide: () => ReturnType<typeof readStyleGuide>;
   readWorkingWith: () => ReturnType<typeof readWorkingWith>;
   listWeeklyUpdates: () => ReturnType<typeof listWeeklyUpdates>;
@@ -557,6 +571,8 @@ export function createVault(options: VaultOptions): Vault {
       upsertDailySection(resolved, date, sectionId, body),
     listCallNotes: () => listCallNotes(resolved),
     listRecentCallSlices: (range) => listRecentCallSlices(resolved, range),
+    listCallNotesForProject: (projectSlug) =>
+      listCallNotesForProject(resolved, projectSlug),
     listAgendas: () => listAgendas(resolved),
     readAgenda: (filename) => readAgenda(resolved, filename),
     agendaExists: (filename) => agendaExists(resolved, filename),
@@ -566,6 +582,8 @@ export function createVault(options: VaultOptions): Vault {
       setAgendaItemChecked(resolved, filename, itemId, checked),
     archiveCheckedAgendaItems: (filename, dateLabel) =>
       archiveCheckedAgendaItems(resolved, filename, dateLabel),
+    createAgendaForPartner: (input) =>
+      createAgendaForPartner(resolved, input),
     readStyleGuide: () => readStyleGuide(resolved),
     readWorkingWith: () => readWorkingWith(resolved),
     listWeeklyUpdates: () => listWeeklyUpdates(resolved),

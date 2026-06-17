@@ -50,6 +50,37 @@ export async function toggleAgendaItemAction(
   }
 }
 
+export async function createAgendaForPartnerAction(
+  partnerSlug: string,
+  title: string,
+): Promise<
+  | { ok: true; filename: string; relative_path: string; created: boolean }
+  | { ok: false; reason: string }
+> {
+  if (!partnerSlug.trim()) return { ok: false, reason: "Partner slug is required" };
+  if (!title.trim()) return { ok: false, reason: "Title is required" };
+  const vault = await getVault();
+  try {
+    const result = await vault.createAgendaForPartner({
+      partnerSlug: partnerSlug.trim(),
+      title: title.trim(),
+    });
+    revalidatePath(`/agendas`);
+    revalidatePath("/projects/[slug]", "page");
+    return {
+      ok: true,
+      filename: result.filename,
+      relative_path: result.relative_path,
+      created: result.created,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "Failed to create agenda",
+    };
+  }
+}
+
 export async function archiveCheckedAgendaItemsAction(
   filename: string,
   dateLabel?: string,

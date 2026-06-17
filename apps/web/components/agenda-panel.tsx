@@ -16,6 +16,7 @@ import type { Agenda, AgendaItem } from "@smithers/vault";
 import {
   addAgendaItemAction,
   archiveCheckedAgendaItemsAction,
+  createAgendaForPartnerAction,
   toggleAgendaItemAction,
 } from "@/app/agendas/[slug]/actions";
 import { Button } from "@/components/ui/button";
@@ -335,12 +336,52 @@ function Group({
 }
 
 function EmptyState({ partnerSlug }: { partnerSlug: string | undefined }) {
+  const router = useRouter();
+  const [pending, setPending] = React.useState(false);
+  const titleGuess = partnerSlug ? slugToDisplayName(partnerSlug) : "";
+
+  async function handleCreate() {
+    if (!partnerSlug) return;
+    setPending(true);
+    try {
+      const res = await createAgendaForPartnerAction(partnerSlug, titleGuess);
+      if (!res.ok) {
+        toast.error(res.reason);
+        return;
+      }
+      toast.success(
+        res.created
+          ? `Created Agendas/${res.filename}`
+          : `Agendas/${res.filename} already exists — linking it`,
+      );
+      router.refresh();
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <div className="text-sm">
       <p className="text-muted-foreground">
         No agenda linked to this partner yet.
       </p>
-      <p className="text-muted-foreground mt-1.5 text-xs">
+      {partnerSlug ? (
+        <Button
+          size="sm"
+          variant="default"
+          onClick={handleCreate}
+          disabled={pending}
+          className="mt-2 gap-1.5"
+        >
+          {pending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Plus className="size-3.5" />
+          )}
+          Create agenda for {titleGuess}
+        </Button>
+      ) : null}
+      <p className="text-muted-foreground mt-2 text-xs">
         {AGENDA_DOC_HINT}
         {partnerSlug ? (
           <>
@@ -355,4 +396,12 @@ function EmptyState({ partnerSlug }: { partnerSlug: string | undefined }) {
       </p>
     </div>
   );
+}
+
+function slugToDisplayName(slug: string): string {
+  return slug
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join(" ");
 }

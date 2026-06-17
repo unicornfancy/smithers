@@ -122,6 +122,7 @@ export default async function ProjectWorkbenchPage({
     hiveMindProject,
     agendaForPartner,
     qaRuns,
+    processedCallNotes,
   ] = await Promise.all([
       vault.listDrafts().catch(() => []),
       vault
@@ -144,7 +145,7 @@ export default async function ProjectWorkbenchPage({
       detail.partner
         ? mcp.hiveMind.getPartner({ partner_slug: detail.partner })
         : Promise.resolve(null),
-      (await getTranscriptionAdapter()).listRecordings({ limit: 50 }),
+      (await getTranscriptionAdapter()).listRecordings({ limit: 200 }),
       detectStallsForProject(vault, detail.slug, detail.name).catch(() => ({
         items: [],
         counts: {
@@ -174,6 +175,7 @@ export default async function ProjectWorkbenchPage({
       vault.getHiveMindProject(hmPartnerSlug, hmProjectSlug).catch(() => null),
       findAgendaForPartner(detail.partner).catch(() => null),
       listQaRuns(detail.slug).catch(() => []),
+      vault.listCallNotesForProject(detail.slug).catch(() => []),
     ]);
 
   // Find the active phase (first started issue) and fetch its subtasks.
@@ -256,23 +258,21 @@ export default async function ProjectWorkbenchPage({
   const allRecordings = recordingsResult.ok
     ? recordingsResult.data
     : (recordingsResult.cachedData ?? []);
-  const projectRecordings = allRecordings
-    .filter((r) =>
-      recordingMatchesProject(r, {
-        name: detail.name,
-        partner: detail.partner,
-        partner_display_name: partnerProfile?.display_name,
-        fathom_search_terms: detail.fathom_search_terms,
-        fathom_excluded_recording_ids: detail.fathom_excluded_recording_ids,
-        partner_contact_emails: (hiveMindPartner?.contacts ?? []).map(
-          (c) => c.email,
-        ),
-        partner_contact_names: (hiveMindPartner?.contacts ?? [])
-          .map((c) => c.name?.trim())
-          .filter((n): n is string => Boolean(n)),
-      }),
-    )
-    .slice(0, 8);
+  const projectRecordings = allRecordings.filter((r) =>
+    recordingMatchesProject(r, {
+      name: detail.name,
+      partner: detail.partner,
+      partner_display_name: partnerProfile?.display_name,
+      fathom_search_terms: detail.fathom_search_terms,
+      fathom_excluded_recording_ids: detail.fathom_excluded_recording_ids,
+      partner_contact_emails: (hiveMindPartner?.contacts ?? []).map(
+        (c) => c.email,
+      ),
+      partner_contact_names: (hiveMindPartner?.contacts ?? [])
+        .map((c) => c.name?.trim())
+        .filter((n): n is string => Boolean(n)),
+    }),
+  );
 
   // Cross-link Fathom recordings to any saved Call Notes file we've
   // already analyzed. Lookup is per-recording; cheap because the
@@ -578,6 +578,7 @@ export default async function ProjectWorkbenchPage({
         recordings={projectRecordings}
         savedNotesByRecordingId={savedCallNotesByRecordingId}
         callTranscripts={callTranscripts}
+        processedCallNotes={processedCallNotes}
       />
     ),
   });
