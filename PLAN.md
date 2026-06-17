@@ -4,6 +4,23 @@ _Living doc for features discussed but not yet built. Add entries here when scop
 
 ---
 
+## Google Drive activity ingestion
+
+**Status:** `google_drive_url` frontmatter field + header chip shipped 2026-06-17. Activity ingestion deferred.
+
+**Why deferred:** Drive MCP wrappers (e.g. `@modelcontextprotocol/server-gdrive`) require a one-time Google Cloud / OAuth setup before they can be spawned as a subprocess. The setup is real:
+
+1. Create a Google Cloud project
+2. Enable the Drive API
+3. Configure an OAuth consent screen (internal is fine)
+4. Create an OAuth Client ID (Desktop App type)
+5. Download the JSON keys
+6. Run `npx -y @modelcontextprotocol/server-gdrive auth` to do the OAuth dance
+
+**What lands when ready:** a `GoogleDriveClient` wrapper in `packages/mcp-client/src/google-drive/` modeled on the ContextA8C client. Method `searchFolderActivity(folderId, sinceTs)` calls the Drive `search` tool with `parentId = '<folderId>' and modifiedTime > '<sinceTs>'`, maps results to `ActivityEvent`, merges into Live Activity. Folder ID parsed from the project's `google_drive_url` (regex `/folders/([A-Za-z0-9_-]+)`).
+
+**Trigger to revisit:** Katie completes the OAuth setup OR a simpler Drive integration (e.g. Workspace events, public folder RSS) becomes available.
+
 ## Settings page — remaining items
 
 The call-transcript-prompt + follow-up automation cards shipped 2026-05-26. /settings reorg + tab-based nav shipped 2026-05-27→28. Skills registry v1 shipped 2026-05-28. About card shipped 2026-05-29. Still deferred:
