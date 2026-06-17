@@ -45,12 +45,13 @@ export class RealGoogleDriveTransport implements GoogleDriveClient {
     private readonly health: HealthRegistry,
   ) {
     // The official Drive MCP reads OAuth keys + cached creds from the
-    // two env vars below. Both default to ~/.gdrive-server-credentials
-    // when unset, but we always provide explicit paths so the server
-    // doesn't write into the user's home dir unexpectedly.
+    // two env vars below. Note the asymmetry: GDRIVE_OAUTH_PATH (no
+    // "S") but GDRIVE_CREDENTIALS_PATH (full word) — confirmed against
+    // the @modelcontextprotocol/server-gdrive@2025.1.14 source. We pass
+    // explicit paths so the server doesn't write next to its own dist.
     const env: Record<string, string> = {};
     if (opts.googleDriveOAuthPath) env.GDRIVE_OAUTH_PATH = opts.googleDriveOAuthPath;
-    if (opts.googleDriveCredsPath) env.GDRIVE_CREDS_PATH = opts.googleDriveCredsPath;
+    if (opts.googleDriveCredsPath) env.GDRIVE_CREDENTIALS_PATH = opts.googleDriveCredsPath;
     this.mcp = new StdioMcpClient({
       label: "google-drive",
       command: "npx",
