@@ -453,6 +453,11 @@ export default async function ProjectWorkbenchPage({
       configured: Boolean(detail.p2_url),
       reason: detail.p2_url ? undefined : "no P2 url",
     },
+    {
+      label: "GDrive",
+      configured: Boolean(detail.google_drive_url),
+      reason: detail.google_drive_url ? undefined : "no folder url",
+    },
   ];
 
   const sections: SectionDef[] = [];

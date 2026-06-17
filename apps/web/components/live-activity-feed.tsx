@@ -50,7 +50,7 @@ const SOURCE_BY_LABEL: Record<string, ActivitySource> = {
   Zendesk: "zendesk",
   P2: "p2",
   wpcom: "wpcom",
-  Drive: "google_drive",
+  GDrive: "google_drive",
 };
 
 export function LiveActivityFeed({
