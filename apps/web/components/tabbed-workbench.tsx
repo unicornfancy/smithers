@@ -53,6 +53,7 @@ const TAB_ORDER: Record<WorkbenchTabId, string[]> = {
     "milestones",
     "project-status",
     "open-items",
+    "follow-ups",
     "live-activity",
   ],
   comms: ["zendesk-threads", "recent-calls", "agenda"],

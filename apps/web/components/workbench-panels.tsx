@@ -13,8 +13,11 @@ import {
   StickyNote,
 } from "lucide-react";
 
+import { AddProjectFollowUpForm } from "@/components/add-project-follow-up-form";
 import { ConvertFollowUpToTaskButton } from "@/components/convert-follow-up-to-task-button";
 import { DetachRecordingButton } from "@/components/detach-recording-button";
+import { ResolveFollowUpButton } from "@/components/resolve-follow-up-button";
+import { SnoozeFollowUpButton } from "@/components/snooze-follow-up-button";
 
 import type {
   CallRecordingRef,
@@ -487,10 +490,13 @@ export function FollowUpsForProjectPanel({
   followUps,
   projectName,
   projectSlug,
+  defaultWindowDays,
 }: {
   followUps: { active: FollowUp[]; resolved: FollowUp[] };
   projectName: string;
   projectSlug: string;
+  /** Default days-from-now for the inline "Add follow-up" form. */
+  defaultWindowDays: number;
 }) {
   const totalActive = followUps.active.length;
   return (
@@ -504,34 +510,36 @@ export function FollowUpsForProjectPanel({
           : undefined
       }
     >
-      {followUps.active.length === 0 && followUps.resolved.length === 0 ? (
-        <p className="text-muted-foreground text-sm italic">
-          No follow-ups matched to {projectName}. They&rsquo;re matched fuzzily
-          against the &ldquo;Project&rdquo; column in{" "}
-          <code className="bg-muted rounded px-1 py-0.5 text-[11px]">
-            Follow-ups.md
-          </code>
-          .
-        </p>
-      ) : (
-        <ul className="flex flex-col divide-y">
-          {followUps.active.map((f) => (
-            <FollowUpRow
-              key={f.follow_up_id}
-              row={f}
-              projectSlug={projectSlug}
-            />
-          ))}
-          {followUps.resolved.slice(0, 3).map((f) => (
-            <FollowUpRow key={f.follow_up_id} row={f} dim />
-          ))}
-          {followUps.resolved.length > 3 ? (
-            <li className="text-muted-foreground/70 py-1 text-[11px]">
-              + {followUps.resolved.length - 3} more resolved
-            </li>
-          ) : null}
-        </ul>
-      )}
+      <div className="space-y-2">
+        {followUps.active.length === 0 && followUps.resolved.length === 0 ? (
+          <p className="text-muted-foreground text-sm italic">
+            No follow-ups matched to {projectName} yet. Add one below.
+          </p>
+        ) : (
+          <ul className="flex flex-col divide-y">
+            {followUps.active.map((f) => (
+              <FollowUpRow
+                key={f.follow_up_id}
+                row={f}
+                projectSlug={projectSlug}
+              />
+            ))}
+            {followUps.resolved.slice(0, 3).map((f) => (
+              <FollowUpRow key={f.follow_up_id} row={f} dim />
+            ))}
+            {followUps.resolved.length > 3 ? (
+              <li className="text-muted-foreground/70 py-1 text-[11px]">
+                + {followUps.resolved.length - 3} more resolved
+              </li>
+            ) : null}
+          </ul>
+        )}
+        <AddProjectFollowUpForm
+          projectSlug={projectSlug}
+          projectName={projectName}
+          defaultWindowDays={defaultWindowDays}
+        />
+      </div>
     </Section>
   );
 }
@@ -567,11 +575,23 @@ function FollowUpRow({
         </p>
       </div>
       {isActive && projectSlug ? (
-        <ConvertFollowUpToTaskButton
-          projectSlug={projectSlug}
-          followUpId={row.follow_up_id}
-          label={row.task}
-        />
+        <div className="flex shrink-0 items-center gap-1">
+          <ResolveFollowUpButton
+            projectSlug={projectSlug}
+            followUpId={row.follow_up_id}
+            label={row.task}
+          />
+          <SnoozeFollowUpButton
+            projectSlug={projectSlug}
+            followUpId={row.follow_up_id}
+            label={row.task}
+          />
+          <ConvertFollowUpToTaskButton
+            projectSlug={projectSlug}
+            followUpId={row.follow_up_id}
+            label={row.task}
+          />
+        </div>
       ) : null}
     </li>
   );

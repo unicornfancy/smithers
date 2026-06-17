@@ -29,6 +29,7 @@ import { ProjectBriefSection } from "@/components/project-brief-section";
 import {
   CallNotesPanel,
   DraftsForProjectPanel,
+  FollowUpsForProjectPanel,
   MilestonesPanel,
   OpenItemsPanel,
   PartnerInfoPanel,
@@ -523,6 +524,19 @@ export default async function ProjectWorkbenchPage({
         open={open}
         done={done}
         githubRepo={detail.github_repo}
+      />
+    ),
+  });
+
+  sections.push({
+    id: "follow-ups",
+    title: "Follow-ups",
+    node: (
+      <FollowUpsForProjectPanel
+        followUps={effectiveFollowUps}
+        projectName={detail.name}
+        projectSlug={detail.slug}
+        defaultWindowDays={cfg.follow_ups?.default_window_days ?? 7}
       />
     ),
   });
