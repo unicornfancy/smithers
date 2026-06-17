@@ -11,6 +11,13 @@ import type {
 } from "./types";
 
 const DRIVE_ACTIVITY_TTL = { freshMs: 5 * 60 * 1000 } as const;
+// Drive has no recursive folder query — we crawl breadth-first up to
+// these bounds, then issue a single combined search across all
+// discovered folder IDs. Bounds keep worst-case fanout sane for
+// projects with very deep folder trees.
+const MAX_SUBFOLDER_CRAWL_DEPTH = 4;
+const MAX_SUBFOLDER_CRAWL_COUNT = 50;
+const MAX_PARENTS_PER_SEARCH = 30;
 
 interface DriveFile {
   id?: string;
@@ -72,25 +79,107 @@ export class RealGoogleDriveTransport implements GoogleDriveClient {
         cacheKey,
         ttl: DRIVE_ACTIVITY_TTL,
         fetcher: async () => {
+          // 1) Crawl the folder tree breadth-first so we can include
+          //    files in nested subfolders. Drive's API has no
+          //    transitive ancestor query, so this is required to avoid
+          //    missing activity in `<project>/Designs/v2/` etc.
+          const folderIds = await this.crawlSubfolders(query.folder_id);
+          // 2) Build one or more searches that OR together the parent
+          //    clauses. Drive's q-string can hold a lot but we chunk
+          //    defensively at MAX_PARENTS_PER_SEARCH so the request
+          //    body doesn't get rejected on very deep trees.
           const escapedSince = query.since.replace(/'/g, "\\'");
-          const q = `'${query.folder_id}' in parents and modifiedTime > '${escapedSince}' and trashed = false`;
-          const result = await this.mcp.callJsonTool<DriveSearchResult>(
-            "search",
-            {
-              query: q,
-              pageSize: limit,
-              excludeContentSnippets: true,
-            },
+          const chunks = chunk(folderIds, MAX_PARENTS_PER_SEARCH);
+          const results = await Promise.all(
+            chunks.map(async (parentIds) => {
+              const parentsClause = parentIds
+                .map((id) => `'${id}' in parents`)
+                .join(" or ");
+              const q = `(${parentsClause}) and modifiedTime > '${escapedSince}' and trashed = false and mimeType != 'application/vnd.google-apps.folder'`;
+              const result = await this.mcp.callJsonTool<DriveSearchResult>(
+                "search",
+                {
+                  query: q,
+                  pageSize: limit,
+                  excludeContentSnippets: true,
+                },
+              );
+              if (result?.error?.message) {
+                throw new Error(result.error.message);
+              }
+              return collectFiles(result);
+            }),
           );
-          const files = collectFiles(result);
-          if (result?.error?.message) {
-            throw new Error(result.error.message);
+          const merged = results.flat();
+          // Dedup by file id (same file can show up under multiple
+          // parents in shared-drive scenarios), then map.
+          const seen = new Set<string>();
+          const unique: DriveFile[] = [];
+          for (const f of merged) {
+            if (!f.id || seen.has(f.id)) continue;
+            seen.add(f.id);
+            unique.push(f);
           }
-          return mapFilesToActivity(files, query);
+          return mapFilesToActivity(unique, query).slice(0, limit);
         },
       },
     );
   }
+
+  /**
+   * Breadth-first crawl: starting at `rootId`, find every descendant
+   * folder up to depth/count bounds and return the full set of folder
+   * IDs (root included). This is the only way to handle "recursive"
+   * listings in Drive — the API has no transitive parent query.
+   */
+  private async crawlSubfolders(rootId: string): Promise<string[]> {
+    const discovered = new Set<string>([rootId]);
+    const queue: Array<{ id: string; depth: number }> = [
+      { id: rootId, depth: 0 },
+    ];
+    while (queue.length > 0 && discovered.size < MAX_SUBFOLDER_CRAWL_COUNT) {
+      const layer = queue.splice(0, queue.length);
+      // Issue one search per parent in this layer — Drive returns
+      // child folders for that parent only. The MCP call is cheap and
+      // we can run them concurrently per layer.
+      const childLists = await Promise.all(
+        layer
+          .filter((n) => n.depth < MAX_SUBFOLDER_CRAWL_DEPTH)
+          .map(async (n) => {
+            const q = `'${n.id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+            const result = await this.mcp
+              .callJsonTool<DriveSearchResult>("search", {
+                query: q,
+                pageSize: 100,
+                excludeContentSnippets: true,
+              })
+              .catch(() => null);
+            return {
+              depth: n.depth + 1,
+              files: collectFiles(result),
+            };
+          }),
+      );
+      for (const { depth, files } of childLists) {
+        for (const f of files) {
+          if (!f.id || discovered.has(f.id)) continue;
+          discovered.add(f.id);
+          queue.push({ id: f.id, depth });
+          if (discovered.size >= MAX_SUBFOLDER_CRAWL_COUNT) break;
+        }
+      }
+    }
+    return Array.from(discovered);
+  }
+}
+
+function chunk<T>(xs: T[], size: number): T[][] {
+  if (xs.length === 0) return [[]];
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += size) {
+    out.push(xs.slice(i, i + size));
+  }
+  return out;
 }
 
 function collectFiles(result: DriveSearchResult | null): DriveFile[] {
