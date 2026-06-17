@@ -7,6 +7,7 @@ import {
   Clock,
   ExternalLink,
   Figma,
+  FolderOpen,
   Github,
   Hash,
   Inbox,
@@ -275,6 +276,13 @@ function collectQuickLinks(p: Project): QuickLink[] {
       label: "Figma",
       href: p.figma_url,
       icon: <Figma className="size-3.5" />,
+    });
+  }
+  if (p.google_drive_url) {
+    out.push({
+      label: "Drive",
+      href: p.google_drive_url,
+      icon: <FolderOpen className="size-3.5" />,
     });
   }
   if (p.slack_channel) {

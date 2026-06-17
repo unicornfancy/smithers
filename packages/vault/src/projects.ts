@@ -216,6 +216,7 @@ async function projectFromFile(
     staging_url: fm.staging_url,
     production_url: fm.production_url,
     figma_url: fm.figma_url,
+    google_drive_url: fm.google_drive_url,
     linear_project_id: fm.linear_project_id,
     linear_project_slug: fm.linear_project_slug,
     zendesk_tickets: normalizeZendeskTickets(fm.zendesk_tickets),
@@ -762,6 +763,7 @@ export interface UpdateProjectFrontmatterPatch {
   staging_url?: string;
   production_url?: string;
   figma_url?: string;
+  google_drive_url?: string;
   linear_project_id?: string;
   linear_project_slug?: string;
   hive_mind_partner_slug?: string;

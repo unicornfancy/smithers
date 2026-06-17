@@ -54,6 +54,12 @@ export interface ProjectFrontmatter {
   production_url?: string;
   /** Figma file or project URL — surfaced as a quick-link in the workbench header. */
   figma_url?: string;
+  /**
+   * Google Drive folder URL for project assets. Surfaced as a chip in
+   * the workbench header and (when the Drive MCP is reachable) mined
+   * for recent activity that lands in the Live Activity feed.
+   */
+  google_drive_url?: string;
   linear_project_id?: string;
   linear_project_slug?: string;
   /**
@@ -133,6 +139,8 @@ export interface Project {
   production_url?: string;
   /** Figma file or project URL — surfaced as a quick-link in the workbench header. */
   figma_url?: string;
+  /** Google Drive folder URL — header quick-link + activity ingestion. */
+  google_drive_url?: string;
   linear_project_id?: string;
   linear_project_slug?: string;
   /**
