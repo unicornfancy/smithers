@@ -6,6 +6,8 @@ If you're already comfortable with the terminal and just want the short version,
 
 > **The single most important thing to remember:** Smithers reads its configuration once when it starts. **After you change any setting through the wizard, you have to stop and restart `pnpm dev`** — otherwise your change won't take effect. We'll remind you whenever it matters.
 
+> **About the screenshots:** This guide embeds screenshots at the key moments (what `/setup` looks like, what an OAuth popup looks like, etc.). If you don't see images rendered, that just means your local copy is missing the image files — see [`docs/images/README.md`](docs/images/README.md) for the checklist.
+
 Estimated time: **20–40 minutes** depending on how much you're connecting (Hive Mind, Linear, Google Drive, etc.). The Anthropic API key + vault path are the only hard requirements; everything else is optional.
 
 ---
@@ -90,6 +92,8 @@ pnpm --version    # should print 9.x.x or higher
 
 **You should see** version numbers. If you get "command not found", close Terminal and reopen it — the install needs a fresh shell to pick up the new tools.
 
+![Terminal showing successful node and pnpm version checks](docs/images/01-terminal-versions.png)
+
 ### Install Git (if you don't have it)
 
 Almost every Mac comes with Git pre-installed, but let's check:
@@ -126,6 +130,8 @@ pnpm install
 ```
 
 This takes 1–3 minutes the first time and downloads several hundred MB. **You should see** a lot of progress output, finishing with a `Done` line.
+
+![Terminal showing the tail of a successful pnpm install](docs/images/02-pnpm-install-done.png)
 
 **If something goes wrong:**
 - "command not found: pnpm" → restart Terminal (the install in step 1 needs a fresh shell).
@@ -178,11 +184,17 @@ pnpm dev
    - Ready in 2.1s
 ```
 
+![Terminal showing Next.js ready output](docs/images/04-pnpm-dev-ready.png)
+
 Leave this Terminal window running — closing it stops Smithers. (We'll need to come back and restart it later.)
 
 Open a web browser and visit: **http://localhost:3000/setup**
 
 You'll see a wizard page with a yellow banner that says something like "Finish setup to use Smithers" — that's correct. Right now Smithers doesn't know where your notes are or what your API key is. The wizard walks you through filling those in.
+
+![The Smithers setup wizard on a fresh install](docs/images/04-setup-wizard-fresh.png)
+
+*The yellow banner lists what's still missing. Each section becomes green as you fill it in.*
 
 **If something goes wrong:**
 - The page won't load → check the Terminal window for an error message. Most likely `pnpm dev` didn't actually start (look for `Ready in X.Xs`).
@@ -218,6 +230,8 @@ Then in the wizard, set **Vault** to `~/Smithers-Vault` and click **Save**.
 
 **You should see** the green **Found** badge next to the Vault path.
 
+![Paths card with Vault filled in and Found badge](docs/images/05-vault-saved.png)
+
 **If you see "Path not found":** the folder you typed doesn't actually exist on disk. Check the resolved path shown beneath the input — if it shows `/Users/yourname/Smithers-Vault` and that folder doesn't exist, create it (see "If you don't have a vault yet" above).
 
 ### Set the Hive Mind path (if you did step 3)
@@ -239,6 +253,8 @@ Without this, the AI-assisted drafting features won't work. Everything else stil
 In the **API keys** card, paste your `sk-ant-…` key into the **Anthropic API key** field and click **Save**.
 
 **You should see** the green **Set** badge next to "Anthropic API key".
+
+![API keys card with Anthropic key set](docs/images/06-anthropic-key-set.png)
 
 **Important:** the wizard writes the key to `apps/web/.env.local` (an ignored file that doesn't get committed to Git). You don't need to do anything else with it.
 
@@ -262,6 +278,10 @@ In the **MCP servers** card, toggle ON the ones you want using real data. Each t
 
 Turn this ON. The first time Smithers makes a call (after restart), a browser tab pops to authorize OAuth. **Allow the popup**, sign in with your Automattic account, and the tab closes automatically. The token caches at `~/.mcp-auth` — you won't be asked again unless it expires.
 
+![OAuth consent popup on first ContextA8C call](docs/images/07-oauth-popup.png)
+
+*If you blocked the popup or your browser hid it, the page may say "Not configured" indefinitely. Reload `/today` to retrigger the OAuth flow.*
+
 ### Hive Mind
 
 Turn this ON only if you did step 3 (cloned + built Hive Mind). If you see a green "Server built and ready" badge, you're good. If you see an amber warning with a `cd ~/Team51-Hive-Mind/mcp/server && npm install && npm run build` command, run those — the build didn't complete in step 3.
@@ -269,6 +289,8 @@ Turn this ON only if you did step 3 (cloned + built Hive Mind). If you see a gre
 ### Fathom
 
 Turn ON if you use Fathom for meeting recording. Same OAuth-on-first-call pattern as ContextA8C.
+
+![MCP servers card with all three toggles on](docs/images/07-mcps-on.png)
 
 ---
 
@@ -292,11 +314,17 @@ Open `http://localhost:3000/today` in your browser.
 
 **If you see** "Vault not found", you saved the vault path but didn't restart `pnpm dev`. Go back to step 8.1.
 
+![/today on a fresh vault](docs/images/08-today-fresh.png)
+
+*Most cards are empty on a fresh vault — that's correct. They populate as you add projects and start working.*
+
 ### Add your first project
 
 From the sidebar:
 - **Projects → onboard** — joins your Linear projects, Hive Mind partners, and any existing vault scratchpads into one list. The right entry point if you already have partners in Hive Mind. Each row has Import / Connect / Set up buttons.
 - **Projects → New** — minimal form to create a brand-new vault-only project (team or personal). Use this for internal initiatives that don't live in Hive Mind.
+
+![The /projects/onboard joining page](docs/images/08-projects-onboard.png)
 
 After adding a project, click its row from `/projects` to open its workbench page. That's where Smithers really starts to feel useful.
 
@@ -312,6 +340,8 @@ If you store partner files in Google Drive folders, Smithers can surface recent 
 2. Name it something like "Smithers Drive". Organization: whatever's available for your Automattic account, or "No organization" for a personal project.
 3. Click **Create** and wait for it to spin up (~10 seconds). Note the **Project ID** (you'll see it in the project selector top-left).
 
+![Google Cloud Console new project page](docs/images/09-gcp-create-project.png)
+
 ### Step 2: Enable the Drive API on that project
 
 > **This is the step that got skipped in beta-testing and broke things silently.** Don't skip it.
@@ -319,6 +349,10 @@ If you store partner files in Google Drive folders, Smithers can surface recent 
 1. Go to https://console.cloud.google.com/apis/library/drive.googleapis.com.
 2. Make sure the project selector at the top shows the project you just created.
 3. Click **Enable**. Wait ~30 seconds.
+
+![Enable Drive API page with project selector and Enable button](docs/images/09-gcp-enable-drive-api.png)
+
+*Skipping this step is the single most common Drive setup failure — the OAuth flow can complete successfully even with the API disabled, but every API call after that returns "Drive API has not been used in project X."*
 
 ### Step 3: Configure the OAuth consent screen
 
@@ -330,6 +364,8 @@ If you store partner files in Google Drive folders, Smithers can surface recent 
 4. On the **Scopes** page, click **Add or remove scopes**, search for `https://www.googleapis.com/auth/drive.readonly`, check the box, click **Update**, then **Save**.
 5. (External user-type only) On the **Test users** page, click **Add users**, add your own Google account, click **Save**.
 
+![OAuth consent screen configuration](docs/images/09-gcp-oauth-consent.png)
+
 ### Step 4: Create an OAuth Client ID
 
 1. Go to https://console.cloud.google.com/apis/credentials.
@@ -338,7 +374,11 @@ If you store partner files in Google Drive folders, Smithers can surface recent 
 4. Name: "Smithers local".
 5. Click **Create**.
 
+![Create OAuth client ID form with Desktop app selected](docs/images/09-gcp-create-client-id.png)
+
 A popup appears with **Download JSON**. Click it.
+
+![Download JSON button on the OAuth client](docs/images/09-gcp-download-json.png)
 
 **If the Download JSON button doesn't work** (common in Brave / Safari): close the popup, then on the Credentials list page click the **download icon (⬇)** at the end of the "Smithers local" row.
 
@@ -376,6 +416,8 @@ What you'll see, in order:
 7. The browser tab closes / says "Authentication successful."
 8. The Terminal prints `Credentials saved. You can now run the server.` and exits.
 
+![Terminal showing the successful Drive auth flow output](docs/images/09-auth-flow-terminal.png)
+
 ### Step 7: Verify the credentials file landed where Smithers expects
 
 ```bash
@@ -406,6 +448,10 @@ Same restart pattern as before — `Ctrl+C`, then `pnpm dev` again. Now the Driv
 4. Click **Save**.
 
 Refresh the workbench. The Live Activity feed should now include rows from that Drive folder (and any subfolders, up to 4 levels deep). Click the **GDrive** chip in the filter row to show only Drive events.
+
+![Live Activity feed showing GDrive rows](docs/images/09-drive-activity-in-feed.png)
+
+*Each Drive row shows the file name, who last modified it, and how long ago. Click the row to open the file in Drive.*
 
 **If Drive rows don't appear** even after restarting and saving:
 - Check the Terminal where `pnpm dev` is running for any "Google Drive API has not been used in project … or it is disabled" errors. That means step 2 (Enable the API) didn't take — go back and do it.
