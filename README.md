@@ -2,27 +2,93 @@
 
 > _A loyal, slightly fussy butler for your work._
 
-Smithers is a project-centric personal-assistant workbench for **Automattic Team51 Launch TAMs**. It runs locally on your machine and pulls together everything that lives in different tools — your vault notes, partner knowledge from [Team51-Hive-Mind](https://github.com/a8cteam51/Team51-Hive-Mind), GitHub repos, Linear designs, P2 threads, Slack conversations, Zendesk escalations, call transcripts — and surfaces them as **per-project workbenches** with AI-assisted drafting, follow-up tracking, agendas, weekly updates, and a derived `/today` dashboard.
+Smithers is a workbench that pulls together everything a Launch TAM juggles — your notes, partner data from the Hive Mind, Slack threads, GitHub repos, Linear designs, Zendesk tickets, Fathom call transcripts, Google Drive folders — into one project-by-project view. It runs on your laptop. Markdown files are the source of truth, so nothing's locked up in a proprietary database.
 
-Markdown is the source of truth. SQLite at `~/.smithers/state.db` is cache + UI state only.
+**New here?** Skip to [Getting started](#getting-started). The walkthrough in [ONBOARDING.md](ONBOARDING.md) explains every step in detail with what to expect at each one. If something breaks, [TROUBLESHOOTING.md](TROUBLESHOOTING.md) has the diagnostic recipes.
 
-New to Smithers? Start with [**ONBOARDING.md**](ONBOARDING.md) for the first-time walkthrough. When something breaks, [**TROUBLESHOOTING.md**](TROUBLESHOOTING.md) has the diagnostic commands.
+## Is this for me?
 
-## What's different from a notes folder
+Smithers is built for **Automattic Team51 Launch TAMs**. It's most useful if some of these sound familiar:
 
-- **Project pages are the surface.** Each project has a workbench page that shows live activity, open items, drafts in flight, follow-ups, call notes, and (for partner projects) Hive Mind partner info. The daily note becomes a derived dashboard, not the front door.
-- **Phase 6 context assembly is the architecture, not a feature.** When a ping comes in, Smithers pre-assembles the relevant project links — P2 thread, GitHub issue, Linear design, recent Slack messages, Zendesk ticket — next to the inbound message.
-- **Three project kinds, unified rendering.** `partner` (sourced from [Team51-Hive-Mind](https://github.com/a8cteam51/Team51-Hive-Mind)), `team` (internal initiatives in your vault), and `personal` (individual projects in your vault). One UI, three sources.
-- **AI lives where the work happens.** Inline ghost-button assists for drafting, summarizing threads, suggesting next steps, and composing nudges. No silent mutations; all writes go through review gates.
-- **Vault stays Obsidian-compatible, not Obsidian-required.** Smithers reads and writes plain markdown with frontmatter. You can keep using Obsidian alongside it, drop Obsidian entirely, or start fresh from templates.
+- You bounce between Hive Mind, GitHub, Linear, Slack, and Zendesk all day and lose track of where a thread last was.
+- You take meeting notes in Fathom and want them auto-attached to the right project.
+- You want AI help drafting partner emails / P2 updates / weekly summaries, but you don't want anything sent automatically — every message gets a final review.
+- You'd rather work from plain-text markdown files than a closed app you can't export from.
 
-## Architecture at a glance
+You don't need to be technical to use it day-to-day. You do need to spend ~30 minutes on first-time setup (cloning the repo, installing a couple of tools). The walkthrough holds your hand.
+
+## What you get
+
+- **Per-project workbenches** — one page per partner / team / personal project, with live activity feed, open items, follow-ups, agendas, AI-drafted messages, processed calls, QA reports, and Drive activity all in one place.
+- **`/today` dashboard** — your daily landing page: hot pings, follow-ups waiting, recently-recorded calls, AI-picked "top 3 things to act on today."
+- **AI-assisted drafting** — draft Zendesk replies, P2 updates, weekly partner check-ins, call recaps, and brief documents in your own voice. Nothing sends until you click Send.
+- **Personal Digest** (`/digest`) — a weekly highlight tracker with an AI suggestion engine that mines your week for accomplishments worth remembering.
+- **Kosh QA reports** (`/projects/<slug>/qa`) — kick off functional / performance / accessibility audits against a partner's staging URL and archive the reports in Hive Mind. Convert findings into GitHub issues with one click.
+- **Ask Smithers palette** (`Cmd+K`) — natural-language navigation: "where's the brief for Body Dao", "show me drafts in flight", "draft a nudge for the Pocket NYC partner".
+
+## Getting started
+
+The full step-by-step walkthrough lives in [ONBOARDING.md](ONBOARDING.md) — read that if any of the steps below feel jargon-y. The summary version:
+
+### What you'll need before you start
+
+- A Mac (Smithers also runs on Linux; Windows isn't supported yet).
+- A free **Anthropic Claude Enterprise** API key — follow the steps in the [Field Guide](https://fieldguide.automattic.com/claude-enterprise/#enterprise-uses-sso-not-api-keys).
+- Optional but strongly recommended: a local copy of [Team51-Hive-Mind](https://github.com/a8cteam51/Team51-Hive-Mind) on disk. Smithers can run without it (you'll see placeholder partner data), but you'll get the full experience with it.
+- Optional: a [Linear personal API key](https://linear.app/settings/api), and Google Cloud credentials for Drive activity tracking (covered in ONBOARDING).
+
+### The five-minute version
+
+```bash
+# 1. Open the Terminal app (Cmd+Space, type "terminal", press Enter)
+
+# 2. Install Node.js and pnpm (the runtime + package manager Smithers uses)
+brew install node pnpm                # if you don't have Homebrew, see ONBOARDING
+
+# 3. Clone Smithers into your home folder
+git clone https://github.com/unicornfancy/smithers.git ~/smithers
+cd ~/smithers
+
+# 4. Install Smithers' dependencies (takes a minute)
+pnpm install
+
+# 5. Start the dev server
+pnpm dev
+```
+
+Then open **http://localhost:3000/setup** in your browser. You'll see a wizard that walks you through the rest: pointing at your notes folder, pasting your Anthropic key, connecting Hive Mind, etc. The wizard is designed to be self-explanatory.
+
+**After saving anything in the wizard, you have to restart `pnpm dev`** (press `Ctrl+C` to stop, then `pnpm dev` again). Smithers loads config once at startup — the restart picks up your changes.
+
+That's enough to get you onto the `/today` dashboard. Stuck? Open [ONBOARDING.md](ONBOARDING.md) — every step is broken down further with "what success looks like" and "if you see this error" notes.
+
+## What's different from just a notes folder
+
+- **Project pages are the surface.** Each project has a workbench page showing live activity, open items, drafts in flight, follow-ups, call notes, and (for partner projects) Hive Mind partner info. The daily note becomes a derived dashboard, not the front door.
+- **Three project kinds, one rendering.** `partner` (sourced from Team51-Hive-Mind), `team` (internal initiatives), `personal` (individual projects). One UI, three sources.
+- **AI lives where the work happens.** Ghost-button assists for drafting and analysis. Nothing auto-posts; everything goes through a draft review.
+- **Vault stays Obsidian-compatible.** Smithers reads and writes plain markdown with YAML frontmatter. Keep using Obsidian alongside it, drop Obsidian entirely, or start fresh from templates — your call.
+
+## Documentation
+
+| Doc | When you need it |
+|---|---|
+| [ONBOARDING.md](ONBOARDING.md) | First-time setup — step by step, with screenshots-worth of detail |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | "Something's not working, what do I check?" |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit together (technical) |
+| [docs/HIVE-MIND.md](docs/HIVE-MIND.md) | What Smithers reads vs. writes to your Hive Mind clone |
+| [docs/PROJECT-METADATA.md](docs/PROJECT-METADATA.md) | The frontmatter fields each project file supports |
+| [docs/SKILLS.md](docs/SKILLS.md) | Using and writing Hive Mind skills from Smithers |
+| [docs/TRANSCRIPTION-ADAPTERS.md](docs/TRANSCRIPTION-ADAPTERS.md) | Swapping Fathom for Granola / Whisper / Gemini |
+| [CLAUDE.md](CLAUDE.md) | Guidance for AI coding agents working in this repo |
+
+## Architecture (technical)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  apps/web  (Next.js 15 · App Router · RSC · Tailwind v4)    │
 │  /today  /projects/[slug]  /drafts  /agendas  /follow-ups   │
-│  /weekly-updates  /style-guide  /settings  /setup           │
+│  /weekly-updates  /digest  /style-guide  /settings          │
 └────────────┬───────────────────────────┬────────────────────┘
              │                           │
    ┌─────────▼─────────┐       ┌─────────▼─────────┐
@@ -30,8 +96,8 @@ New to Smithers? Start with [**ONBOARDING.md**](ONBOARDING.md) for the first-tim
    │  read/write MD    │       │   mcp-client      │
    │  + frontmatter    │       │ ContextA8C ·      │
    │  + atomic writes  │       │ Hive Mind · Fathom│
-   └─────────┬─────────┘       └─────────┬─────────┘
-             │                           │
+   └─────────┬─────────┘       │ · Google Drive    │
+             │                 └─────────┬─────────┘
              └───────┬───────────────────┘
                      │
           ┌──────────▼──────────┐
@@ -41,91 +107,24 @@ New to Smithers? Start with [**ONBOARDING.md**](ONBOARDING.md) for the first-tim
           └─────────────────────┘
 ```
 
-Plus `packages/transcription` (pluggable adapter pattern: Fathom · Granola · Manual paste; Whisper/Gemini stubs) and `packages/ui` (shared shadcn/ui components).
-
-## Prereqs
-
-- macOS or Linux (paths assume `~/` Unix semantics).
-- **Node 20+** (`node --version` — the repo's `engines` enforces this).
-- **pnpm 9+** (`pnpm --version` — install with `npm install -g pnpm` or `corepack enable`).
-- An **Anthropic API key** (`sk-ant-…`) for the AI affordances.
-- Optional but recommended: a local clone of [`a8cteam51/Team51-Hive-Mind`](https://github.com/a8cteam51/Team51-Hive-Mind) for partner data. Smithers runs without it (mock mode), but partner workbenches need it for real data.
-- Optional: a Linear API key for direct Linear writes (project status, sub-tasks).
-
-## Quick start
-
-```bash
-# clone
-git clone https://github.com/unicornfancy/smithers.git ~/smithers
-cd ~/smithers
-
-# install
-pnpm install
-
-# start the dev server
-pnpm dev
-# → open http://localhost:3000/setup
-```
-
-The `/setup` wizard configures three things:
-
-1. **Paths** — vault (your markdown notes folder), Hive Mind clone, my-voice skill files.
-2. **API keys** — `ANTHROPIC_API_KEY` (required) and `LINEAR_API_KEY` (optional). Both write to `apps/web/.env.local`.
-3. **MCP toggles** — turn ContextA8C / Hive Mind / Fathom on once you've set the corresponding path. Any MCP that's off falls back to mock data, so the UI keeps working while you finish setup.
-
-After saving any field, **restart `pnpm dev`** — Next.js reads config and env vars once at boot. Then visit `/today` for the daily dashboard.
-
-### Don't have a vault yet?
-
-Totally fine — Smithers doesn't require an existing Obsidian vault. Make an empty folder anywhere, point the wizard at it, and you're done:
-
-```bash
-mkdir -p ~/Smithers-Vault
-# then in the /setup wizard: Paths → Vault → ~/Smithers-Vault → Save
-```
-
-Smithers creates the subfolders it needs (`Projects/`, `Daily Notes/`, `Drafts/`, `Call Notes/`, `Agendas/`, `Weekly Updates/`, `Follow-ups.md`) on first write — you don't need to scaffold them upfront. The expected shape is documented in [`templates/vault/README.md`](templates/vault/README.md) if you want to mirror it by hand.
-
-Add your first project once the wizard is green:
-
-- **`/projects/onboard`** — joins your Linear projects, Hive Mind partners, and any existing vault scratchpads into one table with per-row Import / Connect / Set up actions. The right entry point if you already have partners in Hive Mind.
-- **`/projects/new`** — minimal form to create a vault-only project (team or personal). Use this for internal initiatives that don't have a Hive Mind partner.
-
-The full walkthrough lives in [`ONBOARDING.md`](ONBOARDING.md), including expected output at each step and the most common errors.
+Plus `packages/transcription` (pluggable adapter pattern: Fathom · Granola · Manual; Whisper/Gemini stubs) and `packages/ui` (shared shadcn/ui components).
 
 ## Repo layout
 
 ```
 smithers/
-├── apps/
-│   └── web/                  Next.js app (the workbench UI)
+├── apps/web/                Next.js app (the workbench UI)
 ├── packages/
-│   ├── vault/                markdown + frontmatter read/write helpers
-│   ├── mcp-client/           typed wrappers for ContextA8C / Hive Mind / Fathom
-│   ├── agents/               prompt templates + Claude/Anthropic runner
-│   ├── transcription/        pluggable transcription provider adapters
-│   └── ui/                   shared shadcn/ui components
-├── prompts/                  prompt templates (briefing, top-3, drafts, etc.)
-├── templates/
-│   ├── vault/                starter vault templates (Daily Note, Weekly Update, etc.)
-│   └── seed-data/            NDA-safe demo data for screenshots / mock mode
-├── docs/                     architecture, integration, migration guides
-├── scripts/                  one-off jobs and the `pnpm jobs:run-once` runner
-└── .claude/skills/           local copies of Hive Mind skills (consumed)
+│   ├── vault/               markdown + frontmatter read/write
+│   ├── mcp-client/          typed wrappers: ContextA8C / Hive Mind / Fathom / Drive
+│   ├── agents/              prompt templates + Claude/Anthropic runner
+│   ├── transcription/       pluggable transcription adapters
+│   └── ui/                  shared shadcn/ui components
+├── templates/vault/         starter vault layout for new installs
+├── docs/                    architecture, integration, migration guides
+└── scripts/                 one-off jobs and the `pnpm jobs:run-once` runner
 ```
-
-## Documentation
-
-- [`ONBOARDING.md`](ONBOARDING.md) — first-time setup walkthrough for a new TAM
-- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — "Smithers is acting weird, what do I run?"
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system design and component boundaries
-- [`docs/PHASE6.md`](docs/PHASE6.md) — context assembly model
-- [`docs/HIVE-MIND.md`](docs/HIVE-MIND.md) — how Smithers consumes Team51-Hive-Mind
-- [`docs/SKILLS.md`](docs/SKILLS.md) — using and contributing skills
-- [`docs/PROJECT-METADATA.md`](docs/PROJECT-METADATA.md) — frontmatter contract for `info.md`
-- [`docs/TRANSCRIPTION-ADAPTERS.md`](docs/TRANSCRIPTION-ADAPTERS.md) — adapter interface
-- [`docs/MIGRATION.md`](docs/MIGRATION.md) — migrating from a notes-folder + cron setup
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT — see [LICENSE](LICENSE).
