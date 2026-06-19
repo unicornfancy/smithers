@@ -124,6 +124,12 @@ export async function POST(req: Request) {
   const topByScore = candidates.slice(0, TOP_N_TO_LLM);
   const top = ensurePinnedIncluded(topByScore, candidates, pinnedIds);
   const style = (await loadStyleReference()) ?? undefined;
+  const { loadJobContext } = await import("@/lib/server/job-context");
+  const context = await loadJobContext({
+    job_context: true,
+    strategic_priorities: true,
+    operating_rhythm: true,
+  });
 
   try {
     const result = await composeTopThree(runtime, {
@@ -142,6 +148,7 @@ export async function POST(req: Request) {
       candidateCount: candidates.length,
       pinnedIds: Array.from(pinnedIds),
       style,
+      context,
     });
 
     const payload: CachedPayload = {

@@ -27,4 +27,16 @@ export interface GoogleDriveClient {
   listFolderActivity(
     query: DriveFolderActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>>;
+
+  /**
+   * Export a specific tab of a Google Sheet as CSV. Used by the
+   * team-charter sync to ingest the relevant tab without pulling in
+   * other tabs (e.g. changelog tab). Returns the raw CSV body; the
+   * caller is responsible for parsing into a markdown table.
+   *
+   * Uses the public-style export URL (`/export?format=csv&gid=...`)
+   * authenticated via the existing OAuth token — no extra Sheets API
+   * scope required.
+   */
+  exportSheetCsv(args: { fileId: string; gid: string }): Promise<string>;
 }

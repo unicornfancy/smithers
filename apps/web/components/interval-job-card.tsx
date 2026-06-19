@@ -14,6 +14,7 @@ type JobKey =
   | "transcription_sync"
   | "hive_mind_sync"
   | "team_roster_sync"
+  | "team_charter_sync"
   /** Legacy alias for transcription_sync — kept so the type accepts old callers. */
   | "fathom_sync";
 
@@ -26,7 +27,11 @@ interface Props {
   initial: {
     enabled: boolean;
     interval_minutes: number;
+    /** Only meaningful for team_charter_sync. Optional everywhere else. */
+    sheet_url?: string;
   };
+  /** Add a Sheet URL input above the Enable checkbox. team_charter_sync sets this. */
+  withSheetUrl?: boolean;
 }
 
 interface JobRunResponse {
@@ -42,6 +47,7 @@ export function IntervalJobCard({
   description,
   runNowPath,
   initial,
+  withSheetUrl,
 }: Props) {
   const [draft, setDraft] = React.useState(initial);
   const [saving, setSaving] = React.useState(false);
@@ -54,7 +60,8 @@ export function IntervalJobCard({
 
   const dirty =
     draft.enabled !== initial.enabled ||
-    draft.interval_minutes !== initial.interval_minutes;
+    draft.interval_minutes !== initial.interval_minutes ||
+    (draft.sheet_url ?? "") !== (initial.sheet_url ?? "");
 
   async function handleSave() {
     if (draft.interval_minutes < 1) {
@@ -67,6 +74,7 @@ export function IntervalJobCard({
         job,
         enabled: draft.enabled,
         interval_minutes: draft.interval_minutes,
+        ...(withSheetUrl ? { sheet_url: draft.sheet_url ?? "" } : {}),
       });
       if (result.ok) {
         toast.success(
@@ -108,6 +116,30 @@ export function IntervalJobCard({
         <p className="text-muted-foreground text-xs">{description}</p>
       </CardHeader>
       <CardContent className="space-y-3">
+        {withSheetUrl ? (
+          <label className="block space-y-1 text-sm">
+            <span className="text-foreground text-xs font-medium uppercase tracking-wide">
+              Sheet URL
+            </span>
+            <input
+              type="url"
+              value={draft.sheet_url ?? ""}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, sheet_url: e.target.value }))
+              }
+              placeholder="https://docs.google.com/spreadsheets/d/…/edit?gid=…"
+              className={cn(
+                "border-input bg-background focus-visible:ring-ring",
+                "h-8 w-full rounded-md border px-2 text-sm",
+                "focus-visible:outline-none focus-visible:ring-1",
+              )}
+            />
+            <span className="text-muted-foreground text-[11px]">
+              Include the <code>?gid=</code> or <code>#gid=</code> of the specific tab to ingest — other tabs are ignored.
+            </span>
+          </label>
+        ) : null}
+
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"

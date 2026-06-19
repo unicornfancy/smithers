@@ -22,6 +22,12 @@ export interface SmithersConfig {
     email?: string;
     github_handle?: string;
     slack_handle?: string;
+    /**
+     * The user's role at the team — e.g. "Launch TAM", "Senior TAM".
+     * Fed to context-aware agents so they weigh the team-charter rubric
+     * by what actually applies to this person. Defaults to "Launch TAM".
+     */
+    role?: string;
     internal_email_domains: string[];
   };
   paths: {
@@ -170,12 +176,30 @@ export interface SmithersConfig {
       /** @deprecated Use `group_slugs` instead. */
       group_slug?: string;
     };
+    /**
+     * Team charter sync: pulls a specific tab of a Google Sheet via
+     * the Drive API and writes a markdown table into
+     * `my-voice/TEAM_CHARTER.md` between auto-managed BEGIN/END
+     * markers. Default cadence daily — the sheet changes often enough
+     * to warrant a more frequent pull than the team-roster.
+     */
+    team_charter_sync?: {
+      enabled: boolean;
+      interval_minutes?: number;
+      /**
+       * Full Google Sheets URL with the relevant tab's `gid` in the
+       * fragment or query. Sync extracts both file id + gid so other
+       * tabs (e.g. changelog) aren't pulled in.
+       */
+      sheet_url?: string;
+    };
   };
 }
 
 const DEFAULTS: SmithersConfig = {
   identity: {
     name: "",
+    role: "Launch TAM",
     // Both "automattic.com" and "a8c.com" are real Automattic email
     // domains in use across the team (the shorter form is the alias).
     // Either reads as internal for the Zendesk inbound/outbound check.
@@ -232,6 +256,10 @@ const DEFAULTS: SmithersConfig = {
       //   - team-51-contractors: contract devs / designers / TAMs
       //   - studio-51:           creative arm (Christy Nyiri lives here, not team-51)
       group_slugs: ["team-51", "team-51-contractors", "studio-51"],
+    },
+    team_charter_sync: {
+      enabled: false,
+      interval_minutes: 24 * 60,
     },
   },
 };
@@ -416,6 +444,19 @@ function mergeWithDefaults(
           DEFAULTS.schedule?.team_roster_sync?.interval_minutes ??
           7 * 24 * 60,
         group_slugs: pickGroupSlugs(partial.schedule?.team_roster_sync),
+      },
+      team_charter_sync: {
+        enabled:
+          partial.schedule?.team_charter_sync?.enabled ??
+          DEFAULTS.schedule?.team_charter_sync?.enabled ??
+          false,
+        interval_minutes:
+          partial.schedule?.team_charter_sync?.interval_minutes ??
+          DEFAULTS.schedule?.team_charter_sync?.interval_minutes ??
+          24 * 60,
+        sheet_url:
+          partial.schedule?.team_charter_sync?.sheet_url ??
+          DEFAULTS.schedule?.team_charter_sync?.sheet_url,
       },
     },
     weekly_update: partial.weekly_update,

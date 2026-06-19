@@ -142,6 +142,20 @@ export default async function SettingsPage() {
                   7 * 24 * 60,
               }}
             />
+            <IntervalJobCard
+              job="team_charter_sync"
+              title="Team charter sync"
+              description="Pulls a specific Google Sheet tab via the Drive API and rewrites the auto-managed block in my-voice/TEAM_CHARTER.md. The team-charter rubric feeds the Personal Digest highlight suggester, Weekly Update generator, and Top 3 / Realistic Shape agents so they bias toward what your role is actually scored on. Personal notes outside the BEGIN/END markers are preserved. Default cadence: daily."
+              runNowPath="/api/jobs/team-charter-sync"
+              withSheetUrl
+              initial={{
+                enabled: cfg.schedule?.team_charter_sync?.enabled ?? false,
+                interval_minutes:
+                  cfg.schedule?.team_charter_sync?.interval_minutes ??
+                  24 * 60,
+                sheet_url: cfg.schedule?.team_charter_sync?.sheet_url ?? "",
+              }}
+            />
           </SettingsSection>
 
           <SettingsSection

@@ -173,9 +173,12 @@ export async function updateIntervalJobAction(input: {
     | "transcription_sync"
     | "hive_mind_sync"
     | "team_roster_sync"
+    | "team_charter_sync"
     | "fathom_sync";
   enabled?: boolean;
   interval_minutes?: number;
+  /** Only meaningful for team_charter_sync. Persisted at schedule.team_charter_sync.sheet_url. */
+  sheet_url?: string;
 }): Promise<{ ok: true } | { ok: false; reason: string }> {
   try {
     const path = configLocalPath();
@@ -198,6 +201,14 @@ export async function updateIntervalJobAction(input: {
         return { ok: false, reason: "interval_minutes must be >= 1" };
       }
       jobBlock["interval_minutes"] = Math.round(n);
+    }
+    if (input.sheet_url !== undefined && targetKey === "team_charter_sync") {
+      const trimmed = input.sheet_url.trim();
+      if (trimmed === "") {
+        delete jobBlock["sheet_url"];
+      } else {
+        jobBlock["sheet_url"] = trimmed;
+      }
     }
     scheduleBlock[targetKey] = jobBlock;
     // If the caller passed the legacy fathom_sync name, also clear the

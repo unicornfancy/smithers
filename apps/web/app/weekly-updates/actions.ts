@@ -75,6 +75,11 @@ export async function generateWeeklyUpdateAction(
   }));
 
   try {
+    const { loadJobContext } = await import("@/lib/server/job-context");
+    const context = await loadJobContext({
+      operating_rhythm: true,
+      team_charter: true,
+    });
     const result = await composeWeeklyUpdate(runtime, {
       iso_week: facts.iso_week,
       week_start: facts.week_start,
@@ -85,6 +90,7 @@ export async function generateWeeklyUpdateAction(
       format_instructions: cfg.weekly_update?.format_template,
       style,
       user_notes: opts?.user_notes,
+      context,
     });
     return { ok: true, data: result.output, facts };
   } catch (err) {

@@ -95,6 +95,13 @@ export async function POST(req: Request) {
   const top3 = pickRulesBasedTop3(candidates);
   const concentratedProject = pickConcentratedProject(top3, stalls.items, pings);
 
+  const { loadJobContext } = await import("@/lib/server/job-context");
+  const context = await loadJobContext({
+    job_context: true,
+    strategic_priorities: true,
+    operating_rhythm: true,
+  });
+
   try {
     const result = await composeRealisticShape(runtime, {
       dayOfWeek: dayOfWeek(),
@@ -109,6 +116,7 @@ export async function POST(req: Request) {
       followUpCount: followUps.active.length,
       concentratedProject,
       style: style ?? undefined,
+      context,
     });
 
     const payload: CachedPayload = {

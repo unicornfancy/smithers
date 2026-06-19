@@ -1,7 +1,9 @@
+import { attachJobContext } from "../job-context";
 import { runAgent } from "../runner";
 import type {
   AgentResult,
   AgentRuntimeOptions,
+  JobContextRefs,
   StyleReference,
 } from "../types";
 
@@ -34,6 +36,12 @@ export interface RealisticShapeInput {
   concentratedProject?: string;
   /** Optional voice reference. */
   style?: StyleReference;
+  /**
+   * Optional job-context refs. Expected slices: job_context, strategic_priorities,
+   * and operating_rhythm (urgency norms). The agent uses these to frame
+   * capacity / risk in role-relevant terms.
+   */
+  context?: JobContextRefs;
 }
 
 export interface RealisticShapeOutput {
@@ -95,7 +103,7 @@ export async function composeRealisticShape(
 ): Promise<AgentResult<RealisticShapeOutput>> {
   return runAgent(runtime, {
     agent: "realistic-shape",
-    system: SYSTEM_PROMPT,
+    system: attachJobContext(SYSTEM_PROMPT, input.context),
     user: renderUserPrompt(input),
     outputSchema: OUTPUT_SCHEMA,
     outputName: "RealisticShapeOutput",

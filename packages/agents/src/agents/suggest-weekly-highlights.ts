@@ -1,5 +1,10 @@
+import { attachJobContext } from "../job-context";
 import { runAgent } from "../runner";
-import type { AgentResult, AgentRuntimeOptions } from "../types";
+import type {
+  AgentResult,
+  AgentRuntimeOptions,
+  JobContextRefs,
+} from "../types";
 
 export type HighlightCategory =
   | "launch"
@@ -24,6 +29,14 @@ export interface SuggestWeeklyHighlightsInput {
   window_start: string;
   window_end: string;
   candidates: HighlightCandidateInput[];
+  /**
+   * Job-context refs the runner loads on the caller's behalf. Expected
+   * slices: team_charter (rubric — what work is rewarded) and
+   * job_context (role definition — what applies to this role). The
+   * agent uses these to weigh candidates the role is actually scored
+   * on more highly than incidental activity.
+   */
+  context?: JobContextRefs;
 }
 
 export interface WeeklyHighlightSuggestion {
@@ -106,7 +119,7 @@ export async function suggestWeeklyHighlights(
 ): Promise<AgentResult<SuggestWeeklyHighlightsOutput>> {
   return runAgent(runtime, {
     agent: "suggest-weekly-highlights",
-    system: SYSTEM_PROMPT,
+    system: attachJobContext(SYSTEM_PROMPT, input.context),
     user: renderUserPrompt(input),
     outputSchema: OUTPUT_SCHEMA,
     outputName: "SuggestWeeklyHighlightsOutput",

@@ -1,7 +1,9 @@
+import { attachJobContext } from "../job-context";
 import { runAgent } from "../runner";
 import type {
   AgentResult,
   AgentRuntimeOptions,
+  JobContextRefs,
   StyleReference,
 } from "../types";
 
@@ -51,6 +53,13 @@ export interface ComposeTopThreeInput {
   pinnedIds?: string[];
   /** Optional voice reference. */
   style?: StyleReference;
+  /**
+   * Optional job-context refs. Expected slices: job_context (role
+   * definition), strategic_priorities (what's important now), and
+   * operating_rhythm (stall thresholds, urgency norms). The agent
+   * uses these to weigh candidates against role responsibilities.
+   */
+  context?: JobContextRefs;
 }
 
 export interface TopThreePick {
@@ -161,7 +170,7 @@ export async function composeTopThree(
 ): Promise<AgentResult<TopThreeOutput>> {
   return runAgent(runtime, {
     agent: "top-3",
-    system: SYSTEM_PROMPT,
+    system: attachJobContext(SYSTEM_PROMPT, input.context),
     user: renderUserPrompt(input),
     outputSchema: OUTPUT_SCHEMA,
     outputName: "TopThreeOutput",

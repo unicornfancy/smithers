@@ -56,3 +56,31 @@ export interface StyleReference {
   /** Markdown body of the style guide. */
   body: string;
 }
+
+/**
+ * Job-context references — the per-agent declared-dependency channel.
+ * Agents that opt in receive whichever slices the caller chose to load
+ * (typically via `loadJobContext({...})`) and render them into their
+ * system prompts. Unlike StyleReference (one voice file passed
+ * everywhere), each agent declares which slices it needs so prompts
+ * don't bloat with irrelevant context.
+ */
+export interface JobContextRefs {
+  /** Who the user is, what the team does, the role description. */
+  job_context?: JobContextDoc;
+  /** Team charter — the scoring rubric, auto-synced from a shared Google Sheet. */
+  team_charter?: JobContextDoc;
+  /** Strategic priorities — what's important right now, hand-curated. */
+  strategic_priorities?: JobContextDoc;
+  /** Operating rhythm — cadence, formats, SLAs, stall thresholds. */
+  operating_rhythm?: JobContextDoc;
+}
+
+export interface JobContextDoc {
+  /** Short label rendered above the body in the prompt. */
+  label: string;
+  /** Markdown body of the doc. */
+  body: string;
+  /** Optional caller's role — agents weigh charter rows by this. */
+  role?: string;
+}

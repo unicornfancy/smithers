@@ -51,6 +51,31 @@ export class RealGoogleDriveTransport implements GoogleDriveClient {
     private readonly health: HealthRegistry,
   ) {}
 
+  /**
+   * Export a specific Sheets tab as CSV. The simplest path is the
+   * public-style export URL (`/spreadsheets/d/<id>/export?format=csv&gid=<gid>`)
+   * — works for any file the OAuth token can read and doesn't need
+   * the separate Sheets API scope. We hit it via the authenticated
+   * `OAuth2Client.request` so the bearer token rides along.
+   */
+  async exportSheetCsv(args: { fileId: string; gid: string }): Promise<string> {
+    const drive = this.ensureClient();
+    // Pull the OAuth2 client off the drive instance so we can do an
+    // arbitrary authenticated GET. drive_v3.Drive doesn't expose an
+    // export-by-gid method, but the request method on the auth client
+    // does — and it auto-refreshes tokens, which is what we want.
+    const auth = drive.context._options.auth as OAuth2Client;
+    const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(
+      args.fileId,
+    )}/export?format=csv&gid=${encodeURIComponent(args.gid)}`;
+    const res = await auth.request<string>({
+      url,
+      method: "GET",
+      responseType: "text",
+    });
+    return typeof res.data === "string" ? res.data : String(res.data ?? "");
+  }
+
   async listFolderActivity(
     query: DriveFolderActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>> {

@@ -20,8 +20,15 @@ export type {
   AgentResult,
   AgentRuntimeOptions,
   EffortLevel,
+  JobContextDoc,
+  JobContextRefs,
   StyleReference,
 } from "./types";
+
+export {
+  attachJobContext,
+  renderJobContextForPrompt,
+} from "./job-context";
 
 export {
   composeFollowUpNudge,

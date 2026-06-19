@@ -1,7 +1,9 @@
+import { attachJobContext } from "../job-context";
 import { runAgent } from "../runner";
 import type {
   AgentResult,
   AgentRuntimeOptions,
+  JobContextRefs,
   StyleReference,
 } from "../types";
 
@@ -85,6 +87,13 @@ export interface WeeklyUpdateInput {
    * them in the This Week section.
    */
   user_notes?: string;
+  /**
+   * Optional job-context refs. Expected slices: operating_rhythm (cadence
+   * + format expectations) and team_charter (what's worth featuring in
+   * the writeup). The agent uses these to bias toward charter-aligned
+   * accomplishments over routine maintenance.
+   */
+  context?: JobContextRefs;
 }
 
 export interface WeeklyUpdateOutput {
@@ -162,7 +171,7 @@ export async function composeWeeklyUpdate(
 ): Promise<AgentResult<WeeklyUpdateOutput>> {
   return runAgent(runtime, {
     agent: "compose-weekly-update",
-    system: SYSTEM_PROMPT,
+    system: attachJobContext(SYSTEM_PROMPT, input.context),
     user: renderUserPrompt(input),
     outputSchema: OUTPUT_SCHEMA,
     outputName: "WeeklyUpdateOutput",

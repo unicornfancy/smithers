@@ -19,4 +19,13 @@ export class MockGoogleDriveTransport implements GoogleDriveClient {
       fetched_at: new Date().toISOString(),
     };
   }
+
+  async exportSheetCsv(_args: {
+    fileId: string;
+    gid: string;
+  }): Promise<string> {
+    throw new Error(
+      "Drive transport is in mock mode — configure paths.kosh (sic — actually paths to gcp-oauth.keys + creds) to enable real exports",
+    );
+  }
 }

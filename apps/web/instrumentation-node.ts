@@ -19,6 +19,7 @@ import { runDailyBriefing } from "@/lib/server/briefing";
 import {
   runHiveMindSyncJob,
   runPingMonitorJob,
+  runTeamCharterSyncJob,
   runTeamRosterSyncJob,
   runTranscriptionSyncJob,
   type JobResult,
@@ -61,6 +62,13 @@ export async function setup(): Promise<void> {
     intervalMinutes:
       cfg.schedule?.team_roster_sync?.interval_minutes ?? 7 * 24 * 60,
     run: runTeamRosterSyncJob,
+  });
+  registerIntervalJob({
+    label: "team charter sync",
+    enabled: cfg.schedule?.team_charter_sync?.enabled,
+    intervalMinutes:
+      cfg.schedule?.team_charter_sync?.interval_minutes ?? 24 * 60,
+    run: runTeamCharterSyncJob,
   });
 }
 

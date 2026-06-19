@@ -89,11 +89,17 @@ export async function suggestWeeklyHighlightsAction(
     return { ok: false, reason: "no-candidates" };
   }
   try {
+    const { loadJobContext } = await import("@/lib/server/job-context");
+    const context = await loadJobContext({
+      team_charter: true,
+      job_context: true,
+    });
     const result = await suggestWeeklyHighlights(runtime, {
       iso_week: facts.iso_week,
       window_start: facts.window_start,
       window_end: facts.window_end,
       candidates: facts.candidates,
+      context,
     });
     return {
       ok: true,

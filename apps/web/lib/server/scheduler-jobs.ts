@@ -263,3 +263,36 @@ export async function runTeamRosterSyncJob(): Promise<JobResult> {
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Team charter sync — pulls the configured Google Sheet tab via the Drive
+// client and rewrites the auto-managed block in `my-voice/TEAM_CHARTER.md`.
+// ---------------------------------------------------------------------------
+
+export async function runTeamCharterSyncJob(): Promise<JobResult> {
+  const started = Date.now();
+  try {
+    const cfg = await loadConfig();
+    const sheetUrl = cfg.schedule?.team_charter_sync?.sheet_url?.trim();
+    if (!sheetUrl) {
+      return {
+        ok: false,
+        error: "team charter sync enabled but schedule.team_charter_sync.sheet_url is empty",
+        duration_ms: Date.now() - started,
+      };
+    }
+    const { syncTeamCharter } = await import("@/lib/server/team-charter");
+    const result = await syncTeamCharter({ sheet_url: sheetUrl });
+    return {
+      ok: true,
+      summary: `${result.rows} rows synced${result.changed ? "" : "; no change"}`,
+      duration_ms: Date.now() - started,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      duration_ms: Date.now() - started,
+    };
+  }
+}
