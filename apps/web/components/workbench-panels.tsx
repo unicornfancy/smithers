@@ -13,6 +13,7 @@ import {
   StickyNote,
 } from "lucide-react";
 
+import { AddExternalCallDialog } from "@/components/add-external-call-dialog";
 import { AddProjectFollowUpForm } from "@/components/add-project-follow-up-form";
 import { ConvertFollowUpToTaskButton } from "@/components/convert-follow-up-to-task-button";
 import { DetachRecordingButton } from "@/components/detach-recording-button";
@@ -52,12 +53,15 @@ function Section({
   title,
   count,
   meta,
+  action,
   children,
 }: {
   icon: React.ReactNode;
   title: string;
   count?: number;
   meta?: string;
+  /** Right-aligned action slot (e.g. an "Add" button). Pushes meta further left when present. */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -72,10 +76,11 @@ function Section({
             </span>
           ) : null}
           {meta ? (
-            <span className="text-muted-foreground/70 ml-auto text-xs font-normal">
+            <span className={`text-muted-foreground/70 ${action ? "" : "ml-auto"} text-xs font-normal`}>
               {meta}
             </span>
           ) : null}
+          {action ? <span className="ml-auto">{action}</span> : null}
         </CardTitle>
       </CardHeader>
       <CardContent>{children}</CardContent>
@@ -677,11 +682,23 @@ export function CallNotesPanel({
         icon={<Phone className="size-4" />}
         title="Calls"
         meta="No matches"
+        action={
+          <AddExternalCallDialog
+            projects={[]}
+            fixedProjectSlug={projectSlug}
+            fixedProjectName={projectName}
+            label="Add external call"
+            size="sm"
+            variant="ghost"
+          />
+        }
       >
         <p className="text-muted-foreground text-sm">
           No calls matched to {projectName}. Recordings whose titles or
           attendees include the project or partner will surface here; processed
-          calls also persist across time.
+          calls also persist across time. Use{" "}
+          <span className="font-medium">Add external call</span> to import a
+          transcript from elsewhere.
         </p>
       </Section>
     );
@@ -698,6 +715,16 @@ export function CallNotesPanel({
       title="Calls"
       count={recordings.length + (processedCallNotes?.length ?? 0)}
       meta={`${processedCallNotes?.length ?? 0} processed · ${unprocessedRecordings.length} unprocessed`}
+      action={
+        <AddExternalCallDialog
+          projects={[]}
+          fixedProjectSlug={projectSlug}
+          fixedProjectName={projectName}
+          label="Add external"
+          size="sm"
+          variant="ghost"
+        />
+      }
     >
       <div className="space-y-3">
         {(processedCallNotes ?? []).length > 0 ? (

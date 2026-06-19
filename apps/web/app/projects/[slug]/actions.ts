@@ -2369,6 +2369,80 @@ export async function generateProjectBriefAction(
 }
 
 /**
+ * Link an existing brief (typically a Google Doc — historical TAM format)
+ * to this project instead of generating a new one. Writes a minimal
+ * `brief.md` to HM whose body is a one-line link and whose frontmatter
+ * carries `google_doc_url` — the existing brief renderer already
+ * surfaces that as an "Open in Google Docs" link, so the workbench
+ * card lights up immediately.
+ *
+ * If a brief.md already exists, this overwrites it — caller is expected
+ * to confirm. Subsequent regenerate runs would also overwrite, so this
+ * is consistent with the rest of the brief lifecycle.
+ */
+export async function linkExternalBriefAction(input: {
+  slug: string;
+  google_doc_url: string;
+  /** Optional one-line note shown above the link in the rendered brief body. */
+  note?: string;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const url = input.google_doc_url.trim();
+  if (!url) return { ok: false, reason: "Google Doc URL is required" };
+  if (!/^https?:\/\//.test(url)) {
+    return { ok: false, reason: "URL must start with http:// or https://" };
+  }
+
+  const vault = await getVault();
+  const project = await vault.readProject(input.slug);
+  if (!project) return { ok: false, reason: "Project not found" };
+  const partnerSlug = project.hive_mind_partner_slug ?? project.partner;
+  const projectSlug = project.hive_mind_project_slug ?? project.slug;
+  if (!partnerSlug) return { ok: false, reason: "Project is not connected to Hive Mind" };
+
+  const frontmatter: Record<string, string> = {
+    google_doc_url: url,
+    linked_at: new Date().toISOString(),
+  };
+  const note = input.note?.trim();
+  const yaml = Object.entries(frontmatter)
+    .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+    .join("\n");
+  const body = [
+    "---",
+    yaml,
+    "---",
+    "",
+    "# Project Brief",
+    "",
+    note ? `${note}\n` : "",
+    `The canonical brief lives in Google Docs: ${url}`,
+    "",
+  ]
+    .filter((l) => l !== "")
+    .join("\n");
+
+  const mcp = await getMcpClient();
+  try {
+    await mcp.hiveMind.writeProjectFile(
+      partnerSlug,
+      projectSlug,
+      "brief.md",
+      body,
+    );
+    await mcp.hiveMind.commit(
+      `brief: link external doc for ${partnerSlug}/${projectSlug}`,
+    );
+    revalidatePath(`/projects/${input.slug}`);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "HM write failed",
+    };
+  }
+}
+
+/**
  * Save the reviewed brief markdown to <HM>/knowledge/partners/<partner>/
  * <project>/brief.md (the path the /create-brief skill writes to today).
  * Commits via MCP and revalidates the workbench so the brief card

@@ -1,5 +1,6 @@
 import type { CallRecordingRef } from "@smithers/mcp-client";
 
+import { AddExternalCallDialog } from "@/components/add-external-call-dialog";
 import { AppHeader } from "@/components/app-header";
 import { CallsTable } from "@/components/calls-table";
 import { PageShell } from "@/components/page-shell";
@@ -66,6 +67,14 @@ export default async function CallsPage() {
       <AppHeader
         title="Calls"
         subtitle={`${recordings.length} recent recordings · ${unmatched.length} unmatched`}
+        actions={
+          <AddExternalCallDialog
+            projects={projectPicker}
+            label="Add external call"
+            size="sm"
+            variant="outline"
+          />
+        }
       />
       <PageShell>
         <CallsTable

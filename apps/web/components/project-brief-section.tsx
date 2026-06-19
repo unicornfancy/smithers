@@ -6,6 +6,7 @@ import {
   GenerateBriefButton,
   type TranscriptOption,
 } from "@/components/generate-brief-button";
+import { LinkExistingBriefButton } from "@/components/link-existing-brief-button";
 
 interface Props {
   brief: HiveMindBrief | null;
@@ -38,7 +39,7 @@ export function ProjectBriefSection({
             <FileText className="size-4 text-muted-foreground" />
             Project brief
             {canGenerate ? (
-              <span className="ml-auto">
+              <span className="ml-auto flex items-center gap-1.5">
                 <GenerateBriefButton
                   projectSlug={projectSlug}
                   transcripts={transcripts}
@@ -47,6 +48,12 @@ export function ProjectBriefSection({
                   initialDns={initialDns}
                   label="Generate brief"
                   size="sm"
+                />
+                <LinkExistingBriefButton
+                  projectSlug={projectSlug}
+                  hasExistingBrief={false}
+                  size="sm"
+                  variant="outline"
                 />
               </span>
             ) : null}
@@ -71,16 +78,25 @@ export function ProjectBriefSection({
           Project brief
           <div className="ml-auto flex items-center gap-3">
             {canGenerate ? (
-              <GenerateBriefButton
-                projectSlug={projectSlug}
-                transcripts={transcripts}
-                initialDiscoveryDocUrl={initialDiscoveryDocUrl}
-                initialRegistrar={initialRegistrar}
-                initialDns={initialDns}
-                label="Regenerate"
-                size="sm"
-                variant="ghost"
-              />
+              <>
+                <GenerateBriefButton
+                  projectSlug={projectSlug}
+                  transcripts={transcripts}
+                  initialDiscoveryDocUrl={initialDiscoveryDocUrl}
+                  initialRegistrar={initialRegistrar}
+                  initialDns={initialDns}
+                  label="Regenerate"
+                  size="sm"
+                  variant="ghost"
+                />
+                <LinkExistingBriefButton
+                  projectSlug={projectSlug}
+                  hasExistingBrief={true}
+                  label="Link doc"
+                  size="sm"
+                  variant="ghost"
+                />
+              </>
             ) : null}
             {brief.google_doc_url ? (
               <a
