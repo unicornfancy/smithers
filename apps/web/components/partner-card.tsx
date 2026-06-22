@@ -1,13 +1,20 @@
-import { ExternalLink, Mail, Pencil } from "lucide-react";
+import { Mail, Pencil } from "lucide-react";
 import Link from "next/link";
 import type { HiveMindPartner } from "@smithers/vault";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Markdown } from "@/components/markdown";
+import { OpenInEditorButton } from "@/components/open-in-editor-button";
 
 interface Props {
   partner: HiveMindPartner | null;
-  editPath: string | null;
+  /**
+   * Bare absolute path to `partner-knowledge.md` on disk. NOT prefixed
+   * with `file://` — the OpenInEditorButton hands it to the OS via a
+   * server action (`open` on macOS / `xdg-open` on Linux) since
+   * browsers silently block file:// links from http:// pages.
+   */
+  editAbsPath: string | null;
   /** Smithers-native editor route, e.g. /partner-knowledge/<slug>. */
   smithersEditHref: string | null;
   hmIsConfigured: boolean;
@@ -15,7 +22,7 @@ interface Props {
 
 export function PartnerCard({
   partner,
-  editPath,
+  editAbsPath,
   smithersEditHref,
   hmIsConfigured,
 }: Props) {
@@ -41,14 +48,10 @@ export function PartnerCard({
                 Edit here
               </Link>
             ) : null}
-            {editPath ? (
-              <a
-                href={editPath}
-                className="text-muted-foreground hover:text-foreground flex items-center gap-1"
-              >
-                <ExternalLink className="size-3" />
+            {editAbsPath ? (
+              <OpenInEditorButton path={editAbsPath}>
                 Open in editor
-              </a>
+              </OpenInEditorButton>
             ) : null}
           </span>
         </CardTitle>

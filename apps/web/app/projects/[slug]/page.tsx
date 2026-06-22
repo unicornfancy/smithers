@@ -90,8 +90,12 @@ export default async function ProjectWorkbenchPage({
   const mcp = await getMcpClient();
   const hmPartnerSlug = detail.hive_mind_partner_slug ?? detail.slug;
   const hmProjectSlug = detail.hive_mind_project_slug ?? detail.slug;
+  // Bare absolute path (no file:// prefix). PartnerCard hands this to
+  // an OpenInEditorButton which shells out to `open` / `xdg-open` —
+  // browsers silently block file:// links from http:// pages, so the
+  // old approach rendered a no-op link.
   const hmPartnerKnowledgePath = vault.options.hiveMindPath
-    ? `file://${vault.options.hiveMindPath}/knowledge/partners/${hmPartnerSlug}/partner-knowledge.md`
+    ? `${vault.options.hiveMindPath}/knowledge/partners/${hmPartnerSlug}/partner-knowledge.md`
     : null;
   // Fallback edit path when no brief exists yet — opens the canonical
   // location so a freshly-generated brief from /create-brief lands
@@ -679,7 +683,7 @@ export default async function ProjectWorkbenchPage({
     node: (
       <PartnerCard
         partner={hiveMindPartner}
-        editPath={hmPartnerKnowledgePath}
+        editAbsPath={hmPartnerKnowledgePath}
         smithersEditHref={
           detail.hive_mind_partner_slug
             ? `/partner-knowledge/${detail.hive_mind_partner_slug}`
