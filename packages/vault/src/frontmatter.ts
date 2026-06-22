@@ -46,12 +46,39 @@ export function mergeFrontmatter(
   return out;
 }
 
+/**
+ * Strip `undefined` values from a frontmatter object, recursing into
+ * nested objects and arrays. js-yaml's `dump` throws
+ *   "unacceptable kind of an object to dump [object Undefined]"
+ * on any `undefined` it encounters at any depth — so a top-level-only
+ * strip isn't enough once frontmatter starts carrying structured
+ * sub-objects (like the call-notes `analysis` block whose
+ * follow_ups[].follow_up_by and decisions[].context are optional).
+ *
+ * Behavior:
+ *   - undefined → omitted (the bug fix)
+ *   - null → preserved (legitimate "I checked, there's no value here")
+ *   - arrays → recurse into each element; undefined elements collapse
+ *     to null rather than being dropped, to preserve index identity
+ *   - other primitives → returned as-is
+ */
 function stripUndefined(
   data: Record<string, unknown>,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(data)) {
-    if (v !== undefined) out[k] = v;
+    if (v === undefined) continue;
+    out[k] = cleanValue(v);
   }
   return out;
+}
+
+function cleanValue(v: unknown): unknown {
+  if (v === undefined) return null;
+  if (v === null) return null;
+  if (Array.isArray(v)) return v.map(cleanValue);
+  if (typeof v === "object") {
+    return stripUndefined(v as Record<string, unknown>);
+  }
+  return v;
 }
