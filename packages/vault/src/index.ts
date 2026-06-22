@@ -38,6 +38,7 @@ import {
   listCallNotes,
   listCallNotesForProject,
   listRecentCallSlices,
+  readCallNotesTranscriptByRecordingId,
   saveCallNotes,
   type AppendChatToCallNotesResult,
   type ChatMessage,
@@ -282,6 +283,7 @@ export {
   listCallNotes,
   listCallNotesForProject,
   listRecentCallSlices,
+  readCallNotesTranscriptByRecordingId,
   listDailyNotes,
   listDrafts,
   listFollowUps,
@@ -493,6 +495,9 @@ export interface Vault {
   findCallNotesByRecordingId: (
     recordingId: string,
   ) => ReturnType<typeof findCallNotesByRecordingId>;
+  readCallNotesTranscriptByRecordingId: (
+    recordingId: string,
+  ) => ReturnType<typeof readCallNotesTranscriptByRecordingId>;
   appendChatToCallNotes: (
     recordingId: string,
     messages: ChatMessage[],
@@ -631,6 +636,8 @@ export function createVault(options: VaultOptions): Vault {
     saveCallNotes: (input) => saveCallNotes(resolved, input),
     findCallNotesByRecordingId: (recordingId) =>
       findCallNotesByRecordingId(resolved, recordingId),
+    readCallNotesTranscriptByRecordingId: (recordingId) =>
+      readCallNotesTranscriptByRecordingId(resolved, recordingId),
     appendChatToCallNotes: (recordingId, messages) =>
       appendChatToCallNotes(resolved, recordingId, messages),
     updateDraftBody: (draftId, newBody) =>

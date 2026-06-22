@@ -197,6 +197,8 @@ export async function processExternalCallAction(input: {
   source?: string;
   /** Optional URL pointing back at the original transcript (Granola share, Otter doc, etc). */
   source_url?: string;
+  /** When true, bypass the same-transcript cache and re-run the agent. Used by Reprocess. */
+  force?: boolean;
 }): Promise<
   | {
       ok: true;
@@ -227,16 +229,19 @@ export async function processExternalCallAction(input: {
   const vault = await getVault();
 
   // Cache hit short-circuit — same transcript already processed.
-  const existing = await vault.findCallNotesByRecordingId(recordingId).catch(() => null);
-  if (existing) {
-    return {
-      ok: true,
-      cached: true,
-      data: coerceSavedAnalysis(existing.analysis),
-      analyzed_at: existing.analyzed_at,
-      relative_path: existing.relative_path,
-      absolute_path: existing.absolute_path,
-    };
+  // Force=true bypasses (Reprocess sends force; ordinary imports don't).
+  if (!input.force) {
+    const existing = await vault.findCallNotesByRecordingId(recordingId).catch(() => null);
+    if (existing) {
+      return {
+        ok: true,
+        cached: true,
+        data: coerceSavedAnalysis(existing.analysis),
+        analyzed_at: existing.analyzed_at,
+        relative_path: existing.relative_path,
+        absolute_path: existing.absolute_path,
+      };
+    }
   }
 
   const runtime = await getAgentRuntime();
@@ -288,6 +293,10 @@ export async function processExternalCallAction(input: {
           text: q.text,
         })),
       },
+      // Persist the transcript inline so Reprocess can re-run the
+      // agent without forcing the user to re-paste. Fathom flow
+      // doesn't pass a transcript (it re-fetches from the API).
+      transcript,
     });
 
     revalidatePath("/calls");
@@ -310,6 +319,75 @@ export async function processExternalCallAction(input: {
       message: err instanceof Error ? err.message : "Agent call failed",
     };
   }
+}
+
+/**
+ * Re-run the analyze agent on a previously-imported external call,
+ * using the transcript stashed in its saved Call Notes file. Reuses
+ * the same recording_id (and therefore the same file) so reprocess
+ * is in-place — no orphan files left behind. Bypasses the cache via
+ * force: true; reuses metadata from the existing frontmatter so the
+ * caller doesn't have to thread it through.
+ */
+export async function reprocessExternalCallAction(input: {
+  recording_id: string;
+}): Promise<
+  | {
+      ok: true;
+      data: AnalyzeCallTranscriptOutput;
+      analyzed_at: string;
+      relative_path: string;
+      absolute_path: string;
+    }
+  | {
+      ok: false;
+      reason:
+        | "not-found"
+        | "no-transcript"
+        | "not-configured"
+        | "empty-transcript"
+        | "error";
+      message?: string;
+    }
+> {
+  const recordingId = input.recording_id.trim();
+  if (!recordingId) {
+    return { ok: false, reason: "error", message: "recording_id is required" };
+  }
+  const vault = await getVault();
+  const existing = await vault
+    .findCallNotesByRecordingId(recordingId)
+    .catch(() => null);
+  if (!existing) {
+    return { ok: false, reason: "not-found" };
+  }
+  const transcript = await vault
+    .readCallNotesTranscriptByRecordingId(recordingId)
+    .catch(() => null);
+  if (!transcript) {
+    // No stored transcript means this notes file was created before
+    // we started persisting transcripts (or it's a Fathom record that
+    // doesn't stash one). The user has to re-import to reprocess.
+    return { ok: false, reason: "no-transcript" };
+  }
+  const res = await processExternalCallAction({
+    transcript,
+    title: existing.title,
+    recorded_at: existing.recorded_at,
+    project_slug: existing.project_slug || undefined,
+    source_url: existing.fathom_url || undefined,
+    force: true,
+  });
+  if (!res.ok) {
+    return res;
+  }
+  return {
+    ok: true,
+    data: res.data,
+    analyzed_at: res.analyzed_at,
+    relative_path: res.relative_path,
+    absolute_path: res.absolute_path,
+  };
 }
 
 /**

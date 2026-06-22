@@ -909,6 +909,14 @@ function ProcessedCallRow({
         {recording ? (
           <ProcessCallDialog projectSlug={projectSlug} recording={recording} />
         ) : null}
+        {note.recording_id ? (
+          <a
+            href={`/calls/notes/${encodeURIComponent(note.recording_id)}`}
+            className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
+          >
+            View
+          </a>
+        ) : null}
         {recording?.source_url ? (
           <a
             href={recording.source_url}

@@ -87,6 +87,14 @@ export interface SaveCallNotesInput {
     url?: string | null;
   };
   analysis: SavedCallAnalysis;
+  /**
+   * Raw transcript body. When provided, written as a `## Transcript`
+   * section at the bottom of the saved file. Required for external
+   * imports (no upstream API to re-fetch from when reprocessing);
+   * omitted by Fathom processing (Smithers re-fetches from Fathom
+   * on demand). Stored verbatim in the body — frontmatter stays clean.
+   */
+  transcript?: string;
 }
 
 /**
@@ -139,7 +147,13 @@ export async function saveCallNotes(
     frontmatter["fathom_url"] = input.recording.url;
   }
 
-  const body = renderCallNotesBody(title, dateOnly, input.analysis, input.recording.url);
+  const body = renderCallNotesBody(
+    title,
+    dateOnly,
+    input.analysis,
+    input.recording.url,
+    input.transcript,
+  );
   await writeFileAtomic(targetPath, serializeMarkdown(frontmatter, body));
 
   return {
@@ -409,6 +423,7 @@ function renderCallNotesBody(
   date: string,
   a: SavedCallAnalysis,
   url: string | null | undefined,
+  transcript: string | undefined,
 ): string {
   const lines: string[] = [];
   lines.push(`# ${title} — ${date}`);
@@ -454,8 +469,38 @@ function renderCallNotesBody(
       lines.push("");
     }
   }
+  if (transcript && transcript.trim()) {
+    lines.push("", "## Transcript", "");
+    lines.push(transcript.trim());
+  }
   lines.push("");
   return lines.join("\n");
+}
+
+/**
+ * Read back the verbatim transcript stashed in a saved call-notes
+ * file's `## Transcript` section. Returns null when no transcript
+ * was stored (Fathom processing flow doesn't persist them — those
+ * re-fetch from the upstream API on reprocess).
+ *
+ * Match is `^## Transcript$` then capture until the next H2 (`## `)
+ * or EOF; tolerates whitespace and trailing blank lines.
+ */
+export async function readCallNotesTranscriptByRecordingId(
+  opts: ResolvedVaultOptions,
+  recordingId: string,
+): Promise<string | null> {
+  if (!recordingId) return null;
+  const existing = await findCallNotesByRecordingId(opts, recordingId);
+  if (!existing) return null;
+  const raw = await tryReadFile(existing.absolute_path);
+  if (!raw) return null;
+  const { content } = parseMarkdown(raw);
+  const match = /\n##\s+Transcript\s*\n([\s\S]*?)(?=\n##\s+|\s*$)/i.exec(
+    `\n${content}`,
+  );
+  const captured = match?.[1]?.trim();
+  return captured && captured.length > 0 ? captured : null;
 }
 
 export interface ChatMessage {
