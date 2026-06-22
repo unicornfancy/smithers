@@ -908,6 +908,22 @@ function ProcessedCallRow({
       <div className="flex shrink-0 items-center gap-1.5">
         {recording ? (
           <ProcessCallDialog projectSlug={projectSlug} recording={recording} />
+        ) : note.recording_id ? (
+          // External imports: synthesize a CallRecordingRef so the
+          // same dialog mounts. Its cached-path short-circuit reads
+          // the saved analysis straight from the file by recording_id,
+          // exposing the same add-task / add-follow-up / log-decision
+          // controls as Fathom calls. No upstream transcript fetch
+          // happens because the cached path returns before it would.
+          <ProcessCallDialog
+            projectSlug={projectSlug}
+            recording={{
+              recording_id: note.recording_id,
+              recorded_at: note.recorded_at,
+              duration_seconds: 0,
+              title: note.title,
+            }}
+          />
         ) : null}
         {note.recording_id ? (
           <a
