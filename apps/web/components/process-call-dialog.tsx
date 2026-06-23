@@ -134,6 +134,9 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
   const [p2Open, setP2Open] = React.useState(false);
   const [p2PickerOpen, setP2PickerOpen] = React.useState(false);
   const [p2LastContext, setP2LastContext] = React.useState<ContextItem[]>([]);
+  // Mirror of the picker's intent field — replayed on regenerate so the
+  // same steering carries through "give me another shot at it" cycles.
+  const [p2LastIntent, setP2LastIntent] = React.useState("");
   const [recapPending, startRecap] = React.useTransition();
   const [recapData, setRecapData] = React.useState<ComposeCallRecapOutput | null>(
     null,
@@ -143,6 +146,7 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
   const [recapLastContext, setRecapLastContext] = React.useState<ContextItem[]>(
     [],
   );
+  const [recapLastIntent, setRecapLastIntent] = React.useState("");
 
   function reset() {
     setData(null);
@@ -353,9 +357,10 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
     setP2PickerOpen(true);
   }
 
-  function actuallyGenerateP2(items: ContextItem[]) {
+  function actuallyGenerateP2(items: ContextItem[], intent: string) {
     if (p2Pending) return;
     setP2LastContext(items);
+    setP2LastIntent(intent);
     startP2(async () => {
       try {
         const r = await draftP2UpdateFromCallAction(
@@ -363,6 +368,7 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
           recording.recording_id,
           recording.source_url,
           items,
+          intent || undefined,
         );
         if (r.ok) {
           setP2Data(r.data);
@@ -393,6 +399,7 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
             recording.recording_id,
             recording.source_url,
             p2LastContext,
+            p2LastIntent || undefined,
           );
           if (r.ok) setP2Data(r.data);
           else toast.error(r.message ?? "Couldn't regenerate P2 update");
@@ -411,9 +418,10 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
     setRecapPickerOpen(true);
   }
 
-  function actuallyGenerateRecap(items: ContextItem[]) {
+  function actuallyGenerateRecap(items: ContextItem[], intent: string) {
     if (recapPending) return;
     setRecapLastContext(items);
+    setRecapLastIntent(intent);
     startRecap(async () => {
       try {
         const r = await composeCallRecapAction(
@@ -421,6 +429,7 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
           recording.recording_id,
           recording.source_url,
           items,
+          intent || undefined,
         );
         if (r.ok) {
           setRecapData(r.data);
@@ -451,6 +460,7 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
             recording.recording_id,
             recording.source_url,
             recapLastContext,
+            recapLastIntent || undefined,
           );
           if (r.ok) setRecapData(r.data);
           else toast.error(r.message ?? "Couldn't regenerate recap");

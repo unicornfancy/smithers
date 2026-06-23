@@ -63,7 +63,7 @@ export function DraftZendeskReplyButton({
     );
   }
 
-  function runWithContext(items: ContextItem[]) {
+  function runWithContext(items: ContextItem[], intent: string) {
     if (pending) return;
     setLastContext(items);
     startTransition(async () => {
@@ -71,7 +71,7 @@ export function DraftZendeskReplyButton({
         const r = await draftZendeskReplyAction(
           projectSlug,
           ticketId,
-          undefined,
+          intent || undefined,
           items,
         );
         if (r.ok) {

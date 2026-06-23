@@ -27,6 +27,13 @@ export interface DraftP2UpdateInput {
   style?: StyleReference;
   /** Phase H: extra context (pinned + ad-hoc) the user attached in the picker. */
   extra_context?: DraftExtraContextItem[];
+  /**
+   * Free-form steering string from the picker: what the user actually
+   * wants this update to communicate. Rendered into the prompt as a
+   * "User intent" section the model honors over inference from the
+   * call transcript alone.
+   */
+  user_intent?: string;
 }
 
 export interface DraftP2UpdateOutput {
@@ -105,7 +112,8 @@ export async function draftP2Update(
 }
 
 function renderUserPrompt(input: DraftP2UpdateInput): string {
-  const { project, call, transcript, style, extra_context } = input;
+  const { project, call, transcript, style, extra_context, user_intent } =
+    input;
   const lines: string[] = [];
 
   lines.push("# Project");
@@ -130,6 +138,15 @@ function renderUserPrompt(input: DraftP2UpdateInput): string {
   lines.push("");
   lines.push("# Transcript");
   lines.push(transcript.trim());
+
+  if (user_intent && user_intent.trim()) {
+    lines.push("");
+    lines.push("# User intent");
+    lines.push(user_intent.trim());
+    lines.push(
+      "Use this to frame the update — what the user actually wants the team to learn / decide / do.",
+    );
+  }
 
   const extraBlock = renderExtraContextBlock(extra_context);
   if (extraBlock) {

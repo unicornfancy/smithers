@@ -28,6 +28,11 @@ export interface ComposeCallRecapInput {
   channelHint?: "email" | "slack";
   /** Phase H: extra context (pinned + ad-hoc) the user attached in the picker. */
   extra_context?: DraftExtraContextItem[];
+  /**
+   * Free-form steering string from the picker: what this recap should
+   * say. Honored over the model's default inference from transcript.
+   */
+  user_intent?: string;
 }
 
 export interface ComposeCallRecapOutput {
@@ -111,7 +116,7 @@ export async function composeCallRecap(
 }
 
 function renderUserPrompt(input: ComposeCallRecapInput): string {
-  const { project, call, transcript, style, channelHint, extra_context } =
+  const { project, call, transcript, style, channelHint, extra_context, user_intent } =
     input;
   const lines: string[] = [];
 
@@ -138,6 +143,15 @@ function renderUserPrompt(input: ComposeCallRecapInput): string {
   lines.push("");
   lines.push("# Transcript");
   lines.push(transcript.trim());
+
+  if (user_intent && user_intent.trim()) {
+    lines.push("");
+    lines.push("# User intent");
+    lines.push(user_intent.trim());
+    lines.push(
+      "Use this to frame the recap — what the user actually wants the partner to take away.",
+    );
+  }
 
   const extraBlock = renderExtraContextBlock(extra_context);
   if (extraBlock) {

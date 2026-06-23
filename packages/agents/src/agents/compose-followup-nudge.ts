@@ -32,6 +32,12 @@ export interface ComposeNudgeInput {
   channelHint?: NudgeChannel;
   /** Phase H: extra context (pinned + ad-hoc) the user attached in the picker. */
   extra_context?: DraftExtraContextItem[];
+  /**
+   * Free-form steering string from the picker: what this nudge should
+   * be about / what tone to hit. Surfaces in the prompt as a "User
+   * intent" section the model honors over its default tone heuristic.
+   */
+  user_intent?: string;
 }
 
 export interface ComposeNudgeOutput {
@@ -128,6 +134,7 @@ function renderUserPrompt(input: ComposeNudgeInput): string {
     toneOverride,
     channelHint,
     extra_context,
+    user_intent,
   } = input;
   const lines: string[] = [];
 
@@ -160,6 +167,15 @@ function renderUserPrompt(input: ComposeNudgeInput): string {
     lines.push("");
     lines.push(`# ${style.label}`);
     lines.push(style.body.trim());
+  }
+
+  if (user_intent && user_intent.trim()) {
+    lines.push("");
+    lines.push("# User intent");
+    lines.push(user_intent.trim());
+    lines.push(
+      "Honor this intent over the default tone heuristic — it represents what the user is actually trying to do with this message.",
+    );
   }
 
   const extraBlock = renderExtraContextBlock(extra_context);

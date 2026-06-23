@@ -36,12 +36,17 @@ export function DraftFollowUpNudgeButton({
   const [data, setData] = React.useState<ComposeNudgeOutput | null>(null);
   const [lastContext, setLastContext] = React.useState<ContextItem[]>([]);
 
-  function runWithContext(items: ContextItem[]) {
+  function runWithContext(items: ContextItem[], intent: string) {
     if (pending) return;
     setLastContext(items);
     startTransition(async () => {
       try {
-        const r = await composeFollowUpNudgeAction(projectSlug, followUpId, items);
+        const r = await composeFollowUpNudgeAction(
+          projectSlug,
+          followUpId,
+          items,
+          intent || undefined,
+        );
         if (r.ok) {
           setData(r.data);
           setPickerOpen(false);

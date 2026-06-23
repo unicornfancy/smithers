@@ -57,9 +57,13 @@ interface Props {
   /**
    * Called when the user confirms — receives the curated list of context
    * items (with bodies) that should be passed to the agent. Empty list
-   * is a valid choice (means "no extra context").
+   * is a valid choice (means "no extra context"). The second arg is the
+   * (optional) free-form intent string the user typed: what this draft
+   * should be about / what tone to take ("delivering the dev site for
+   * review, not a thank-you reply"). Empty string when not supplied —
+   * the agent falls through to inferring from context.
    */
-  onGenerate: (items: ContextItem[]) => void;
+  onGenerate: (items: ContextItem[], intent: string) => void;
   /** Disable the Generate button externally (e.g. while the agent runs). */
   busy?: boolean;
 }
@@ -98,6 +102,11 @@ export function DraftContextPickerDialog({
   const [suggestedSelected, setSuggestedSelected] = React.useState<Set<string>>(
     new Set(),
   );
+  // Optional steering string: "this email is delivering the dev site
+  // for review" / "soft reminder, don't push" / etc. Renders into the
+  // agent prompt so it can pick the right tone + opener for what the
+  // user is actually trying to do, not just what the last message was.
+  const [intent, setIntent] = React.useState("");
 
   const reviewed =
     pinnedSelected.size > 0 ||
@@ -113,6 +122,7 @@ export function DraftContextPickerDialog({
     setAcknowledgedNoContext(false);
     setAttached([]);
     setSuggestedSelected(new Set());
+    setIntent("");
     setPinnedLoading(true);
     setSuggestionsLoading(true);
     void listPinnedContextAction(projectSlug)
@@ -270,7 +280,7 @@ export function DraftContextPickerDialog({
       );
     }
 
-    onGenerate(curated);
+    onGenerate(curated, intent.trim());
   }
 
   return (
@@ -300,6 +310,29 @@ export function DraftContextPickerDialog({
               </div>
             </section>
           ) : null}
+
+          <section className="space-y-1.5">
+            <h3 className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+              What should this draft be about?
+              <span className="text-muted-foreground/70 ml-2 normal-case">
+                optional
+              </span>
+            </h3>
+            <textarea
+              value={intent}
+              onChange={(e) => setIntent(e.target.value)}
+              placeholder="e.g. delivering the dev site for review · soft reminder about the open question from last week · scheduling a kickoff call"
+              rows={2}
+              className="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-1"
+              disabled={busy}
+            />
+            <p className="text-muted-foreground/70 text-[11px]">
+              Smithers infers tone + intent from the thread otherwise. Use
+              this when the next message is a different kind from the last
+              (e.g. last message was a thank-you, but you&apos;re actually
+              delivering work for review).
+            </p>
+          </section>
 
           <section className="space-y-2">
             <h3 className="text-muted-foreground text-xs font-medium uppercase tracking-wide">

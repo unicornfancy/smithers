@@ -499,6 +499,8 @@ export async function composeFollowUpNudgeAction(
   slug: string,
   followUpId: string,
   extraContext?: ContextItem[],
+  /** Free-form intent string from the picker — what the user wants this nudge to do/say. */
+  intent?: string,
 ): Promise<
   | { ok: true; data: ComposeNudgeOutput }
   | { ok: false; reason: "not-configured" | "error"; message?: string }
@@ -545,6 +547,7 @@ export async function composeFollowUpNudgeAction(
       daysWaiting,
       style,
       extra_context: extraContext,
+      user_intent: intent?.trim() || undefined,
     });
     return { ok: true, data: result.output };
   } catch (err) {
@@ -976,6 +979,7 @@ export async function draftP2UpdateFromCallAction(
   recordingId: string,
   url?: string,
   extraContext?: ContextItem[],
+  intent?: string,
 ): Promise<
   | { ok: true; data: DraftP2UpdateOutput }
   | {
@@ -1015,6 +1019,7 @@ export async function draftP2UpdateFromCallAction(
       call: { recording_id: recordingId, url },
       style,
       extra_context: extraContext,
+      user_intent: intent?.trim() || undefined,
     });
     return { ok: true, data: result.output };
   } catch (err) {
@@ -1036,6 +1041,7 @@ export async function composeCallRecapAction(
   recordingId: string,
   url?: string,
   extraContext?: ContextItem[],
+  intent?: string,
 ): Promise<
   | { ok: true; data: ComposeCallRecapOutput }
   | {
@@ -1075,6 +1081,7 @@ export async function composeCallRecapAction(
       call: { recording_id: recordingId, url },
       style,
       extra_context: extraContext,
+      user_intent: intent?.trim() || undefined,
     });
     return { ok: true, data: result.output };
   } catch (err) {

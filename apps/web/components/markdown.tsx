@@ -77,8 +77,10 @@ const prose = [
   "[&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-4 [&_blockquote]:my-3 [&_blockquote]:text-muted-foreground [&_blockquote]:italic",
   // HR
   "[&_hr]:my-5 [&_hr]:border-border",
-  // Links
-  "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:no-underline",
+  // Links — `text-primary` is essentially body color in the zinc theme,
+  // so links became invisible. Use a real blue so anchors stand out at
+  // a glance in both themes; the underline reinforces it.
+  "[&_a]:text-sky-600 dark:[&_a]:text-sky-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-sky-700 dark:hover:[&_a]:text-sky-300",
   // Tables
   "[&_table]:my-3 [&_table]:w-full [&_table]:text-xs [&_table]:border-collapse",
   "[&_th]:bg-muted [&_th]:text-left [&_th]:font-medium [&_th]:px-2 [&_th]:py-1 [&_th]:border [&_th]:border-border",

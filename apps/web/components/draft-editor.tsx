@@ -133,6 +133,28 @@ export function DraftEditor({ draftId, initialBody, archived }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [body]);
 
+  /**
+   * Paste interceptor: when the clipboard carries an `text/html` payload
+   * with anchor tags (Gmail, Google Docs, browser selection from a
+   * webpage, etc.), translate each `<a href="X">label</a>` into the
+   * markdown `[label](X)` form before inserting. Other formatting drops
+   * — bold/italic/etc would clash with markdown conventions and isn't
+   * what users expect in a markdown editor.
+   *
+   * Plain-text pastes fall through to the browser default — no
+   * preventDefault, no special handling. URLs that arrive as plain text
+   * already render as clickable links in the markdown preview when
+   * properly bracketed; we don't auto-linkify bare URLs.
+   */
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    if (archived) return;
+    const html = e.clipboardData.getData("text/html");
+    if (!html || !/<a\s+[^>]*href=/i.test(html)) return;
+    e.preventDefault();
+    const converted = htmlToMarkdownLinks(html);
+    insertAtCursor(e.currentTarget, converted, setBody);
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
@@ -210,6 +232,7 @@ export function DraftEditor({ draftId, initialBody, archived }: Props) {
         <textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
+          onPaste={handlePaste}
           readOnly={archived}
           spellCheck
           className={cn(
@@ -234,4 +257,60 @@ export function DraftEditor({ draftId, initialBody, archived }: Props) {
       ) : null}
     </div>
   );
+}
+
+/**
+ * Convert a rich-text HTML clipboard payload to plain text with
+ * markdown links preserved. Two passes:
+ *   1. Walk every `<a href>` and replace it with `[text](href)`.
+ *   2. Strip all remaining HTML to leave only the text content.
+ *
+ * We parse with the browser's DOMParser — no `dangerouslySetInnerHTML`,
+ * no script execution risk (DOMParser produces an inert document).
+ *
+ * Edge cases handled:
+ *   - Nested anchors (rare; outer wins, inner becomes its text)
+ *   - Anchors with no href (treated as plain text)
+ *   - Empty/whitespace anchor text (uses the href as the label)
+ *   - Block-level elements rendered with newline separators
+ */
+function htmlToMarkdownLinks(html: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.querySelectorAll("a").forEach((a) => {
+    const href = a.getAttribute("href");
+    const label = (a.textContent ?? "").trim();
+    if (!href) {
+      a.replaceWith(label);
+      return;
+    }
+    const md = `[${label || href}](${href})`;
+    a.replaceWith(md);
+  });
+  // Insert newlines between block-level elements so paragraphs survive.
+  doc.querySelectorAll("p, div, br, li").forEach((el) => {
+    el.insertAdjacentText("afterend", "\n");
+  });
+  return (doc.body.textContent ?? "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Insert text at the textarea's caret (or replace its selection), and
+ * push the new full-value through React's controlled-component channel.
+ */
+function insertAtCursor(
+  textarea: HTMLTextAreaElement,
+  text: string,
+  setValue: (v: string) => void,
+): void {
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end = textarea.selectionEnd ?? textarea.value.length;
+  const next =
+    textarea.value.slice(0, start) + text + textarea.value.slice(end);
+  setValue(next);
+  // Move caret to the end of the inserted text, after React commits.
+  window.requestAnimationFrame(() => {
+    const caret = start + text.length;
+    textarea.setSelectionRange(caret, caret);
+    textarea.focus();
+  });
 }
