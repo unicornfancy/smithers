@@ -24,7 +24,10 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\"",
     "clean": "pnpm -r exec rm -rf .next dist .turbo node_modules && rm -rf node_modules",
     "jobs:run-once": "node scripts/run-job.mjs",
-    "seed": "node scripts/seed-demo.mjs"
+    "seed": "node scripts/seed-demo.mjs",
+    "shots:up": "bash scripts/blank-install.sh up",
+    "shots:down": "bash scripts/blank-install.sh down",
+    "shots:reset": "bash scripts/blank-install.sh reset"
   },
   "devDependencies": {
     "prettier": "^3.4.2",
