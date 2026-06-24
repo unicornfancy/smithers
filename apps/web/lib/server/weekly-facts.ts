@@ -7,6 +7,7 @@ import type {
 import type { Draft, Project, ProjectTask, RecentCallSlice } from "@smithers/vault";
 import { parseProjectTasks, splitTasks } from "@smithers/vault";
 
+import { makeAuthorNameMatcher } from "./author-name-matcher";
 import { loadConfig } from "./config";
 import { getMcpClient } from "./mcp";
 import { getVault } from "./vault";
@@ -281,35 +282,6 @@ function filterMyZendeskReplies(
       excerpt: e.excerpt,
     };
   });
-}
-
-/**
- * Build a predicate that detects the user's name in a comment body.
- * Multi-word names get an anywhere-in-body match (signatures almost
- * always include the surname). Single-word names get the stricter
- * "appears in the trailing third of the body" check — that's where
- * signatures sit, and avoids partner-greeting false positives like
- * "Hi Katie, ..." at the top.
- */
-function makeAuthorNameMatcher(rawName: string): ((body: string) => boolean) | null {
-  const trimmed = rawName.trim();
-  if (!trimmed) return null;
-  // Escape regex meta in the configured name so an O'Connor or
-  // Smith-Jones doesn't blow up the regex.
-  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const parts = trimmed.split(/\s+/);
-  if (parts.length >= 2) {
-    const re = new RegExp(`\\b${escaped}\\b`, "i");
-    return (body) => re.test(body);
-  }
-  // Single-word name — only count when it appears in the signature
-  // zone (last ~30% of the body) to avoid partner greetings.
-  const re = new RegExp(`\\b${escaped}\\b`, "i");
-  return (body) => {
-    if (!body) return false;
-    const tail = body.slice(Math.floor(body.length * 0.7));
-    return re.test(tail);
-  };
 }
 
 async function fetchActivity(

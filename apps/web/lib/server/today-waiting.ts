@@ -3,6 +3,7 @@ import "server-only";
 import type { Project, ZendeskTicketRef } from "@smithers/vault";
 import type { ActivityEvent } from "@smithers/mcp-client";
 
+import { makeAuthorNameMatcher } from "./author-name-matcher";
 import { loadConfig } from "./config";
 import { getMcpClient } from "./mcp";
 
@@ -134,29 +135,6 @@ function findLastPartnerComment(
     return event;
   }
   return null;
-}
-
-/**
- * Same shape as the matcher in weekly-facts.ts — duplicated here to
- * keep these helpers independent (rather than reaching across files
- * just for a regex). Multi-word names = anywhere-in-body; single-word
- * = last 30% only (signature zone, avoids "Hi Katie" false positives).
- */
-function makeAuthorNameMatcher(rawName: string): ((body: string) => boolean) | null {
-  const trimmed = rawName.trim();
-  if (!trimmed) return null;
-  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const parts = trimmed.split(/\s+/);
-  if (parts.length >= 2) {
-    const re = new RegExp(`\\b${escaped}\\b`, "i");
-    return (body) => re.test(body);
-  }
-  const re = new RegExp(`\\b${escaped}\\b`, "i");
-  return (body) => {
-    if (!body) return false;
-    const tail = body.slice(Math.floor(body.length * 0.7));
-    return re.test(tail);
-  };
 }
 
 function startOfTodayUtcMs(): number {
