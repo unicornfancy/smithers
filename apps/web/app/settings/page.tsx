@@ -11,6 +11,7 @@ import { IntervalJobCard } from "@/components/interval-job-card";
 import { McpHealthCard } from "@/components/mcp-health-card";
 import { PageShell } from "@/components/page-shell";
 import { RestartDevServerCard } from "@/components/restart-dev-server-card";
+import { UpdateSmithersCard } from "@/components/update-smithers-card";
 import { ScheduleCard } from "@/components/schedule-card";
 import { SettingsSection } from "@/components/settings-section";
 import { SettingsSetupGroup } from "@/components/settings-setup-group";
@@ -185,6 +186,7 @@ export default async function SettingsPage() {
             description="Live MCP health, Hive Mind reconcile, and the audit log of everything Smithers has been told to do."
           >
             <RestartDevServerCard />
+            <UpdateSmithersCard />
             <McpHealthCard />
             <HiveMindReconcileCard />
             <ActivityLogCard />
