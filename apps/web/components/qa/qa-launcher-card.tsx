@@ -5,15 +5,18 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Clock,
+  Info,
   ListPlus,
   Loader2,
   PlayCircle,
   Sparkles,
+  StopCircle,
   Terminal,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
+  cancelQaRunAction,
   ingestQaRunAction,
   queueAllQaRunsAction,
   startQaRunAction,
@@ -165,6 +168,7 @@ export function QaLauncherCard({
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        <ComingSoonTip />
         <div className="space-y-2">
           <label className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
             Target URL
@@ -301,6 +305,27 @@ function PendingRunRow({
   label: string;
   tone: "active" | "queued";
 }) {
+  const router = useRouter();
+  const [cancelling, setCancelling] = React.useState(false);
+
+  async function handleCancel() {
+    setCancelling(true);
+    try {
+      const res = await cancelQaRunAction({
+        run_id: run.id,
+        project_slug: slug,
+      });
+      if (res.ok) {
+        toast.success(tone === "active" ? "Cancelled run" : "Removed from queue");
+        router.refresh();
+      } else {
+        toast.error(res.message ?? res.reason);
+      }
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   return (
     <div
       className={cn(
@@ -324,6 +349,22 @@ function PendingRunRow({
       <Button asChild size="sm" variant="ghost">
         <a href={`/projects/${slug}/qa/${run.id}`}>View</a>
       </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={handleCancel}
+        disabled={cancelling}
+        className="gap-1.5 text-muted-foreground hover:text-foreground"
+        title={tone === "active" ? "Stop this run" : "Remove from queue"}
+      >
+        {cancelling ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <StopCircle className="size-3.5" />
+        )}
+        Cancel
+      </Button>
     </div>
   );
 }
@@ -345,6 +386,28 @@ function UrlPreset({
     >
       Use {label}
     </button>
+  );
+}
+
+function ComingSoonTip() {
+  return (
+    <div className="flex items-start gap-2.5 rounded-md border border-sky-200 bg-sky-50 p-3 text-xs dark:border-sky-900/50 dark:bg-sky-950/20">
+      <Info className="size-4 shrink-0 text-sky-700 dark:text-sky-300" />
+      <div className="min-w-0 space-y-1">
+        <p className="font-medium text-foreground">
+          Site still in Coming Soon mode?
+        </p>
+        <p className="text-muted-foreground">
+          Use the WordPress.com{" "}
+          <span className="font-medium">Share Link</span> URL so Kosh can
+          bypass the splash. Find it under{" "}
+          <span className="font-mono text-[11px]">
+            Settings → General → Privacy → Share preview
+          </span>
+          .
+        </p>
+      </div>
+    </div>
   );
 }
 
