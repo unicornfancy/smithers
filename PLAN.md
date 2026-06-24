@@ -25,6 +25,7 @@ _Living doc for features discussed but not yet built. Add entries here when scop
 
 The call-transcript-prompt + follow-up automation cards shipped 2026-05-26. /settings reorg + tab-based nav shipped 2026-05-27→28. Skills registry v1 shipped 2026-05-28. About card shipped 2026-05-29. Still deferred:
 - **Future follow-up automations** — auto-draft a nudge when a follow-up crosses the escalate threshold. Settings already exposes the threshold day counts; the auto-draft trigger is the next slice.
+- **Signature aliases for the Zendesk author-name matcher** — the matcher in `lib/server/author-name-matcher.ts` reads `identity.name` and tries (a) full name anywhere, (b) first name in body tail. Covers ~90% of TAMs out of the box. Edges where it'd miss: nicknames (Robert → Bob), last-name-only sign-offs ("— Smith"), initials, unusual styles. Shape: add `identity.signature_aliases: string[]` config + a small "Signature aliases" input on `/setup` + `/settings → Identity`, one alias per line, tested same as the first-name tail fallback. ~30 lines total. Defer until a TAM actually trips on this — telling them "set your nickname as identity.name" is the workaround in the meantime.
 
 ## Background job scheduling — remaining jobs
 
