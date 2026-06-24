@@ -295,7 +295,7 @@ Now the big moment. Switch back to the Terminal window running `pnpm dev`:
 2. Run `pnpm dev` again.
 3. Wait for the `Ready in X.Xs` line.
 
-**Easier option once Smithers is running:** there's a Restart dev server button in the in-app debugging tool — no Terminal required.
+**Easier option once Smithers is running:** there's a Restart dev server button in the in-app debugging tool — no Terminal required. Right next to it is **Update Smithers** which runs `git pull --rebase --ff-only origin main` so you can pick up new releases without dropping to a terminal either.
 
 ![Restart dev server button inside Smithers' in-app debugging tool](docs/images/restart-dev-server.png)
 

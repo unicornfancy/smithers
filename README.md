@@ -20,11 +20,13 @@ You don't need to be technical to use it day-to-day. You do need to spend ~30 mi
 ## What you get
 
 - **Per-project workbenches** — one page per partner / team / personal project, with live activity feed, open items, follow-ups, agendas, AI-drafted messages, processed calls, QA reports, and Drive activity all in one place.
-- **`/today` dashboard** — your daily landing page: hot pings, follow-ups waiting, recently-recorded calls, AI-picked "top 3 things to act on today."
-- **AI-assisted drafting** — draft Zendesk replies, P2 updates, weekly partner check-ins, call recaps, and brief documents in your own voice. Nothing sends until you click Send.
+- **`/today` dashboard** — your daily landing page: hot pings, _Waiting on you_ (Zendesk threads where the partner replied last), @-mentions across Linear + GitHub, upcoming deadlines, recently-recorded calls, AI-picked "top 3 things to act on today."
+- **AI-assisted drafting** — draft Zendesk replies, P2 updates, weekly partner check-ins, call recaps, brief documents, and SITREPs (paste-ready P2 comments for project status updates) in your own voice. Nothing sends until you click Send.
+- **AFK handoff post** (`/afk`) — pick a date range and a coverage TAM, get a single markdown post covering every active project for paste into team P2.
 - **Personal Digest** (`/digest`) — a weekly highlight tracker with an AI suggestion engine that mines your week for accomplishments worth remembering.
-- **Kosh QA reports** (`/projects/<slug>/qa`) — kick off functional / performance / accessibility audits against a partner's staging URL and archive the reports in Hive Mind. Convert findings into GitHub issues with one click.
+- **Kosh QA reports** (`/projects/<slug>/qa`) — kick off functional / performance / accessibility audits against a partner's URL, queue all three at once, cancel queued or running runs from the launcher, archive reports in Hive Mind, and convert findings into GitHub issues with one click.
 - **Ask Smithers palette** (`Cmd+K`) — natural-language navigation: "where's the brief for Body Dao", "show me drafts in flight", "draft a nudge for the Pocket NYC partner".
+- **Self-updating** — Settings → Diagnostics has Restart dev server and Update Smithers buttons so you don't have to touch a terminal for routine maintenance.
 
 ## Getting started
 

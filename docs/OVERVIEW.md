@@ -1,13 +1,9 @@
 # Smithers — Overview
 
-> **Draft.** First pass for the wider-audience release. Edit freely — sections
-> marked with `[TODO]` are placeholders where you may want to drop in your own
-> framing, screenshots, or examples.
-
 ## What it is
 
 Smithers is designed to be a workbench (and assistant) for a Team 51 Launch TAM. It runs locally as a
-Next.js app, reads from an Obsidian-compatible markdown vault, and pulls
+Next.js app, reads from an Obsidian-compatible markdown vault (for those who like to edit .MD files in Obsidian), and pulls
 in live data from the tools you already use in your daily work (and maybe one new one) — Hive Mind, Linear, GitHub,
 Slack, Zendesk, P2, Fathom / Granola call transcripts — allowing everything that
 matters about a project to appear on one page.
@@ -49,9 +45,11 @@ Three project kinds, one rendering:
 A typical day could look like this:
 
 1. **Open `/today`.** Top 3 picks, Realistic Shape, Hot Pings (Slack / Linear
-   / Zendesk / GitHub), Stalls, Recent Calls. Half the surfaces are scored
-   automatically; the rest is what the AI thinks you should think about
-   first.
+   / Zendesk / GitHub), Waiting on you (Zendesk threads where the partner
+   replied last), @-Mentions (Linear + GitHub), Deadlines (Linear target
+   dates inside a configurable window), Stalls, Recent Calls. Half the
+   surfaces are scored automatically; the rest is what the AI thinks you
+   should think about first.
 2. **Click into a project.** Each workbench has Now / Comms / Knowledge /
    Drafts tabs (optional — single-page mode is also available). Open Items,
    follow-ups, Zendesk threads, recent calls, the project log, partner
@@ -84,6 +82,9 @@ A quick read-this-to-know-what's-there reference for the routes:
 | `/agendas` | Per-partner call agendas, editable inline. |
 | `/follow-ups` | The full follow-ups table (active + resolved). |
 | `/weekly-updates` | Monday weekly update drafting + history. |
+| `/digest` | Personal Digest — weekly highlight tracker + development log. |
+| `/afk` | Coverage handoff post composer: pick dates + a coverage TAM, get a single paste-ready markdown post covering every active partner / team project. |
+| `/projects/[slug]/qa` | Kosh QA reports — kick off functional / performance / a11y audits, queue all three, cancel runs from the UI, archive in Hive Mind, turn findings into GitHub issues. |
 | `/partner-knowledge/[slug]` | In-app editor for partner-knowledge.md (body + contacts). |
 | `/style-guide` | Voice + style files Smithers feeds to every drafting agent. Editable in app. |
 | `/settings` | All tunable knobs in one tabbed page (Workflow / Setup / Diagnostics / Skills / About). |
@@ -125,6 +126,18 @@ What's available (non-exhaustive):
   status.
 - **Compose weekly update** — drafts your Monday team-P2 post from the
   week's facts.
+- **SITREP** — workbench Knowledge tab → drafts a paste-ready P2 comment
+  on the project's existing post: status one-liner (with Linear health +
+  link), latest activity, primary Zendesk thread, open items / what's
+  next. Aimed at coverage TAMs and leads.
+- **AFK handoff post** — `/afk` route → pick the date window + a
+  coverage TAM, and Smithers stitches per-project sections (hot / at-risk
+  first) into a single markdown post for paste-into-P2 before you go
+  out.
+- **Kosh QA reports** — kick off functional / performance / a11y audits
+  against a partner's URL, queue all three at once, cancel queued or
+  running tasks from the launcher, archive reports in Hive Mind, and
+  turn findings into GitHub issues with one click.
 - **Hive Mind skills** — `/create-brief`, `/project-handoff`,
   `/search-knowledge`, `/update-knowledge` run as native wizards.
 - **Ask Smithers (Cmd-K)** — palette that takes structured actions on
@@ -157,6 +170,8 @@ Three ways to do it; pick whichever fits how you're working.
 
 **1. In-app (easiest)** — `/settings → Diagnostics → Restart dev server → Restart → Yes, restart`. The current process exits, a fresh `pnpm dev` is spawned in the background, and the page reloads automatically once the new server answers (usually 5–10 seconds). One thing to know: the terminal that originally hosted `pnpm dev` will look like it exited (the log stream stops). That's expected — the new process runs detached. If you want logs again, re-run `pnpm dev` in a terminal whenever; the in-app button is just for quick config refreshes.
 
+> **Sibling card: Update Smithers.** Right next to Restart is a "Pull latest" button that runs `git pull --rebase --ff-only origin main` from the repo root and tells you whether dependencies moved. It refuses to run with a dirty working tree or off the `main` branch (safety). Use it to pick up new versions without dropping to a terminal — then hit Restart.
+
 **2. Terminal**
 
 - Find the window where you originally ran `pnpm dev`. It should be showing a stream of log lines.
@@ -186,6 +201,12 @@ Configurable from `/settings → Workflow`. All defaults off until you opt in.
   commits) on the Hive Mind clone so other TAMs' edits land automatically.
 - **Team roster sync** — refreshes the Matticspace-sourced collaborator
   block in `JOB_CONTEXT.md` so the AI knows who's on the team.
+- **Team charter sync** — pulls the Team51 scoring rubric from a
+  configured Google Sheet into `my-voice/TEAM_CHARTER.md` so agents
+  see what you're actually scored on.
+- **Zendesk status refresh** — re-polls every attached Zendesk ticket
+  across all partner / team projects so `/today`'s "Waiting on you" card
+  doesn't surface threads someone else already closed.
 
 Each is also runnable on-demand from `/settings`, via `pnpm jobs:run-once
 <name>`, or via the `launchd` plist templates in `scripts/launchd/`.
@@ -208,6 +229,11 @@ A few seams that are designed to be modified by users:
   call-analysis prompt is fully overridable in `/settings`. The actual
   agent code is small (one file per agent in `packages/agents/src/agents/`)
   if you want to tune behaviour beyond the prompt.
+- **Job context** — each agent declares which of `JOB_CONTEXT.md`,
+  `TEAM_CHARTER.md`, `STRATEGIC_PRIORITIES.md`, and `OPERATING_RHYTHM.md`
+  it wants in its system prompt. Drop those files in your `my-voice/`
+  folder and the agents that opted in will reflect your role, your
+  rubric, and your cadence in their output.
 
 ## What to read next
 
@@ -223,13 +249,21 @@ A few seams that are designed to be modified by users:
   [`docs/TRANSCRIPTION-ADAPTERS.md`](TRANSCRIPTION-ADAPTERS.md) for
   transcription providers, [`docs/SKILLS.md`](SKILLS.md) for HM skills.
 
-## Pre-release status
+## Release status — 1.0
 
-[TODO: replace this section with whatever framing you want for the wider-audience
-release. Possible bullets:]
+Smithers 1.0 is the first version intended for use by other Team51 TAMs beyond Katie, who built and dogfooded it against her own daily Launch TAM work for several months.
 
-- Built and dogfooded by [author] against their own daily TAM work.
-- Wider testing starts with [audience] in [timeframe].
-- Known gaps: [list whatever you'd like testers to expect — Gemini stub,
-  manual paste-to-P2 for weekly updates, etc.]
-- Where to report issues / send feedback: [channel].
+What's in 1.0:
+
+- The daily flow surfaces above (`/today`, project workbenches, drafts, weekly updates, digest, agendas, follow-ups, AFK, calls, QA).
+- Every AI affordance listed in the "AI affordances" section, all draft-and-review (nothing auto-posts).
+- ContextA8C, Hive Mind, Fathom / Granola, and Google Drive MCPs wired with mock-mode fallback so the UI works while you set things up.
+- In-app **Restart dev server** and **Update Smithers** buttons in `/settings → Diagnostics`, so you don't have to drop to a terminal for routine maintenance.
+
+Known scope cuts (deliberately deferred past 1.0):
+
+- Whisper and Gemini transcription adapters are stubs — Fathom, Granola, and Manual are the working paths.
+- Posting to P2 / Slack / Zendesk is always a manual copy-paste; no auto-send anywhere.
+- Per-TAM signature aliases for the Zendesk author matcher live in `PLAN.md` as a future enhancement (the current matcher is configurable via `identity.name`).
+
+**Reporting issues / sending feedback:** the team Slack `#team-51` channel, or open an issue on the [GitHub repo](https://github.com/unicornfancy/smithers/issues).
