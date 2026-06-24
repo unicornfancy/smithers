@@ -1,7 +1,6 @@
 import * as React from "react";
 
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Badge } from "@/components/ui/badge";
 
 export function AppHeader({
   title,
@@ -25,9 +24,6 @@ export function AppHeader({
             </p>
           ) : null}
         </div>
-        <Badge variant="outline" className="hidden sm:inline-flex">
-          pre-alpha
-        </Badge>
       </div>
       <div className="flex items-center gap-2">
         {actions}
