@@ -1,27 +1,36 @@
 import "server-only";
 
-import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 
 /**
- * Resolve a CLI's absolute path via `which`. The Next.js server-action
- * runtime can run with a reduced PATH (Homebrew's `/usr/local/bin` and
- * `/opt/homebrew/bin` aren't always inherited when the dev server was
- * launched from a GUI terminal), so spawn() with a bare command name
- * raises ENOENT for anything outside `/usr/bin`. Resolving via /usr/bin/
- * which surfaces the absolute path the way kosh.ts already does for the
- * claude binary.
+ * Resolve a CLI's absolute path by probing known install locations.
+ *
+ * The Next.js server-action worker can run with a reduced PATH —
+ * Homebrew's `/usr/local/bin` (Intel) and `/opt/homebrew/bin`
+ * (Apple Silicon) aren't always inherited when the dev server was
+ * launched from a GUI terminal. That means both spawn("gh") AND
+ * spawn("/usr/bin/which", ["gh"]) come up empty: which itself
+ * searches the spawn process's PATH, which is exactly what's
+ * stripped.
+ *
+ * So we don't ask the system at all — we check the two Homebrew
+ * locations plus /usr/bin/ directly. If a user has gh installed
+ * somewhere exotic they can add a SMITHERS_<NAME>_PATH env var
+ * override (e.g. SMITHERS_GH_PATH=/foo/bar/gh).
  */
-async function resolveBinary(name: string): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync("/usr/bin/which", [name]);
-    const t = stdout.trim();
-    return t || null;
-  } catch {
-    return null;
+function resolveBinary(name: string): string | null {
+  const envOverride = process.env[`SMITHERS_${name.toUpperCase()}_PATH`];
+  if (envOverride && existsSync(envOverride)) return envOverride;
+  const candidates = [
+    `/opt/homebrew/bin/${name}`,
+    `/usr/local/bin/${name}`,
+    `/usr/bin/${name}`,
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
   }
+  return null;
 }
 
 import { getQaRun, readQaRunReport, type QaTestType } from "./kosh";
@@ -195,12 +204,12 @@ export async function createGhIssue(args: {
   title: string;
   body: string;
 }): Promise<{ ok: true; url: string } | { ok: false; message: string }> {
-  const ghBin = await resolveBinary("gh");
+  const ghBin = resolveBinary("gh");
   if (!ghBin) {
     return {
       ok: false,
       message:
-        "`gh` CLI not found on PATH — install GitHub CLI (https://cli.github.com) and run `gh auth login`.",
+        "`gh` CLI not found at /opt/homebrew/bin, /usr/local/bin, or /usr/bin. Install via `brew install gh` + `gh auth login`, or set SMITHERS_GH_PATH if installed elsewhere.",
     };
   }
   return new Promise((resolve) => {
