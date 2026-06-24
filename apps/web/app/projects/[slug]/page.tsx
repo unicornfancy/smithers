@@ -136,24 +136,45 @@ export default async function ProjectWorkbenchPage({
       vault
         .listFollowUps()
         .catch(() => ({ active: [], resolved: [] }) as never),
-      mcp.contextA8C.listProjectActivity({
-        project_slug: detail.slug,
-        project_name: detail.name,
-        limit: 20,
-        refs: {
-          github_repo: detail.github_repo,
-          linear_project_id: detail.linear_project_id,
-          linear_project_slug: detail.linear_project_slug,
-          zendesk_tickets: detail.zendesk_tickets?.map((t) => t.id),
-          slack_channel: detail.slack_channel,
-          partner: detail.partner,
-          p2_url: detail.p2_url,
-        },
-      }),
+      mcp.contextA8C
+        .listProjectActivity({
+          project_slug: detail.slug,
+          project_name: detail.name,
+          limit: 20,
+          refs: {
+            github_repo: detail.github_repo,
+            linear_project_id: detail.linear_project_id,
+            linear_project_slug: detail.linear_project_slug,
+            zendesk_tickets: detail.zendesk_tickets?.map((t) => t.id),
+            slack_channel: detail.slack_channel,
+            partner: detail.partner,
+            p2_url: detail.p2_url,
+          },
+        })
+        // First-run users on a fresh project: ContextA8C may not be
+        // authed yet, and the transport itself can time out (MCP -32001)
+        // before the resilience wrapper inside listProjectActivity gets
+        // a chance to convert it into a SourceResult.ok=false. Degrade
+        // the whole feed to empty rather than crashing the workbench.
+        .catch(() => ({
+          ok: true as const,
+          data: [],
+          from: "fresh" as const,
+          fetched_at: new Date().toISOString(),
+        })),
       detail.partner
-        ? mcp.hiveMind.getPartner({ partner_slug: detail.partner })
+        ? mcp.hiveMind
+            .getPartner({ partner_slug: detail.partner })
+            .catch(() => null)
         : Promise.resolve(null),
-      (await getTranscriptionAdapter()).listRecordings({ limit: 200 }),
+      (await getTranscriptionAdapter())
+        .listRecordings({ limit: 200 })
+        .catch(() => ({
+          ok: true as const,
+          data: [],
+          from: "fresh" as const,
+          fetched_at: new Date().toISOString(),
+        })),
       detectStallsForProject(vault, detail.slug, detail.name).catch(() => ({
         items: [],
         counts: {
