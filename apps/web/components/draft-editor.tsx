@@ -93,9 +93,13 @@ export function DraftEditor({ draftId, initialBody, archived }: Props) {
               }
             })
             .catch(() => {}); // silent failure — learning is best-effort
-          // Refresh so the page picks up the new state — the editor
-          // will re-mount as read-only.
-          router.refresh();
+          // Drafts without a real draft_id in frontmatter use a
+          // path-derived `local:Drafts/<name>` id. Archive moves the
+          // file to Drafts/Archived Drafts/ so that derived id no
+          // longer matches; refreshing the current URL would 404.
+          // Send the user back to the index, where the archived row
+          // shows up under "Archived" with its new id.
+          router.push("/drafts");
         } catch (err) {
           toast.error(
             err instanceof Error ? err.message : "Couldn't archive draft",
