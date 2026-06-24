@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Calendar,
+  CalendarOff,
   FileText,
   FolderKanban,
   Inbox,
@@ -35,6 +36,7 @@ const NAV: NavItem[] = [
   { href: "/follow-ups", label: "Follow-ups", icon: Inbox },
   { href: "/weekly-updates", label: "Weekly Updates", icon: Newspaper },
   { href: "/digest", label: "Personal Digest", icon: Star },
+  { href: "/afk", label: "AFK", icon: CalendarOff },
   { href: "/style-guide", label: "Style Guide", icon: FileText },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/setup", label: "Setup", icon: Wand2 },

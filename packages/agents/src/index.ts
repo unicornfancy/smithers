@@ -157,3 +157,10 @@ export {
   type SitrepInput,
   type SitrepOutput,
 } from "./agents/compose-sitrep";
+
+export {
+  composeAfkNotes,
+  type AfkProjectSlice,
+  type ComposeAfkNotesInput,
+  type ComposeAfkNotesOutput,
+} from "./agents/compose-afk-notes";
