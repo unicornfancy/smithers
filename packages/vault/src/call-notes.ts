@@ -283,6 +283,64 @@ export async function listCallNotesForProject(
   return out;
 }
 
+export interface OrphanCallNote {
+  /** YYYY-MM-DD parsed from a leading filename date, or the file mtime as fallback. */
+  recorded_at: string;
+  /** Filename without extension (and without the leading date prefix, when present). */
+  title: string;
+  /** Original filename for caller-side matching against project keywords. */
+  filename: string;
+  /** Vault-relative path so callers can offer an "open in editor" affordance. */
+  relative_path: string;
+}
+
+/**
+ * Legacy / hand-saved call-notes files that don't carry Smithers
+ * frontmatter. The current Process Call flow always writes
+ * `project_slug` / `recording_id` into frontmatter, but Fathom's
+ * "Save to Obsidian" export drops files with no YAML at all — so calls
+ * older than the Process Call rollout never resolve through
+ * `listCallNotesForProject`. This helper returns a minimal slice for
+ * each orphan so the workbench can filename-match them against a
+ * project (using the same matcher Fathom recordings go through).
+ *
+ * Excludes the team Call Notes folder convention `_team/` — those are
+ * intentionally project-less and shouldn't surface on a workbench.
+ */
+export async function listOrphanCallNotes(
+  opts: ResolvedVaultOptions,
+): Promise<OrphanCallNote[]> {
+  const paths = vaultPaths(opts);
+  const files = await listMarkdownFiles(paths.callNotes);
+  const out: OrphanCallNote[] = [];
+  for (const f of files) {
+    if (f.startsWith("_team/")) continue;
+    const abs = join(paths.callNotes, f);
+    const raw = await tryReadFile(abs);
+    if (!raw) continue;
+    const { data } = parseMarkdown(raw);
+    // A file with a real Smithers-style project_slug already routes through
+    // listCallNotesForProject; skip it here so we don't double-count.
+    if (typeof data["project_slug"] === "string" && data["project_slug"]) {
+      continue;
+    }
+    const base = f.replace(/\.md$/i, "");
+    const dateMatch = /^(\d{4}-\d{2}-\d{2})\s*[-–]\s*(.*)$/.exec(base);
+    const recordedAt = dateMatch
+      ? dateMatch[1]!
+      : ((await fileMtime(abs)) ?? new Date(0).toISOString()).slice(0, 10);
+    const title = dateMatch ? dateMatch[2]!.trim() : base;
+    out.push({
+      recorded_at: recordedAt,
+      title,
+      filename: f,
+      relative_path: relative(opts.vaultPath, abs),
+    });
+  }
+  out.sort((a, b) => b.recorded_at.localeCompare(a.recorded_at));
+  return out;
+}
+
 // --- internals ---
 
 function parseSavedFrontmatter(

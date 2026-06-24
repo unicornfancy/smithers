@@ -37,11 +37,13 @@ import {
   findCallNotesByRecordingId,
   listCallNotes,
   listCallNotesForProject,
+  listOrphanCallNotes,
   listRecentCallSlices,
   readCallNotesTranscriptByRecordingId,
   saveCallNotes,
   type AppendChatToCallNotesResult,
   type ChatMessage,
+  type OrphanCallNote,
   type RecentCallSlice,
   type SavedCallAnalysis,
   type SavedCallNote,
@@ -220,6 +222,7 @@ export type {
 export type {
   AppendChatToCallNotesResult,
   ChatMessage,
+  OrphanCallNote,
   SavedCallAnalysis,
   SavedCallNote,
   SaveCallNotesInput,
@@ -282,6 +285,7 @@ export {
   type CreateAgendaResult,
   listCallNotes,
   listCallNotesForProject,
+  listOrphanCallNotes,
   listRecentCallSlices,
   readCallNotesTranscriptByRecordingId,
   listDailyNotes,
@@ -377,6 +381,7 @@ export interface Vault {
   listCallNotesForProject: (
     projectSlug: string,
   ) => ReturnType<typeof listCallNotesForProject>;
+  listOrphanCallNotes: () => ReturnType<typeof listOrphanCallNotes>;
   listAgendas: () => ReturnType<typeof listAgendas>;
   readAgenda: (filename: string) => ReturnType<typeof readAgenda>;
   agendaExists: (filename: string) => ReturnType<typeof agendaExists>;
@@ -578,6 +583,7 @@ export function createVault(options: VaultOptions): Vault {
     listRecentCallSlices: (range) => listRecentCallSlices(resolved, range),
     listCallNotesForProject: (projectSlug) =>
       listCallNotesForProject(resolved, projectSlug),
+    listOrphanCallNotes: () => listOrphanCallNotes(resolved),
     listAgendas: () => listAgendas(resolved),
     readAgenda: (filename) => readAgenda(resolved, filename),
     agendaExists: (filename) => agendaExists(resolved, filename),

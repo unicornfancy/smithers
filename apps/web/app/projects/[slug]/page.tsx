@@ -129,6 +129,7 @@ export default async function ProjectWorkbenchPage({
     agendaForPartner,
     qaRuns,
     processedCallNotes,
+    orphanCallNotes,
     driveActivityResult,
   ] = await Promise.all([
       vault.listDrafts().catch(() => []),
@@ -183,6 +184,7 @@ export default async function ProjectWorkbenchPage({
       findAgendaForPartner(detail.partner).catch(() => null),
       listQaRuns(detail.slug).catch(() => []),
       vault.listCallNotesForProject(detail.slug).catch(() => []),
+      vault.listOrphanCallNotes().catch(() => []),
       (async () => {
         // Drive activity rides alongside the context-a8c feed when a
         // folder URL is set and the Drive MCP is configured. Parse the
@@ -334,6 +336,35 @@ export default async function ProjectWorkbenchPage({
       }
     }),
   );
+
+  // Filename-fallback for legacy Call Notes files that pre-date the
+  // Process Call flow's frontmatter. Same matcher Fathom recordings
+  // go through — the filename acts as the title. Merged into the
+  // processed-calls list with empty recording_id; UI suppresses the
+  // Process / View affordances and just shows date + title so the
+  // call is visible on the workbench.
+  const orphanProcessedNotes = orphanCallNotes
+    .filter((o) =>
+      recordingMatchesProject(
+        { title: o.title, attendees: "" },
+        {
+          name: detail.name,
+          partner: detail.partner,
+          partner_display_name: partnerProfile?.display_name,
+          fathom_search_terms: detail.fathom_search_terms,
+        },
+      ),
+    )
+    .map((o) => ({
+      recording_id: "",
+      recorded_at: o.recorded_at,
+      title: o.title,
+      summary: undefined,
+    }));
+  const mergedProcessedCallNotes = [
+    ...processedCallNotes,
+    ...orphanProcessedNotes,
+  ].sort((a, b) => b.recorded_at.localeCompare(a.recorded_at));
 
   const projectDrafts = allDrafts.filter(
     (d) => d.project_slug === detail.slug,
@@ -671,7 +702,7 @@ export default async function ProjectWorkbenchPage({
         recordings={projectRecordings}
         savedNotesByRecordingId={savedCallNotesByRecordingId}
         callTranscripts={callTranscripts}
-        processedCallNotes={processedCallNotes}
+        processedCallNotes={mergedProcessedCallNotes}
       />
     ),
   });
