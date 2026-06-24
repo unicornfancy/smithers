@@ -296,3 +296,64 @@ export async function runTeamCharterSyncJob(): Promise<JobResult> {
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Zendesk status sync — re-poll Zendesk for every attached ticket's
+// status / subject / priority / updated_at and write the fresh values
+// into project frontmatter. Keeps the /today "Waiting on you" card from
+// surfacing tickets that have since been closed by someone else.
+// ---------------------------------------------------------------------------
+
+export async function runZendeskStatusSyncJob(): Promise<JobResult> {
+  const started = Date.now();
+  try {
+    const { getVault } = await import("@/lib/server/vault");
+    const { refreshZendeskMetadataAction } = await import(
+      "@/app/projects/[slug]/actions"
+    );
+    const vault = await getVault();
+    const projects = await vault.listProjects().catch(() => []);
+
+    // Only projects with attached tickets are worth polling. Skip
+    // personal projects entirely — Zendesk is partner / team only.
+    const candidates = projects.filter(
+      (p) =>
+        (p.kind === "partner" || p.kind === "team") &&
+        (p.zendesk_tickets ?? []).length > 0,
+    );
+
+    let totalUpdated = 0;
+    let totalChecked = 0;
+    let projectsTouched = 0;
+
+    // Fan out per project. Each call does its own search fan-out
+    // internally + frontmatter write; failures degrade per-project
+    // rather than killing the whole job.
+    await Promise.all(
+      candidates.map(async (p) => {
+        const hints = [p.partner ?? "", p.partner?.replace(/-/g, " ") ?? "", p.name]
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const r = await refreshZendeskMetadataAction(p.slug, hints).catch(
+          () => null,
+        );
+        if (!r) return;
+        totalChecked += r.total;
+        totalUpdated += r.updated;
+        if (r.updated > 0) projectsTouched += 1;
+      }),
+    );
+
+    return {
+      ok: true,
+      summary: `${totalUpdated}/${totalChecked} tickets updated across ${projectsTouched}/${candidates.length} project(s)`,
+      duration_ms: Date.now() - started,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      duration_ms: Date.now() - started,
+    };
+  }
+}

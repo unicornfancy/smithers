@@ -158,6 +158,17 @@ export default async function SettingsPage() {
                 sheet_url: cfg.schedule?.team_charter_sync?.sheet_url ?? "",
               }}
             />
+            <IntervalJobCard
+              job="zendesk_status_sync"
+              title="Zendesk status sync"
+              description="Re-polls Zendesk for every attached ticket's status, subject, priority, and updated_at — writes fresh values into project frontmatter so /today's 'Waiting on you' card doesn't surface tickets that have since been closed by someone else. One search fan-out per partner/team project; per-project failures degrade silently. Default cadence: hourly."
+              runNowPath="/api/jobs/zendesk-status-sync"
+              initial={{
+                enabled: cfg.schedule?.zendesk_status_sync?.enabled ?? false,
+                interval_minutes:
+                  cfg.schedule?.zendesk_status_sync?.interval_minutes ?? 60,
+              }}
+            />
           </SettingsSection>
 
           <SettingsSection

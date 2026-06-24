@@ -15,6 +15,7 @@ type JobKey =
   | "hive_mind_sync"
   | "team_roster_sync"
   | "team_charter_sync"
+  | "zendesk_status_sync"
   /** Legacy alias for transcription_sync — kept so the type accepts old callers. */
   | "fathom_sync";
 

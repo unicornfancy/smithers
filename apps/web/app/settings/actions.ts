@@ -194,6 +194,7 @@ export async function updateIntervalJobAction(input: {
     | "hive_mind_sync"
     | "team_roster_sync"
     | "team_charter_sync"
+    | "zendesk_status_sync"
     | "fathom_sync";
   enabled?: boolean;
   interval_minutes?: number;

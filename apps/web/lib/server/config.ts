@@ -201,6 +201,17 @@ export interface SmithersConfig {
        */
       sheet_url?: string;
     };
+    /**
+     * Zendesk status sync: re-polls Zendesk for every attached ticket's
+     * status / subject / priority / updated_at and writes fresh values
+     * into project frontmatter. Keeps /today's "Waiting on you" card
+     * from surfacing tickets that have since been closed by another
+     * team member. Default cadence: hourly.
+     */
+    zendesk_status_sync?: {
+      enabled: boolean;
+      interval_minutes?: number;
+    };
   };
 }
 
@@ -271,6 +282,10 @@ const DEFAULTS: SmithersConfig = {
     team_charter_sync: {
       enabled: false,
       interval_minutes: 24 * 60,
+    },
+    zendesk_status_sync: {
+      enabled: false,
+      interval_minutes: 60,
     },
   },
 };
@@ -472,6 +487,16 @@ function mergeWithDefaults(
         sheet_url:
           partial.schedule?.team_charter_sync?.sheet_url ??
           DEFAULTS.schedule?.team_charter_sync?.sheet_url,
+      },
+      zendesk_status_sync: {
+        enabled:
+          partial.schedule?.zendesk_status_sync?.enabled ??
+          DEFAULTS.schedule?.zendesk_status_sync?.enabled ??
+          false,
+        interval_minutes:
+          partial.schedule?.zendesk_status_sync?.interval_minutes ??
+          DEFAULTS.schedule?.zendesk_status_sync?.interval_minutes ??
+          60,
       },
     },
     weekly_update: partial.weekly_update,

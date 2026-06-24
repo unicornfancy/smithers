@@ -22,6 +22,7 @@ import {
   runTeamCharterSyncJob,
   runTeamRosterSyncJob,
   runTranscriptionSyncJob,
+  runZendeskStatusSyncJob,
   type JobResult,
 } from "@/lib/server/scheduler-jobs";
 
@@ -69,6 +70,13 @@ export async function setup(): Promise<void> {
     intervalMinutes:
       cfg.schedule?.team_charter_sync?.interval_minutes ?? 24 * 60,
     run: runTeamCharterSyncJob,
+  });
+  registerIntervalJob({
+    label: "zendesk status sync",
+    enabled: cfg.schedule?.zendesk_status_sync?.enabled,
+    intervalMinutes:
+      cfg.schedule?.zendesk_status_sync?.interval_minutes ?? 60,
+    run: runZendeskStatusSyncJob,
   });
 }
 
