@@ -102,7 +102,13 @@ export async function listWaitingOnYouThreads(args: {
     });
   }
 
-  rows.sort((a, b) => b.days_waiting - a.days_waiting);
+  // Most-recent partner reply first. Rationale: rows where you've
+  // actually just replied (but the ticket stayed `open` because the
+  // signature detector didn't catch your reply, or status wasn't
+  // moved to "pending") have OLDER partner timestamps — they belong
+  // at the bottom, not the top. Sorting by partner reply ascending
+  // (newest first) puts the truly-urgent partner messages on top.
+  rows.sort((a, b) => a.days_waiting - b.days_waiting);
   return args.limit ? rows.slice(0, args.limit) : rows;
 }
 

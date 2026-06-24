@@ -41,7 +41,7 @@ export function WaitingOnYouCard({ rows }: Props) {
           </span>
         </CardTitle>
         <p className="text-muted-foreground text-xs">
-          Open Zendesk threads where the partner replied last.
+          Open Zendesk threads where the partner replied last. Newest replies on top.
         </p>
       </CardHeader>
       <CardContent className="p-0">
