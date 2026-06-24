@@ -1,6 +1,28 @@
 import "server-only";
 
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Resolve a CLI's absolute path via `which`. The Next.js server-action
+ * runtime can run with a reduced PATH (Homebrew's `/usr/local/bin` and
+ * `/opt/homebrew/bin` aren't always inherited when the dev server was
+ * launched from a GUI terminal), so spawn() with a bare command name
+ * raises ENOENT for anything outside `/usr/bin`. Resolving via /usr/bin/
+ * which surfaces the absolute path the way kosh.ts already does for the
+ * claude binary.
+ */
+async function resolveBinary(name: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("/usr/bin/which", [name]);
+    const t = stdout.trim();
+    return t || null;
+  } catch {
+    return null;
+  }
+}
 
 import { getQaRun, readQaRunReport, type QaTestType } from "./kosh";
 import { getVault } from "./vault";
@@ -173,9 +195,17 @@ export async function createGhIssue(args: {
   title: string;
   body: string;
 }): Promise<{ ok: true; url: string } | { ok: false; message: string }> {
+  const ghBin = await resolveBinary("gh");
+  if (!ghBin) {
+    return {
+      ok: false,
+      message:
+        "`gh` CLI not found on PATH — install GitHub CLI (https://cli.github.com) and run `gh auth login`.",
+    };
+  }
   return new Promise((resolve) => {
     const child = spawn(
-      "gh",
+      ghBin,
       [
         "issue",
         "create",
