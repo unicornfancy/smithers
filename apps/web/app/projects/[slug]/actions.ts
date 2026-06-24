@@ -3546,7 +3546,8 @@ export async function composeSitrepAction(
           }
         : undefined,
       primary_zendesk_recent_activity: primaryRecent
-        .slice(-6)
+        .slice(0, 6)
+        .reverse()
         .map((a) => ({
           timestamp: a.timestamp,
           actor: a.actor?.name ?? "(unknown)",
