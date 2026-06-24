@@ -151,3 +151,9 @@ export {
   type SuggestWeeklyHighlightsOutput,
   type WeeklyHighlightSuggestion,
 } from "./agents/suggest-weekly-highlights";
+
+export {
+  composeSitrep,
+  type SitrepInput,
+  type SitrepOutput,
+} from "./agents/compose-sitrep";

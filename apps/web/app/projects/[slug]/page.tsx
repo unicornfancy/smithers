@@ -25,6 +25,7 @@ import { AgendaPanel } from "@/components/agenda-panel";
 import { PartnerCard } from "@/components/partner-card";
 import { ProjectHandoffSection } from "@/components/project-handoff-section";
 import { ProjectLaunchPostSection } from "@/components/project-launch-post-section";
+import { ProjectSitrepSection } from "@/components/project-sitrep-section";
 import { ProjectBriefSection } from "@/components/project-brief-section";
 import {
   CallNotesPanel,
@@ -559,6 +560,18 @@ export default async function ProjectWorkbenchPage({
         project={detail}
         projectNotes={projectNotes}
         linearUpdates={linearUpdates}
+      />
+    ),
+  });
+
+  sections.push({
+    id: "project-sitrep",
+    title: "SITREP",
+    node: (
+      <ProjectSitrepSection
+        projectSlug={detail.slug}
+        projectName={detail.name}
+        p2Url={detail.p2_url}
       />
     ),
   });

@@ -7,6 +7,7 @@ import {
   chatAboutTranscript,
   composeCallRecap,
   composeFollowUpNudge,
+  composeSitrep,
   draftP2Update,
   draftZendeskReply,
   runHiveMindSkill,
@@ -21,6 +22,7 @@ import {
   type DraftP2UpdateOutput,
   type DraftZendeskReplyOutput,
   type RunSkillOutput,
+  type SitrepOutput,
   type SummarizeZendeskThreadComment,
   type SummarizeZendeskThreadOutput,
   type SuggestNextStepOutput,
@@ -53,6 +55,7 @@ import {
 import { getAgentRuntime } from "@/lib/server/agents";
 import { loadConfig } from "@/lib/server/config";
 import { buildPartnerKnowledgeFrontmatterUpdate } from "@/lib/server/hive-mind-frontmatter";
+import { loadJobContext } from "@/lib/server/job-context";
 import { writeLaunchPostImage } from "@/lib/server/launch-post-assets";
 import { getMcpClient } from "@/lib/server/mcp";
 import { loadStyleReference } from "@/lib/server/style";
@@ -3404,5 +3407,166 @@ function parseP2Url(
     return { site: url.host, slug };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Compose a SITREP (situation report) for a project — a paste-ready
+ * P2 comment that briefs leads / coverage TAMs on current state. Pulls
+ * Linear (project + updates + open issues), the primary Zendesk thread
+ * with recent activity, open follow-ups, and (when present) open
+ * GitHub issues. Returns markdown + a one-line rationale; nothing is
+ * posted anywhere.
+ *
+ * Primary thread = the first active (non-solved/closed) attached
+ * ticket. If there isn't one, the SITREP simply skips that section.
+ */
+export async function composeSitrepAction(
+  slug: string,
+  intent?: string,
+): Promise<
+  | { ok: true; data: SitrepOutput }
+  | {
+      ok: false;
+      reason: "not-configured" | "error";
+      message?: string;
+    }
+> {
+  if (!slug) throw new Error("slug is required");
+
+  const runtime = await getAgentRuntime();
+  if (!runtime) return { ok: false, reason: "not-configured" };
+
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) {
+    return { ok: false, reason: "error", message: "Project not found" };
+  }
+
+  const mcp = await getMcpClient();
+  const [
+    linearProject,
+    linearOpenIssues,
+    linearUpdates,
+    allFollowUps,
+    context,
+  ] = await Promise.all([
+    project.linear_project_id
+      ? mcp.linear.getProject(project.linear_project_id).catch(() => null)
+      : Promise.resolve(null),
+    project.linear_project_id
+      ? mcp.linear
+          .getProjectIssues(project.linear_project_id)
+          .catch(() => [])
+      : Promise.resolve([]),
+    project.linear_project_id
+      ? mcp.linear
+          .getProjectUpdates(project.linear_project_id)
+          .catch(() => [])
+      : Promise.resolve([]),
+    vault
+      .listFollowUps()
+      .catch(() => ({ active: [], resolved: [] } as never)),
+    loadJobContext({ operating_rhythm: true, strategic_priorities: true }),
+  ]);
+
+  const detail = await vault.readProjectDetail(slug).catch(() => null);
+  const projectActiveFollowUps = detail
+    ? filterFollowUpsForProject(allFollowUps.active, detail)
+    : [];
+
+  // Pick the first active (non-solved / non-closed) attached ticket as
+  // the SITREP's primary thread. The Zendesk Threads panel uses the
+  // same definition so the chosen thread matches what the user sees
+  // pinned on the workbench.
+  const attached = project.zendesk_tickets ?? [];
+  const primary = attached.find((t) => {
+    const s = (t.status ?? "").toLowerCase();
+    return s !== "solved" && s !== "closed";
+  });
+  const primaryRecent = primary
+    ? await mcp.contextA8C
+        .fetchZendeskTicketActivity(primary.id, {
+          projectSlug: slug,
+          limit: 6,
+        })
+        .catch(() => [])
+    : [];
+
+  // Drop the 5 newest Linear updates into the prompt — older noise
+  // dilutes the "what changed since last SITREP" signal.
+  const recentLinearUpdates = (linearUpdates ?? [])
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 5)
+    .reverse();
+
+  // Open Linear issues: any non-completed/non-cancelled state.
+  const openLinearIssues = (linearOpenIssues ?? []).filter((i) => {
+    const t = i.state?.type ?? "";
+    return t !== "completed" && t !== "cancelled";
+  });
+
+  const style = (await loadStyleReference()) ?? undefined;
+
+  try {
+    const result = await composeSitrep(runtime, {
+      project,
+      iso_date: new Date().toISOString().slice(0, 10),
+      linear: linearProject
+        ? {
+            state: linearProject.state?.name ?? undefined,
+            health: linearProject.health || undefined,
+            progress:
+              typeof linearProject.progress === "number"
+                ? linearProject.progress
+                : undefined,
+            target_date: linearProject.targetDate ?? null,
+            url: linearProject.url ?? undefined,
+          }
+        : undefined,
+      linear_updates: recentLinearUpdates.map((u) => ({
+        created_at: u.createdAt,
+        body: u.body ?? "",
+        health: u.health || undefined,
+        author: u.user?.displayName ?? undefined,
+      })),
+      linear_open_issues: openLinearIssues.slice(0, 20).map((i) => ({
+        identifier: i.identifier,
+        title: i.title,
+        state: i.state?.name ?? undefined,
+        assignee: i.assignee?.name ?? undefined,
+      })),
+      primary_zendesk: primary
+        ? {
+            id: primary.id,
+            subject: primary.subject ?? undefined,
+            status: primary.status ?? undefined,
+            url: `https://automattic.zendesk.com/agent/tickets/${primary.id}`,
+          }
+        : undefined,
+      primary_zendesk_recent_activity: primaryRecent
+        .slice(-6)
+        .map((a) => ({
+          timestamp: a.timestamp,
+          actor: a.actor?.name ?? "(unknown)",
+          excerpt: a.excerpt ?? a.title ?? "",
+        })),
+      follow_ups: projectActiveFollowUps.slice(0, 10).map((f) => ({
+        task: f.task,
+        sent: f.sent ?? undefined,
+        follow_up_by: f.follow_up_by ?? undefined,
+      })),
+      style,
+      context,
+      user_intent: intent?.trim() || undefined,
+    });
+    return { ok: true, data: result.output };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Agent call failed",
+    };
   }
 }

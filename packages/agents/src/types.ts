@@ -19,7 +19,9 @@ export type AgentName =
   | "learn-style-from-archives"
   | "run-skill"
   | "suggest-weekly-highlights"
-  | "interpret-palette-query";
+  | "interpret-palette-query"
+  | "compose-sitrep"
+  | "compose-afk-notes";
 
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
