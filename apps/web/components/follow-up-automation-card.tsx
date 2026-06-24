@@ -16,6 +16,7 @@ interface Props {
     follow_up_force_decide_days: number;
     next_nudge_lookahead_days: number;
     default_window_days: number;
+    today_deadlines_window_days: number;
   };
 }
 
@@ -111,6 +112,18 @@ export function FollowUpAutomationCard({ initial }: Props) {
             hint="Pre-filled `follow_up_by` value: today + N days."
             value={draft.default_window_days}
             onChange={(v) => update("default_window_days", v)}
+          />
+        </div>
+
+        <div>
+          <h4 className="text-foreground mb-2 text-xs font-semibold uppercase tracking-wide">
+            /today Deadlines card
+          </h4>
+          <Field
+            label="Deadline lookahead (days)"
+            hint="Linear projects with a `targetDate` within this window surface on /today. Overdue projects always surface regardless."
+            value={draft.today_deadlines_window_days}
+            onChange={(v) => update("today_deadlines_window_days", v)}
           />
         </div>
 

@@ -107,6 +107,14 @@ export interface SmithersConfig {
      */
     default_window_days?: number;
   };
+  today?: {
+    /**
+     * How far ahead (in days) the "Deadlines" card on /today looks for
+     * Linear projects with a `targetDate`. Defaults to 14. Settable via
+     * /settings → Today.
+     */
+    deadlines_window_days?: number;
+  };
   schedule?: {
     /**
      * In-process daily briefing job: pre-warms the Top 3 / Realistic
@@ -242,6 +250,9 @@ const DEFAULTS: SmithersConfig = {
   },
   follow_ups: {
     default_window_days: 7,
+  },
+  today: {
+    deadlines_window_days: 14,
   },
   schedule: {
     daily_briefing: { enabled: false },
@@ -388,6 +399,10 @@ function mergeWithDefaults(
     follow_ups: {
       ...DEFAULTS.follow_ups,
       ...partial.follow_ups,
+    },
+    today: {
+      ...DEFAULTS.today,
+      ...partial.today,
     },
     schedule: {
       daily_briefing: {

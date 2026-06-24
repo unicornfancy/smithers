@@ -838,6 +838,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
               },
               excerpt,
               url: issue.html_url,
+              notification_type: "mention",
               project_match: undefined,
               is_mock: false,
             };
@@ -1794,6 +1795,7 @@ function mapOne(
     },
     excerpt,
     url: n.url ?? n.issue?.url,
+    notification_type: n.type ?? undefined,
     project_match: buildLinearProjectMatch(n.issue?.project),
     is_mock: false,
   };

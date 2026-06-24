@@ -189,6 +189,14 @@ export interface Ping {
   url?: string;
   /** Slack thread id or P2 comment thread id, when applicable. */
   thread_id?: string;
+  /**
+   * Provider-specific notification type. Linear sets this to its raw
+   * notification type (`issueMention`, `issueCommentMention`,
+   * `issueAssignedToYou`, etc); GitHub sets it for mention-class pings.
+   * Optional — older mappers don't fill it. Consumed by /today's
+   * Mentions card to filter to just @-mentions.
+   */
+  notification_type?: string;
   /** When matched to a project, the workbench can pre-assemble Phase 6 context. */
   project_match?: ProjectMatch;
   /** True when the ping is from a mock transport. */

@@ -25,11 +25,14 @@ import {
 import { StallsCard } from "@/components/stalls-card";
 import { SectionList, type SectionDef } from "@/components/section-list";
 import { HighlightBanner } from "@/components/today/highlight-banner";
+import { DeadlinesCard } from "@/components/today/deadlines-card";
 import { HotPings } from "@/components/today/hot-pings";
+import { MentionsCard } from "@/components/today/mentions-card";
 import {
   MovingFastStrip,
   type MovingFastEntry,
 } from "@/components/today/moving-fast-strip";
+import { WaitingOnYouCard } from "@/components/today/waiting-on-you-card";
 import { TopThreeCard } from "@/components/top-three-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,6 +51,9 @@ import { loadPartnerContactsBySlug } from "@/lib/server/partner-contacts";
 import { recordingMatchesProject } from "@/lib/server/recording-match";
 import { getTranscriptionAdapter } from "@/lib/server/transcription";
 import { detectStalls } from "@/lib/server/stalls";
+import { listUpcomingDeadlines } from "@/lib/server/today-deadlines";
+import { filterMentions } from "@/lib/server/today-mentions";
+import { listWaitingOnYouThreads } from "@/lib/server/today-waiting";
 import {
   computePingImportanceScore,
   extractPartnerContacts,
@@ -288,6 +294,23 @@ export default async function TodayPage() {
 
   const highlightBanner = await computeHighlightBanner({ vault });
 
+  // Top-of-/today priority signals — Waiting on you / Mentions /
+  // Deadlines. Each runs independently so a slow Linear lookup
+  // doesn't gate a fast Zendesk pass.
+  const deadlinesWindowDays = cfg.today?.deadlines_window_days ?? 14;
+  const mentions = filterMentions(pings);
+  const [waitingThreads, upcomingDeadlines] = await Promise.all([
+    status.exists
+      ? listWaitingOnYouThreads({ projects, limit: 12 }).catch(() => [])
+      : Promise.resolve([]),
+    status.exists
+      ? listUpcomingDeadlines({
+          windowDays: deadlinesWindowDays,
+          projects,
+        }).catch(() => [])
+      : Promise.resolve([]),
+  ]);
+
   return (
     <>
       <AppHeader
@@ -343,6 +366,10 @@ export default async function TodayPage() {
               latestDailyNoteDate: latestDailyNote?.date,
               cachedShape,
               highlightBanner,
+              waitingThreads,
+              mentions,
+              upcomingDeadlines,
+              deadlinesWindowDays,
             })}
           />
         ) : null}
@@ -380,6 +407,10 @@ function buildTodaySections(args: {
   latestDailyNoteDate: string | undefined;
   cachedShape: { output: RealisticShapeOutput } | null;
   highlightBanner: { isoWeek: string; windowLabel: string } | null;
+  waitingThreads: Awaited<ReturnType<typeof listWaitingOnYouThreads>>;
+  mentions: ReturnType<typeof filterMentions>;
+  upcomingDeadlines: Awaited<ReturnType<typeof listUpcomingDeadlines>>;
+  deadlinesWindowDays: number;
 }): SectionDef[] {
   const sections: SectionDef[] = [];
 
@@ -391,6 +422,35 @@ function buildTodaySections(args: {
         <HighlightBanner
           isoWeek={args.highlightBanner.isoWeek}
           windowLabel={args.highlightBanner.windowLabel}
+        />
+      ),
+    });
+  }
+
+  if (args.waitingThreads.length > 0) {
+    sections.push({
+      id: "waiting-on-you",
+      title: "Waiting on you",
+      node: <WaitingOnYouCard rows={args.waitingThreads} />,
+    });
+  }
+
+  if (args.mentions.length > 0) {
+    sections.push({
+      id: "mentions",
+      title: "Mentions",
+      node: <MentionsCard rows={args.mentions} />,
+    });
+  }
+
+  if (args.upcomingDeadlines.length > 0) {
+    sections.push({
+      id: "deadlines",
+      title: "Deadlines",
+      node: (
+        <DeadlinesCard
+          rows={args.upcomingDeadlines}
+          windowDays={args.deadlinesWindowDays}
         />
       ),
     });

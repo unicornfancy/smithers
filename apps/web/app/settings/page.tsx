@@ -88,6 +88,8 @@ export default async function SettingsPage() {
                 next_nudge_lookahead_days:
                   cfg.stall_thresholds.next_nudge_lookahead_days,
                 default_window_days: cfg.follow_ups?.default_window_days ?? 7,
+                today_deadlines_window_days:
+                  cfg.today?.deadlines_window_days ?? 14,
               }}
             />
             <ScheduleCard

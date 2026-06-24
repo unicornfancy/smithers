@@ -103,6 +103,8 @@ export async function updateFollowUpAutomationAction(input: {
   follow_up_force_decide_days?: number;
   next_nudge_lookahead_days?: number;
   default_window_days?: number;
+  /** /today Deadlines card lookahead in days. Lives at today.deadlines_window_days. */
+  today_deadlines_window_days?: number;
 }): Promise<{ ok: true } | { ok: false; reason: string }> {
   try {
     const path = configLocalPath();
@@ -136,8 +138,26 @@ export async function updateFollowUpAutomationAction(input: {
       }
       followBlock["default_window_days"] = Math.round(input.default_window_days);
     }
+    const todayBlock = isObject(next["today"])
+      ? (next["today"] as Record<string, unknown>)
+      : {};
+    if (input.today_deadlines_window_days !== undefined) {
+      if (
+        !Number.isFinite(input.today_deadlines_window_days) ||
+        input.today_deadlines_window_days < 1
+      ) {
+        return {
+          ok: false,
+          reason: "today_deadlines_window_days must be at least 1",
+        };
+      }
+      todayBlock["deadlines_window_days"] = Math.round(
+        input.today_deadlines_window_days,
+      );
+    }
     if (Object.keys(stallBlock).length > 0) next["stall_thresholds"] = stallBlock;
     if (Object.keys(followBlock).length > 0) next["follow_ups"] = followBlock;
+    if (Object.keys(todayBlock).length > 0) next["today"] = todayBlock;
     await writeYamlAtomic(path, next);
     revalidatePath("/settings");
     revalidatePath("/today");
