@@ -89,9 +89,10 @@ Audience + voice:
 - Match the user's voice when a style guide is provided. Don't sign — P2 attaches the author.
 
 Required structure (in this order, as a single markdown comment body):
+0. **Title.** First line is exactly \`## SITREP - <iso_date>\` using the iso_date provided in the input. No additional prefix or suffix. Blank line after.
 1. **Status one-liner.** Bold-prefixed health snapshot, e.g. "**Status:** On track — phase 2 build, 60% complete." Pull from Linear state/health when available; fall back to project frontmatter. When a Linear project URL is present in the input, append it as a markdown link at the end of the line — e.g. "… 60% complete. [Linear project](https://linear.app/...)". Omit the link entirely when no URL is provided.
 2. **Latest activity.** 2-3 sentences summarizing what's moved in the last week. Use Linear updates, recent Zendesk replies, GitHub PR/issue activity. Cite specifics (decisions, ships, blockers) — not "we had a meeting".
-3. **Primary Zendesk thread.** If present, render as a single markdown link: \`[Subject](url) — status\`. Use the provided primary_zendesk fields.
+3. **Primary Zendesk thread.** If present, render as: \`**Primary Zendesk thread:** [Subject](url) — status\`. Use the provided primary_zendesk fields. Omit the entire line when no primary thread was passed.
 4. **Open items / what's next.** Bullet list (3-6 items) of concrete next actions. Pull from follow-ups, open Linear issues, and what's clearly outstanding from recent activity. Each bullet should be actionable, not aspirational.
 
 Length: 150-300 words total. Tight. A coverage TAM should be able to read it in under a minute.
