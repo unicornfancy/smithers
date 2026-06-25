@@ -801,6 +801,21 @@ export function CallNotesPanel({
   );
 }
 
+/**
+ * React-list key for processed-call rows. Prefers recording_id when
+ * present; falls back to a (title, recorded_at, index) tuple so legacy
+ * Call Notes files without a recording_id can't collide (Dropbox's
+ * conflict resolution and Fathom's "(1)" / "(2)" suffix exports can
+ * produce multiple files with the same extracted title).
+ */
+function rowKey(
+  n: { recording_id: string; recorded_at: string; title: string },
+  index: number,
+): string {
+  if (n.recording_id) return n.recording_id;
+  return `orphan::${n.title}::${n.recorded_at}::${index}`;
+}
+
 function ProcessedCallsList({
   notes,
   savedNotesByRecordingId,
@@ -832,9 +847,9 @@ function ProcessedCallsList({
         Processed · all-time
       </p>
       <ul className="flex flex-col divide-y">
-        {visible.map((n) => (
+        {visible.map((n, i) => (
           <ProcessedCallRow
-            key={n.recording_id || n.title}
+            key={rowKey(n, i)}
             note={n}
             savedRelPath={savedNotesByRecordingId?.[n.recording_id]?.relative_path}
             recording={recordingsById[n.recording_id]}
@@ -848,9 +863,9 @@ function ProcessedCallsList({
             Show {hidden.length} older processed call{hidden.length === 1 ? "" : "s"}
           </summary>
           <ul className="mt-1 flex flex-col divide-y">
-            {hidden.map((n) => (
+            {hidden.map((n, i) => (
               <ProcessedCallRow
-                key={n.recording_id || n.title}
+                key={rowKey(n, TOP_N + i)}
                 note={n}
                 savedRelPath={savedNotesByRecordingId?.[n.recording_id]?.relative_path}
                 recording={recordingsById[n.recording_id]}
