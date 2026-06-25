@@ -1,7 +1,8 @@
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { ResolvedVaultOptions } from "./config";
-import { listDir, tryReadFile } from "./fs";
+import { fileExists, listDir, tryReadFile, writeFileAtomic } from "./fs";
 import { parseMarkdown } from "./frontmatter";
 
 function hiveMindPartnersDir(opts: ResolvedVaultOptions): string | null {
@@ -248,6 +249,37 @@ export async function getHiveMindNotes(
 
   const { content } = parseMarkdown(raw);
   return content.trim();
+}
+
+/**
+ * Bootstrap notes.md for an HM project if it doesn't already exist.
+ *
+ * The HM `add-project-note` MCP tool errors out when notes.md is
+ * missing — and projects created outside the standard `create-project`
+ * scaffold (e.g. imported manually, or scaffolded before the template
+ * existed) end up with brief.md / call-transcripts/ but no notes.md.
+ * Without this bootstrap, every decision-log mirror attempt fails
+ * silently from the user's perspective.
+ *
+ * Idempotent: returns `{ created: false }` when the file already
+ * exists. The seed body is just the `# Notes` heading the HM tool
+ * looks for when inserting new entries.
+ */
+export async function ensureHiveMindProjectNotes(
+  opts: ResolvedVaultOptions,
+  partnerSlug: string,
+  projectSlug: string,
+): Promise<{ created: boolean; path: string } | null> {
+  const base = hiveMindPartnersDir(opts);
+  if (!base) return null;
+
+  const projectDir = join(base, partnerSlug, projectSlug);
+  const filePath = join(projectDir, "notes.md");
+  if (fileExists(filePath)) return { created: false, path: filePath };
+
+  await mkdir(projectDir, { recursive: true });
+  await writeFileAtomic(filePath, "# Notes\n\n");
+  return { created: true, path: filePath };
 }
 
 export interface HiveMindCallTranscript {

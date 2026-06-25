@@ -1194,6 +1194,12 @@ export async function acceptCallDecisionsAction(
       })
       .join("\n");
     try {
+      // HM's add-project-note tool errors out when notes.md doesn't
+      // exist — and HM projects scaffolded outside the standard
+      // create-project flow often lack it. Bootstrap on first write
+      // so the mirror works for every HM-connected project, not just
+      // the ones with the canonical layout.
+      await vault.ensureHiveMindProjectNotes(hmPartner, hmProject);
       const mcp = await getMcpClient();
       await mcp.hiveMind.addProjectNote(hmPartner, hmProject, date, heading, body);
       await mcp.hiveMind.commit(

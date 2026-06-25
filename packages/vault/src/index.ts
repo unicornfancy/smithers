@@ -124,6 +124,7 @@ import {
   getHiveMindCallTranscripts,
   getHiveMindDrafts,
   getHiveMindFollowUps,
+  ensureHiveMindProjectNotes,
   getHiveMindNotes,
   getHiveMindPartner,
   getHiveMindPinnedContext,
@@ -251,6 +252,7 @@ export {
   getHiveMindCallTranscripts,
   getHiveMindDrafts,
   getHiveMindFollowUps,
+  ensureHiveMindProjectNotes,
   getHiveMindNotes,
   getHiveMindPartner,
   getHiveMindPinnedContext,
@@ -529,6 +531,10 @@ export interface Vault {
     partnerSlug: string,
     projectSlug: string,
   ) => ReturnType<typeof getHiveMindNotes>;
+  ensureHiveMindProjectNotes: (
+    partnerSlug: string,
+    projectSlug: string,
+  ) => ReturnType<typeof ensureHiveMindProjectNotes>;
   getHiveMindCallTranscripts: (
     partnerSlug: string,
     projectSlug: string,
@@ -658,6 +664,8 @@ export function createVault(options: VaultOptions): Vault {
       getHiveMindProject(resolved, partnerSlug, projectSlug),
     getHiveMindNotes: (partnerSlug, projectSlug) =>
       getHiveMindNotes(resolved, partnerSlug, projectSlug),
+    ensureHiveMindProjectNotes: (partnerSlug, projectSlug) =>
+      ensureHiveMindProjectNotes(resolved, partnerSlug, projectSlug),
     getHiveMindCallTranscripts: (partnerSlug, projectSlug) =>
       getHiveMindCallTranscripts(resolved, partnerSlug, projectSlug),
     getHiveMindDrafts: (partnerSlug, projectSlug) =>
