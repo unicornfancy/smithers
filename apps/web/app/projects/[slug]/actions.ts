@@ -1148,13 +1148,14 @@ export async function acceptCallDecisionsAction(
   callTitle: string,
   callDate: string,
   callUrl?: string,
-): Promise<{ added: number }> {
+): Promise<{ added: number; warnings?: string[] }> {
   if (!slug) throw new Error("slug is required");
   if (decisions.length === 0) return { added: 0 };
   const vault = await getVault();
   const project = await vault.readProject(slug);
   if (!project) throw new Error(`Project "${slug}" not found`);
 
+  const warnings: string[] = [];
   let bodyAdded = 0;
   // Vault-side body write is HM-incompatible (the helper throws for
   // HM-kind projects). Only run it for vault-source projects.
@@ -1167,15 +1168,18 @@ export async function acceptCallDecisionsAction(
         decisions,
       });
       if (result.changed) bodyAdded = decisions.length;
-    } catch {
-      // Non-fatal — the project-log mirror below still lets the user
-      // see the decisions on the workbench.
+    } catch (err) {
+      warnings.push(
+        `Couldn't append to project body: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
   // Mirror to the project log via HM notes.md (the panel's data
   // source). One entry summarising all decisions from the call so the
-  // log isn't spammed with N rows per call.
+  // log isn't spammed with N rows per call. ProjectLogPanel reads
+  // notes.md + Linear updates only — without this mirror the
+  // decisions are durable in the body but invisible on the panel.
   if (project.hive_mind_partner_slug) {
     const hmPartner = project.hive_mind_partner_slug;
     const hmProject = project.hive_mind_project_slug ?? project.slug;
@@ -1195,13 +1199,27 @@ export async function acceptCallDecisionsAction(
       await mcp.hiveMind.commit(
         `notes: decisions from "${callTitle}" for ${hmPartner}/${hmProject}`,
       );
-    } catch {
-      // Non-fatal — body section is still the durable record.
+    } catch (err) {
+      warnings.push(
+        `Project Log mirror failed (Hive Mind): ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
+  } else if (project.source.kind !== "hive-mind") {
+    // Vault-only project: decisions went to body's ## Decisions section
+    // but the ProjectLogPanel only reads HM notes.md + Linear updates,
+    // so they won't surface on the panel until we either connect HM or
+    // teach the panel to read the body. Surface this so the user knows
+    // why the panel doesn't update.
+    warnings.push(
+      "Project isn't connected to Hive Mind — decisions saved to the project body but won't show on the Project Log panel.",
+    );
   }
 
   revalidatePath(`/projects/${slug}`);
-  return { added: Math.max(bodyAdded, decisions.length) };
+  return {
+    added: Math.max(bodyAdded, decisions.length),
+    warnings: warnings.length > 0 ? warnings : undefined,
+  };
 }
 
 /**

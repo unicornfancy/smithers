@@ -277,7 +277,10 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
             : prev,
         );
         setSelectedActions(new Set());
-        router.refresh();
+        // Don't router.refresh() here — the workbench re-renders would
+        // move this recording from unprocessed → processed, unmount the
+        // row, and close this dialog mid-flow. Refresh happens once on
+        // dialog close (see Dialog onOpenChange below).
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : "Couldn't add tasks",
@@ -316,7 +319,7 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
             : prev,
         );
         setSelectedFollowUps(new Set());
-        router.refresh();
+        // Refresh deferred to dialog close — see acceptActions for why.
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : "Couldn't add follow-ups",
@@ -344,7 +347,10 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
         } else {
           toast.info("Nothing to add");
         }
-        router.refresh();
+        if (r.warnings && r.warnings.length > 0) {
+          for (const w of r.warnings) toast.warning(w);
+        }
+        // Refresh deferred to dialog close — see acceptActions for why.
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : "Couldn't add decisions",
@@ -596,7 +602,20 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
         )}
         Process
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) {
+            // Refresh once on close so the workbench picks up everything
+            // the user accepted in this session (tasks, follow-ups,
+            // decisions, draft saves). Refreshing on each accept would
+            // re-render the row that hosts this dialog and close it
+            // mid-flow.
+            router.refresh();
+          }
+        }}
+      >
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>
