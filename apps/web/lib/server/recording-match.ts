@@ -139,6 +139,13 @@ const STOP_TOKENS = new Set([
   "redesign",
   "migration",
   "build",
+  // Company / org prefixes that appear on essentially every internal
+  // recording title — useless as a project discriminator. Without
+  // these, an internal project under `partner: Automattic` claims
+  // every Fathom call (every call title starts with "Automattic +
+  // ...").
+  "automattic",
+  "a8c",
   // Common TLDs that survive the >=3-char filter from the email-domain
   // token path. Without these, every email contributes a `com` / `org`
   // token and the matcher matches every recording.
