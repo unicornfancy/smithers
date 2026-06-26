@@ -53,8 +53,19 @@ export interface AfkProjectSlice {
     title: string;
     state?: string;
   }>;
-  /** P2 post URL when the project has one — used for the "Latest SITREP" link. */
+  /** P2 post URL when the project has one — used for the project H3 link. */
   p2_url?: string;
+  /** Resolved Slack channel URL when slack_channel is set on the project. */
+  slack_url?: string;
+  /** Linear project URL when the project is linked to Linear. */
+  linear_url?: string;
+  /**
+   * Per-project TAM coverage override. When set, appears in the
+   * "TAM Coverage:" line instead of the form's default coverage
+   * handle. Reserved for a future Linear-secondary-TAM lookup; null
+   * in v1.
+   */
+  tam_coverage_override?: string;
 }
 
 export interface ComposeAfkNotesInput {
@@ -92,19 +103,34 @@ Audience + voice:
 Required structure (single markdown post, in this order):
 1. **Header line.** Bold-prefixed AFK window, e.g. "**AFK:** Mon Jun 30 – Fri Jul 4. **Coverage:** @coverage." Use the provided dates verbatim — don't reformat them past "Mon MMM D".
 2. **Intro paragraph.** 2-3 sentences. If \`intro_notes\` were provided, use them verbatim as the intro. Otherwise write a brief one explaining the absence and coverage handoff. End with "ping me on slack only if it's blocking — I'll check messages once a day."
-3. **Per-project sections.** One H2 (## ) per project, ordered with hot / at-risk first, then active. Each section contains, in this order:
-   - One-line status (Linear health/state if available; fallback to vault status).
-   - 1-2 sentences of context for what's in motion.
-   - **Project P2:** \`**Project P2:** [project P2 post](p2_url)\` — REQUIRED whenever \`p2_url\` is provided in the input. Coverage TAM scrolls the P2 to find the most recent SITREP comment + other project context. Omit this line only when no p2_url is present.
-   - **Primary Zendesk thread:** \`**Primary Zendesk thread:** [subject](url) — status\` — REQUIRED whenever \`primary_zendesk\` is provided. The user wants every project section to always carry a Zendesk entry point, even when there's nothing actively open. Use the provided primary_zendesk fields verbatim. Omit only when no primary_zendesk was passed.
-   - **What to watch:** sub-bullet list — additional open Zendesk threads (link with subject) beyond the primary, open follow-ups partner-side, open Linear issues likely to land during the window. Skip the primary in this list (already linked above).
-   - **If something blows up:** sub-line — who/where to escalate (default: coverage TAM, then the partner's account exec if known from the data).
+3. **Per-project sections.** One H3 (### ) per project, ordered with hot / at-risk first, then active. Each section follows this EXACT shape and order — no extra prose, no "If something blows up", no "What to watch", no status one-liner:
+
+   ### [Project Name](p2_url)
+
+   **[Primary Zendesk thread](primary_zendesk.url). [Slack channel](slack_url). [Linear](linear_url).**
+
+   TAM Coverage: <handle>
+
+   Latest Activity: <2-3 sentence summary of what's moved on this project recently — pulled from latest_update, open_zendesk_threads excerpts, recent Linear updates, etc.>
+
+   Next Steps: <only what genuinely needs the coverage TAM to act on during the AFK window — pulled from open_follow_ups, open_linear_issues with target dates in/near the window, and active Zendesk threads expecting a partner reply. Skip evergreen backlog items.>
+
+   Link rules for the header line above (the second line of each section):
+   - When p2_url is missing, render the H3 as plain text: \`### <Project Name>\` (no link).
+   - When primary_zendesk is missing, drop just the "[Primary Zendesk thread](url)." token but keep the rest of the bold line.
+   - Same for slack_url and linear_url — omit the missing one with its trailing period.
+   - Always keep the bold-wrap and the per-token periods so the line scans cleanly.
+   - When ALL of primary_zendesk / slack_url / linear_url are missing, omit the entire bold line (don't leave an empty bold pair).
+
+   TAM Coverage rules:
+   - When \`tam_coverage_override\` is set on the project, use it verbatim.
+   - Otherwise use the global \`coverage_handle\` from the form.
+
 4. **Closing line.** Single italicized sentence: "*Back on Monday MMM D — thanks for covering.*" using the day after the AFK end date.
 
 Quality rules:
-- Don't fabricate. If a project has no signal in the inputs, write one honest sentence: "Nothing actively moving — should stay quiet."
-- Don't pad sections with generic boilerplate. If "What to watch" has nothing, omit the bullet list.
-- Don't list every Linear issue — pick at most 3 per project, prioritizing ones with target dates inside or near the AFK window.
+- Don't fabricate. If a project has no signal in the inputs, write Latest Activity as one honest sentence ("Nothing actively moving — should stay quiet.") and Next Steps as "None — watch for new threads."
+- "Next Steps" is for things that will genuinely come up DURING the AFK window. Skip evergreen backlog work.
 - Don't editorialize the partner unfavorably.
 - Keep the whole post under ~600 words. Coverage TAM should be able to skim it in 2 minutes.
 
@@ -179,6 +205,11 @@ function renderUserPrompt(input: ComposeAfkNotesInput): string {
       if (p.target_date) lines.push(`- target_date: ${p.target_date}`);
       if (p.latest_update) lines.push(`- latest_update: ${p.latest_update}`);
       if (p.p2_url) lines.push(`- p2_url: ${p.p2_url}`);
+      if (p.slack_url) lines.push(`- slack_url: ${p.slack_url}`);
+      if (p.linear_url) lines.push(`- linear_url: ${p.linear_url}`);
+      if (p.tam_coverage_override) {
+        lines.push(`- tam_coverage_override: ${p.tam_coverage_override}`);
+      }
       if (p.primary_zendesk) {
         lines.push(`- primary_zendesk:`);
         lines.push(`  - id: ${p.primary_zendesk.id}`);

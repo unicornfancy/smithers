@@ -160,6 +160,13 @@ export async function generateAfkPostAction(input: {
       primary_zendesk: primaryZendesk,
       open_linear_issues: trimmedIssues,
       p2_url: project.p2_url,
+      slack_url: resolveSlackUrl(project.slack_channel),
+      linear_url: linearProject?.url ?? undefined,
+      // TODO: when we add per-project secondary-TAM lookup against
+      // Linear project members, populate tam_coverage_override here.
+      // Left undefined in v1 so the agent falls back to the form's
+      // coverage_handle uniformly.
+      tam_coverage_override: undefined,
     });
   }
 
@@ -200,4 +207,23 @@ export async function generateAfkPostAction(input: {
       message: err instanceof Error ? err.message : "Agent call failed",
     };
   }
+}
+
+/**
+ * Normalize whatever the user put in `slack_channel` into a clickable
+ * URL. Accepts: a full Slack URL (returned as-is), a bare channel id
+ * shaped \`C<...>\` / \`G<...>\` (built into a /archives/<id> link), or
+ * a channel name (built into a /channels/<name> link — Slack resolves
+ * it on click). Returns undefined for empty input.
+ */
+function resolveSlackUrl(input: string | undefined): string | undefined {
+  if (!input) return undefined;
+  const trimmed = input.trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^[CG][A-Z0-9]{6,}$/.test(trimmed)) {
+    return `https://a8c.slack.com/archives/${trimmed}`;
+  }
+  const name = trimmed.replace(/^#/, "");
+  return `https://a8c.slack.com/channels/${name}`;
 }
