@@ -36,12 +36,32 @@ export function RefreshZendeskMetadataButton({ projectSlug, hints }: Props) {
           toast.success(
             `Refreshed ${r.updated} of ${r.total} ticket${r.total === 1 ? "" : "s"}`,
           );
+        } else if (r.total === 0) {
+          toast.info("No tickets attached");
         } else {
-          toast.info(
-            r.total === 0
-              ? "No tickets attached"
-              : "Everything's already current",
-          );
+          // Surface the diagnostics so we can tell apart "search came
+          // back fresh, statuses matched what we had" from "search
+          // silently failed for every hint" and "search succeeded but
+          // never returned the attached tickets".
+          const d = r.diagnostics;
+          const anyFailed = d.hints.some((h) => h.failed);
+          const noHits = d.hints.every((h) => h.total === 0);
+          const totalMatched = d.hints.reduce((acc, h) => acc + h.matched, 0);
+          let detail: string;
+          if (anyFailed) {
+            const failedHints = d.hints
+              .filter((h) => h.failed)
+              .map((h) => h.hint)
+              .join(", ");
+            detail = `Search failed for: ${failedHints}. Check Zendesk OAuth or restart pnpm dev.`;
+          } else if (noHits) {
+            detail = `All ${d.hints.length} hint searches returned zero results — Zendesk auth may have expired.`;
+          } else if (d.unseen_ticket_ids.length > 0) {
+            detail = `Searched ${d.hints.length} hint${d.hints.length === 1 ? "" : "s"}, saw ${totalMatched} attached ticket${totalMatched === 1 ? "" : "s"}; ${d.unseen_ticket_ids.length} never appeared in results: ${d.unseen_ticket_ids.slice(0, 4).join(", ")}${d.unseen_ticket_ids.length > 4 ? "…" : ""}`;
+          } else {
+            detail = `Searched ${d.hints.length} hint${d.hints.length === 1 ? "" : "s"}, saw all ${totalMatched} attached ticket${totalMatched === 1 ? "" : "s"} — Zendesk reports same status as frontmatter.`;
+          }
+          toast.info(detail, { duration: 10_000 });
         }
         router.refresh();
       } catch (err) {

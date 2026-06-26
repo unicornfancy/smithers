@@ -385,14 +385,28 @@ async function syncZendeskToHiveMind(slug: string): Promise<void> {
 export async function refreshZendeskMetadataAction(
   slug: string,
   hints: string[],
-): Promise<{ updated: number; total: number }> {
+): Promise<{
+  updated: number;
+  total: number;
+  diagnostics: {
+    hints: Array<{ hint: string; total: number; matched: number; failed: boolean }>;
+    seen_ticket_ids: string[];
+    unseen_ticket_ids: string[];
+  };
+}> {
   if (!slug) throw new Error("slug is required");
 
   const vault = await getVault();
   const project = await vault.readProject(slug);
   if (!project) throw new Error(`Project "${slug}" not found`);
   const refs = project.zendesk_tickets ?? [];
-  if (refs.length === 0) return { updated: 0, total: 0 };
+  if (refs.length === 0) {
+    return {
+      updated: 0,
+      total: 0,
+      diagnostics: { hints: [], seen_ticket_ids: [], unseen_ticket_ids: [] },
+    };
+  }
 
   const targetIds = new Set(refs.map((r) => r.id));
   const seen = new Map<
@@ -416,15 +430,33 @@ export async function refreshZendeskMetadataAction(
     ]),
   );
 
+  // Per-hint diagnostics so the UI can surface whether searches
+  // succeeded, how many tickets they returned, and how many landed
+  // in the attached set. Without this, "Everything's already current"
+  // could mean (a) searches succeeded and statuses were already
+  // fresh, OR (b) every search call silently failed. Distinguishing
+  // those takes too long to debug from the outside.
+  const hintReports: Array<{
+    hint: string;
+    total: number;
+    matched: number;
+    failed: boolean;
+  }> = [];
+
   const mcp = await getMcpClient();
   await Promise.all(
     allHints.map(async (hint) => {
       const res = await mcp.contextA8C
         .searchZendeskTickets(hint, { limit: 100 })
         .catch(() => ({ ok: false as const, error: "search failed" }));
-      if (!res.ok) return;
+      if (!res.ok) {
+        hintReports.push({ hint, total: 0, matched: 0, failed: true });
+        return;
+      }
+      let matched = 0;
       for (const t of res.tickets) {
         if (!targetIds.has(t.id)) continue;
+        matched += 1;
         if (!seen.has(t.id)) {
           seen.set(t.id, {
             id: t.id,
@@ -435,6 +467,12 @@ export async function refreshZendeskMetadataAction(
           });
         }
       }
+      hintReports.push({
+        hint,
+        total: res.tickets.length,
+        matched,
+        failed: false,
+      });
     }),
   );
 
@@ -447,7 +485,21 @@ export async function refreshZendeskMetadataAction(
   // the search didn't touch get re-serialized so a previously-attached
   // ticket with null HM metadata picks up its vault subject/status.
   await syncZendeskToHiveMind(slug);
-  return { updated: result.updated, total: refs.length };
+
+  const seenIds = Array.from(seen.keys()).sort();
+  const unseenIds = Array.from(targetIds)
+    .filter((id) => !seen.has(id))
+    .sort();
+
+  return {
+    updated: result.updated,
+    total: refs.length,
+    diagnostics: {
+      hints: hintReports,
+      seen_ticket_ids: seenIds,
+      unseen_ticket_ids: unseenIds,
+    },
+  };
 }
 
 /**

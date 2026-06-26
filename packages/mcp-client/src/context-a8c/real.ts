@@ -1127,14 +1127,11 @@ export class RealContextA8CTransport implements ContextA8CClient {
             // Zendesk search API caps per_page at 100. Default to that
             // ceiling for refresh-style callers so partners with long
             // ticket histories (e.g. The Pocket NYC) don't lose
-            // recently-changed tickets to default-relevance ranking.
+            // recently-changed tickets when the top page fills up.
+            // Sort params (sort_by/sort_order) were attempted and
+            // appeared to make the MCP tool reject the call silently,
+            // so we accept default ranking and rely on the wider page.
             per_page: Math.max(1, Math.min(100, opts.limit ?? 20)),
-            // Sort newest-changed first so a just-closed ticket
-            // surfaces at the top of results — without this, default
-            // ranking is by relevance and recently-closed tickets get
-            // pushed out of the top page on busy partners.
-            sort_by: "updated_at",
-            sort_order: "desc",
           },
         },
       );
