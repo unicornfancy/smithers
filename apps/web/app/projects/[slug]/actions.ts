@@ -420,7 +420,7 @@ export async function refreshZendeskMetadataAction(
   await Promise.all(
     allHints.map(async (hint) => {
       const res = await mcp.contextA8C
-        .searchZendeskTickets(hint, { limit: 50 })
+        .searchZendeskTickets(hint, { limit: 100 })
         .catch(() => ({ ok: false as const, error: "search failed" }));
       if (!res.ok) return;
       for (const t of res.tickets) {
