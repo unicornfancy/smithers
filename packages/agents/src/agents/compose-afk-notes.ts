@@ -34,13 +34,26 @@ export interface AfkProjectSlice {
     status?: string;
     url?: string;
   }>;
+  /**
+   * Primary Zendesk thread for this project — the first attached
+   * ticket, regardless of status. Surfaced as a required link line in
+   * every project section so coverage TAMs always have an entry point
+   * even when nothing is actively open. Distinct from
+   * open_zendesk_threads (the "what to watch" list of open ones).
+   */
+  primary_zendesk?: {
+    id: string;
+    subject?: string;
+    status?: string;
+    url: string;
+  };
   /** Open Linear issues likely to land during the AFK window. */
   open_linear_issues?: Array<{
     identifier: string;
     title: string;
     state?: string;
   }>;
-  /** P2 post URL when the project has one. */
+  /** P2 post URL when the project has one — used for the "Latest SITREP" link. */
   p2_url?: string;
 }
 
@@ -79,10 +92,12 @@ Audience + voice:
 Required structure (single markdown post, in this order):
 1. **Header line.** Bold-prefixed AFK window, e.g. "**AFK:** Mon Jun 30 – Fri Jul 4. **Coverage:** @coverage." Use the provided dates verbatim — don't reformat them past "Mon MMM D".
 2. **Intro paragraph.** 2-3 sentences. If \`intro_notes\` were provided, use them verbatim as the intro. Otherwise write a brief one explaining the absence and coverage handoff. End with "ping me on slack only if it's blocking — I'll check messages once a day."
-3. **Per-project sections.** One H2 (## ) per project, ordered with hot / at-risk first, then active. Each section contains:
+3. **Per-project sections.** One H2 (## ) per project, ordered with hot / at-risk first, then active. Each section contains, in this order:
    - One-line status (Linear health/state if available; fallback to vault status).
    - 1-2 sentences of context for what's in motion.
-   - **What to watch:** sub-bullet list — open Zendesk threads (link with subject), open follow-ups partner-side, open Linear issues likely to land during the window.
+   - **Latest SITREP:** \`**Latest SITREP:** [project P2 post](p2_url)\` — REQUIRED whenever \`p2_url\` is provided in the input. Coverage TAM scrolls the P2 to find the most recent SITREP comment. Omit this line only when no p2_url is present.
+   - **Primary Zendesk thread:** \`**Primary Zendesk thread:** [subject](url) — status\` — REQUIRED whenever \`primary_zendesk\` is provided. The user wants every project section to always carry a Zendesk entry point, even when there's nothing actively open. Use the provided primary_zendesk fields verbatim. Omit only when no primary_zendesk was passed.
+   - **What to watch:** sub-bullet list — additional open Zendesk threads (link with subject) beyond the primary, open follow-ups partner-side, open Linear issues likely to land during the window. Skip the primary in this list (already linked above).
    - **If something blows up:** sub-line — who/where to escalate (default: coverage TAM, then the partner's account exec if known from the data).
 4. **Closing line.** Single italicized sentence: "*Back on Monday MMM D — thanks for covering.*" using the day after the AFK end date.
 
@@ -164,6 +179,17 @@ function renderUserPrompt(input: ComposeAfkNotesInput): string {
       if (p.target_date) lines.push(`- target_date: ${p.target_date}`);
       if (p.latest_update) lines.push(`- latest_update: ${p.latest_update}`);
       if (p.p2_url) lines.push(`- p2_url: ${p.p2_url}`);
+      if (p.primary_zendesk) {
+        lines.push(`- primary_zendesk:`);
+        lines.push(`  - id: ${p.primary_zendesk.id}`);
+        if (p.primary_zendesk.subject) {
+          lines.push(`  - subject: ${p.primary_zendesk.subject}`);
+        }
+        if (p.primary_zendesk.status) {
+          lines.push(`  - status: ${p.primary_zendesk.status}`);
+        }
+        lines.push(`  - url: ${p.primary_zendesk.url}`);
+      }
       if (p.open_follow_ups && p.open_follow_ups.length > 0) {
         lines.push(`- open_follow_ups:`);
         for (const f of p.open_follow_ups) {

@@ -90,7 +90,8 @@ export async function generateAfkPostAction(input: {
     // listFollowUps — fuzzy-match the project cell to this project).
     const projectFollowUps = filterFollowUpsForProject(followUps.active, project);
 
-    const openThreads = (project.zendesk_tickets ?? [])
+    const attachedTickets = project.zendesk_tickets ?? [];
+    const openThreads = attachedTickets
       .filter((t) => {
         const s = (t.status ?? "").toLowerCase();
         return s !== "solved" && s !== "closed";
@@ -102,6 +103,20 @@ export async function generateAfkPostAction(input: {
         status: t.status ?? undefined,
         url: `https://automattic.zendesk.com/agent/tickets/${t.id}`,
       }));
+
+    // Primary Zendesk thread = first attached ticket regardless of
+    // status. The user wants every per-project section to always
+    // carry a Zendesk entry point so the coverage TAM has somewhere
+    // to land even when nothing is currently open.
+    const primaryAttached = attachedTickets[0];
+    const primaryZendesk = primaryAttached
+      ? {
+          id: primaryAttached.id,
+          subject: primaryAttached.subject ?? undefined,
+          status: primaryAttached.status ?? undefined,
+          url: `https://automattic.zendesk.com/agent/tickets/${primaryAttached.id}`,
+        }
+      : undefined;
 
     // Latest Linear update body, capped — gives the agent a recent
     // snapshot to anchor the per-project narrative.
@@ -142,6 +157,7 @@ export async function generateAfkPostAction(input: {
         follow_up_by: f.follow_up_by ?? undefined,
       })),
       open_zendesk_threads: openThreads,
+      primary_zendesk: primaryZendesk,
       open_linear_issues: trimmedIssues,
       p2_url: project.p2_url,
     });
