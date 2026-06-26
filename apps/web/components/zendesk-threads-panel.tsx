@@ -41,6 +41,13 @@ interface Props {
    * deslug'd partner, project name].
    */
   refreshHints: string[];
+  /**
+   * Partner contact emails from HM partner-knowledge contacts[].
+   * Forwarded to the Refresh button so it can run
+   * `requester:<email>` searches and catch tickets whose subjects
+   * don't mention the partner name.
+   */
+  contactEmails?: string[];
   /** Persisted user-curated search terms (frontmatter zendesk_search_terms). */
   savedSearchTerms: string[];
   /**
@@ -86,6 +93,7 @@ export function ZendeskThreadsPanel({
   projectSlug,
   tickets,
   refreshHints,
+  contactEmails,
   savedSearchTerms,
   followUps,
   recentActivityByTicketId,
@@ -136,6 +144,7 @@ export function ZendeskThreadsPanel({
               <RefreshZendeskMetadataButton
                 projectSlug={projectSlug}
                 hints={refreshHints}
+                contactEmails={contactEmails}
               />
             ) : null}
             <ZendeskAttachModal

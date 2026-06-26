@@ -385,6 +385,15 @@ async function syncZendeskToHiveMind(slug: string): Promise<void> {
 export async function refreshZendeskMetadataAction(
   slug: string,
   hints: string[],
+  /**
+   * Partner contact emails — pulled from the HM partner profile's
+   * contacts[] block. When provided, each email gets its own
+   * status-partitioned `requester:<email>` search pass; this catches
+   * tickets whose subject/body doesn't contain the partner name (e.g.
+   * "Google Site Kit setup" — partner-related but the partner name
+   * never appears in searchable text, so text-hint searches miss it).
+   */
+  contactEmails: string[] = [],
 ): Promise<{
   updated: number;
   total: number;
@@ -447,58 +456,74 @@ export async function refreshZendeskMetadataAction(
   // we don't lose attached tickets that rank low in a single relevance
   // pass. Zendesk caps results at 100 per query; on a partner with a
   // long ticket history, a single "the pocket nyc" query fills its
-  // 100-row page with the highest-relevance tickets (usually old + open)
-  // and just-closed tickets drop off the bottom. Splitting into
+  // 100-row page with the highest-relevance tickets (usually old +
+  // open) and just-closed tickets drop off the bottom. Splitting into
   // open-side / solved / closed gives each bucket its own 100-row
-  // window. Empirically caught 8 unseen Pocket tickets in testing.
+  // window.
   const STATUS_PASSES: Array<{ suffix: string; label: string }> = [
     { suffix: "status<solved", label: "open-side" },
     { suffix: "status:solved", label: "solved" },
     { suffix: "status:closed", label: "closed" },
   ];
 
+  // Status-partitioned passes are still insufficient when the
+  // partner's name doesn't appear in the ticket's searchable text
+  // (subject / body / comments) — e.g. "Google Site Kit setup" is
+  // partner-related but matches no text hint. For each known partner
+  // contact email, run a `requester:<email>` search which returns
+  // every ticket they ever opened, regardless of subject content.
+  const queries: Array<{ query: string; label: string }> = [];
+  for (const hint of allHints) {
+    for (const pass of STATUS_PASSES) {
+      queries.push({
+        query: `${hint} ${pass.suffix}`,
+        label: `${hint} (${pass.label})`,
+      });
+    }
+  }
+  const cleanEmails = Array.from(
+    new Set(contactEmails.map((e) => e.trim().toLowerCase()).filter(Boolean)),
+  );
+  for (const email of cleanEmails) {
+    for (const pass of STATUS_PASSES) {
+      queries.push({
+        query: `requester:${email} ${pass.suffix}`,
+        label: `requester:${email} (${pass.label})`,
+      });
+    }
+  }
+
   const mcp = await getMcpClient();
   await Promise.all(
-    allHints.flatMap((hint) =>
-      STATUS_PASSES.map(async (pass) => {
-        const fullHint = `${hint} ${pass.suffix}`;
-        const res = await mcp.contextA8C
-          .searchZendeskTickets(fullHint, { limit: 100 })
-          .catch(() => ({ ok: false as const, error: "search failed" }));
-        if (!res.ok) {
-          hintReports.push({
-            hint: `${hint} (${pass.label})`,
-            total: 0,
-            matched: 0,
-            failed: true,
+    queries.map(async ({ query, label }) => {
+      const res = await mcp.contextA8C
+        .searchZendeskTickets(query, { limit: 100 })
+        .catch(() => ({ ok: false as const, error: "search failed" }));
+      if (!res.ok) {
+        hintReports.push({ hint: label, total: 0, matched: 0, failed: true });
+        return;
+      }
+      let matched = 0;
+      for (const t of res.tickets) {
+        if (!targetIds.has(t.id)) continue;
+        matched += 1;
+        if (!seen.has(t.id)) {
+          seen.set(t.id, {
+            id: t.id,
+            subject: t.subject ?? undefined,
+            status: t.status ?? undefined,
+            priority: t.priority ?? undefined,
+            updated_at: t.updated_at ?? undefined,
           });
-          return;
         }
-        let matched = 0;
-        for (const t of res.tickets) {
-          if (!targetIds.has(t.id)) continue;
-          matched += 1;
-          // First write wins. With status-partitioned passes, each
-          // ticket's status pass is the authoritative one, so dedup
-          // is correct regardless of which hint queried first.
-          if (!seen.has(t.id)) {
-            seen.set(t.id, {
-              id: t.id,
-              subject: t.subject ?? undefined,
-              status: t.status ?? undefined,
-              priority: t.priority ?? undefined,
-              updated_at: t.updated_at ?? undefined,
-            });
-          }
-        }
-        hintReports.push({
-          hint: `${hint} (${pass.label})`,
-          total: res.tickets.length,
-          matched,
-          failed: false,
-        });
-      }),
-    ),
+      }
+      hintReports.push({
+        hint: label,
+        total: res.tickets.length,
+        matched,
+        failed: false,
+      });
+    }),
   );
 
   const result = await vault.refreshProjectZendeskMetadata(

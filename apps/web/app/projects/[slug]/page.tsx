@@ -700,6 +700,9 @@ export default async function ProjectWorkbenchPage({
           detail.partner ? detail.partner.replace(/-/g, " ") : "",
           detail.name,
         ].filter(Boolean)}
+        contactEmails={(hiveMindPartner?.contacts ?? [])
+          .map((c) => c.email?.trim())
+          .filter((e): e is string => Boolean(e))}
         savedSearchTerms={detail.zendesk_search_terms ?? []}
         followUps={effectiveFollowUps}
         recentActivityByTicketId={recentActivityByTicketId}

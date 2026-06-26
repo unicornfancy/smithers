@@ -17,6 +17,12 @@ interface Props {
    * is matched against attached tickets.
    */
   hints: string[];
+  /**
+   * Partner contact emails (from HM partner-knowledge contacts[]). The
+   * action runs `requester:<email>` searches for each, which catches
+   * tickets whose subjects don't contain the partner name.
+   */
+  contactEmails?: string[];
 }
 
 /**
@@ -24,14 +30,22 @@ interface Props {
  * a persisted subject. One click runs a fan-out search and writes
  * any matches into frontmatter so subsequent renders are instant.
  */
-export function RefreshZendeskMetadataButton({ projectSlug, hints }: Props) {
+export function RefreshZendeskMetadataButton({
+  projectSlug,
+  hints,
+  contactEmails,
+}: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   function handleClick() {
     startTransition(async () => {
       try {
-        const r = await refreshZendeskMetadataAction(projectSlug, hints);
+        const r = await refreshZendeskMetadataAction(
+          projectSlug,
+          hints,
+          contactEmails ?? [],
+        );
         if (r.updated > 0) {
           toast.success(
             `Refreshed ${r.updated} of ${r.total} ticket${r.total === 1 ? "" : "s"}`,
