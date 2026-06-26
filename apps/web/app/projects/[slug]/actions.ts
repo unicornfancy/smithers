@@ -443,37 +443,62 @@ export async function refreshZendeskMetadataAction(
     failed: boolean;
   }> = [];
 
+  // For each hint, run THREE searches partitioned by status range so
+  // we don't lose attached tickets that rank low in a single relevance
+  // pass. Zendesk caps results at 100 per query; on a partner with a
+  // long ticket history, a single "the pocket nyc" query fills its
+  // 100-row page with the highest-relevance tickets (usually old + open)
+  // and just-closed tickets drop off the bottom. Splitting into
+  // open-side / solved / closed gives each bucket its own 100-row
+  // window. Empirically caught 8 unseen Pocket tickets in testing.
+  const STATUS_PASSES: Array<{ suffix: string; label: string }> = [
+    { suffix: "status<solved", label: "open-side" },
+    { suffix: "status:solved", label: "solved" },
+    { suffix: "status:closed", label: "closed" },
+  ];
+
   const mcp = await getMcpClient();
   await Promise.all(
-    allHints.map(async (hint) => {
-      const res = await mcp.contextA8C
-        .searchZendeskTickets(hint, { limit: 100 })
-        .catch(() => ({ ok: false as const, error: "search failed" }));
-      if (!res.ok) {
-        hintReports.push({ hint, total: 0, matched: 0, failed: true });
-        return;
-      }
-      let matched = 0;
-      for (const t of res.tickets) {
-        if (!targetIds.has(t.id)) continue;
-        matched += 1;
-        if (!seen.has(t.id)) {
-          seen.set(t.id, {
-            id: t.id,
-            subject: t.subject ?? undefined,
-            status: t.status ?? undefined,
-            priority: t.priority ?? undefined,
-            updated_at: t.updated_at ?? undefined,
+    allHints.flatMap((hint) =>
+      STATUS_PASSES.map(async (pass) => {
+        const fullHint = `${hint} ${pass.suffix}`;
+        const res = await mcp.contextA8C
+          .searchZendeskTickets(fullHint, { limit: 100 })
+          .catch(() => ({ ok: false as const, error: "search failed" }));
+        if (!res.ok) {
+          hintReports.push({
+            hint: `${hint} (${pass.label})`,
+            total: 0,
+            matched: 0,
+            failed: true,
           });
+          return;
         }
-      }
-      hintReports.push({
-        hint,
-        total: res.tickets.length,
-        matched,
-        failed: false,
-      });
-    }),
+        let matched = 0;
+        for (const t of res.tickets) {
+          if (!targetIds.has(t.id)) continue;
+          matched += 1;
+          // First write wins. With status-partitioned passes, each
+          // ticket's status pass is the authoritative one, so dedup
+          // is correct regardless of which hint queried first.
+          if (!seen.has(t.id)) {
+            seen.set(t.id, {
+              id: t.id,
+              subject: t.subject ?? undefined,
+              status: t.status ?? undefined,
+              priority: t.priority ?? undefined,
+              updated_at: t.updated_at ?? undefined,
+            });
+          }
+        }
+        hintReports.push({
+          hint: `${hint} (${pass.label})`,
+          total: res.tickets.length,
+          matched,
+          failed: false,
+        });
+      }),
+    ),
   );
 
   const result = await vault.refreshProjectZendeskMetadata(
