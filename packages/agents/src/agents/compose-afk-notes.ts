@@ -95,7 +95,7 @@ Required structure (single markdown post, in this order):
 3. **Per-project sections.** One H2 (## ) per project, ordered with hot / at-risk first, then active. Each section contains, in this order:
    - One-line status (Linear health/state if available; fallback to vault status).
    - 1-2 sentences of context for what's in motion.
-   - **Latest SITREP:** \`**Latest SITREP:** [project P2 post](p2_url)\` — REQUIRED whenever \`p2_url\` is provided in the input. Coverage TAM scrolls the P2 to find the most recent SITREP comment. Omit this line only when no p2_url is present.
+   - **Project P2:** \`**Project P2:** [project P2 post](p2_url)\` — REQUIRED whenever \`p2_url\` is provided in the input. Coverage TAM scrolls the P2 to find the most recent SITREP comment + other project context. Omit this line only when no p2_url is present.
    - **Primary Zendesk thread:** \`**Primary Zendesk thread:** [subject](url) — status\` — REQUIRED whenever \`primary_zendesk\` is provided. The user wants every project section to always carry a Zendesk entry point, even when there's nothing actively open. Use the provided primary_zendesk fields verbatim. Omit only when no primary_zendesk was passed.
    - **What to watch:** sub-bullet list — additional open Zendesk threads (link with subject) beyond the primary, open follow-ups partner-side, open Linear issues likely to land during the window. Skip the primary in this list (already linked above).
    - **If something blows up:** sub-line — who/where to escalate (default: coverage TAM, then the partner's account exec if known from the data).
