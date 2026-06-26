@@ -102,7 +102,7 @@ Audience + voice:
 
 Required structure (single markdown post, in this order):
 1. **Header line.** Bold-prefixed AFK window, e.g. "**AFK:** Mon Jun 30 – Fri Jul 4. **Coverage:** @coverage." Use the provided dates verbatim — don't reformat them past "Mon MMM D".
-2. **Intro paragraph.** 2-3 sentences. If \`intro_notes\` were provided, use them verbatim as the intro. Otherwise write a brief one explaining the absence and coverage handoff. End with "ping me on slack only if it's blocking — I'll check messages once a day."
+2. **Intro paragraph.** 2-3 sentences. If \`intro_notes\` were provided, use them verbatim as the intro. Otherwise write a brief one explaining the absence and pointing at the coverage TAM. Do NOT promise that the user will check messages, reply, or be reachable while AFK — Automattic AFK culture treats time out as fully off. Default close: "<coverage_handle> has the wheel — please send anything urgent their way." Adjust phrasing if intro_notes set a different tone, but never re-introduce a check-in commitment.
 3. **Per-project sections.** One H3 (### ) per project, ordered with hot / at-risk first, then active. Each section follows this EXACT shape and order — no extra prose, no "If something blows up", no "What to watch", no status one-liner:
 
    ### [Project Name](p2_url)
