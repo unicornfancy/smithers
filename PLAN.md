@@ -37,6 +37,21 @@ The call-transcript-prompt + follow-up automation cards shipped 2026-05-26. /set
 
 Trigger to revisit: Katie decides how she wants secondary TAMs tagged in Linear.
 
+## Kosh v2 gate handling — interactive auth passthrough
+
+**Status:** Kosh v2 (a8cteam51/kosh#16, 2026-07-06) added a reachability gate check to every skill. When the target URL loads a Coming Soon launchpad, password prompt, or private-site notice, Kosh pauses and fires a `PushNotification` asking the user to log in in the open browser window and say "continue." Smithers runs Kosh via `claude --print` — non-interactive — so that pause hangs the subprocess indefinitely; the QA run sits `running` until cancelled.
+
+**Workaround shipped 2026-07-06:** the QA launcher's Coming Soon tip explains the constraint and points at the WordPress.com Share Link URL as a gate-bypass. For unattended queue-all runs, Share Link URLs are the only working path today.
+
+**What lands when ready:**
+
+- Detect the gate-pause from Kosh's stdout stream (Kosh emits a well-known marker before pausing — check the actual output format when this is scoped).
+- Surface an in-app "Kosh paused — auth in the open browser, then click Continue" affordance on the run detail page. Play a browser notification so the user sees it even if the tab is backgrounded.
+- Provide a "Continue" button that writes to the subprocess's stdin OR — cleaner — restart Kosh with the session cookie already carried through. The session persistence approach may need Kosh-side cooperation.
+- Alternative shape: switch from `claude --print` to a headless interactive `claude` session that Smithers pipes to/from over a socket. Bigger lift but generalizes to any future Kosh interactivity.
+
+Blocked on: no active TAM has hit the gate-pause frequently enough to justify the plumbing yet — the Share Link workaround covers the common case. Revisit when a TAM without Share Link access needs to audit a gated site (probably during a partner-side rollout where staging is password-only).
+
 ## Release cadence — deferred decision
 
 Considered switching the Update Smithers card to pull the latest git tag instead of `origin/main` so a mid-day broken push doesn't reach users. Katie decided to keep pushing to `main` and manually nudge TAMs to update at release checkpoints. Revisit when we have enough users that a bad main commit is genuinely disruptive.
