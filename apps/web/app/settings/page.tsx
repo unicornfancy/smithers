@@ -11,6 +11,7 @@ import { IntervalJobCard } from "@/components/interval-job-card";
 import { McpHealthCard } from "@/components/mcp-health-card";
 import { PageShell } from "@/components/page-shell";
 import { RestartDevServerCard } from "@/components/restart-dev-server-card";
+import { UpdateKoshCard } from "@/components/update-kosh-card";
 import { UpdateSmithersCard } from "@/components/update-smithers-card";
 import { ScheduleCard } from "@/components/schedule-card";
 import { SettingsSection } from "@/components/settings-section";
@@ -187,6 +188,7 @@ export default async function SettingsPage() {
           >
             <RestartDevServerCard />
             <UpdateSmithersCard />
+            <UpdateKoshCard />
             <McpHealthCard />
             <HiveMindReconcileCard />
             <ActivityLogCard />
