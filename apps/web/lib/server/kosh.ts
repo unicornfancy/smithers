@@ -775,32 +775,40 @@ export interface RenderedReport {
 }
 
 /**
- * Invoke kosh's bundled `run-qa-report.sh` to convert JSON → the
- * user-facing report, then read the most recently-written report off
- * disk. Kosh v2 emits self-contained HTML (`<NAME>_<TYPE>_QA_REPORT_
- * <DATE>.html`); v1 wrote Markdown. We scan for HTML first and fall
- * back to `.md` so a mixed clone (updated Kosh code but old MD files
- * still on disk from prior runs) still surfaces something.
+ * Read the most recently-written report off disk. Kosh v2 emits
+ * self-contained HTML (`<NAME>_<TYPE>_QA_REPORT_<DATE>.html`)
+ * directly from its SKILL's Phase 5, so we don't strictly need the
+ * bundled `run-qa-report.sh` wrapper anymore. We still invoke it
+ * best-effort for backward compat with Kosh v1 clones (which wrote
+ * only JSON — the wrapper generated the report). If it fails
+ * (e.g. `--aeo` isn't in Kosh's shell wrapper's TEST_TYPE_LABEL
+ * lookup, so its post-check for the expected filename miscarries),
+ * we swallow and fall through — the SKILL almost certainly already
+ * wrote what we need. Scan for HTML first, fall back to `.md` for
+ * mixed-clone edge cases (updated Kosh code but old MD files still
+ * on disk from prior runs).
  */
 async function generateReport(
   koshPath: string,
   testType: QaTestType,
 ): Promise<RenderedReport | null> {
   const script = join(koshPath, "scripts", "run-qa-report.sh");
-  if (!existsSync(script)) return null;
-  const jsonPath = join(
-    "reports",
-    "data",
-    KOSH_TYPE_TO_OUTPUT_FILENAME[testType],
-  );
-  const flag = KOSH_TYPE_TO_REPORT_SCRIPT_FLAG[testType];
-  try {
-    await execFileAsync("bash", [script, jsonPath, flag], {
-      cwd: koshPath,
-      timeout: 30_000,
-    });
-  } catch {
-    return null;
+  if (existsSync(script)) {
+    const jsonPath = join(
+      "reports",
+      "data",
+      KOSH_TYPE_TO_OUTPUT_FILENAME[testType],
+    );
+    const flag = KOSH_TYPE_TO_REPORT_SCRIPT_FLAG[testType];
+    try {
+      await execFileAsync("bash", [script, jsonPath, flag], {
+        cwd: koshPath,
+        timeout: 30_000,
+      });
+    } catch {
+      // Non-fatal — the SKILL likely already wrote the report file
+      // during its own Phase 5. Continue to the directory scan.
+    }
   }
   return await readLatestReportFile(join(koshPath, "reports"));
 }
