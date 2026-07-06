@@ -457,6 +457,12 @@ async function launchSubprocess(args: {
   // stash the classification and let the process complete naturally
   // (Kosh's unattended branch exits promptly on its own).
   let detectedGate: QaGateType | null = null;
+  // Also watch for "Unknown command: /kosh:<type>" — happens when the
+  // user's Kosh clone is out of date relative to the test types
+  // Smithers exposes (e.g. `/kosh:aeo` added in Kosh PR #10). Gives
+  // the detail page an actionable "Update Kosh" affordance instead
+  // of a raw generic failure.
+  let detectedUnknownCommand: string | null = null;
 
   // Row was already marked running by drainQueue's atomic claim; just
   // stamp the pid now that spawn() has handed one back.
@@ -469,11 +475,15 @@ async function launchSubprocess(args: {
   child.stdout?.on("data", (chunk) => {
     const text = chunk.toString();
     if (!detectedGate) detectedGate = classifyGate(text);
+    if (!detectedUnknownCommand)
+      detectedUnknownCommand = classifyUnknownCommand(text);
     void appendLog(logPath, text);
   });
   child.stderr?.on("data", (chunk) => {
     const text = chunk.toString();
     if (!detectedGate) detectedGate = classifyGate(text);
+    if (!detectedUnknownCommand)
+      detectedUnknownCommand = classifyUnknownCommand(text);
     void appendLog(logPath, text);
   });
 
@@ -491,14 +501,16 @@ async function launchSubprocess(args: {
       const cur = await getQaRun(runId);
       if (cur?.status === "cancelled") return;
 
-      // Gate detection always wins over the normal exit path: even
-      // when Kosh exits cleanly (code=0) after its unattended-mode
-      // stop, there's no report JSON on disk and finalizeSuccess
-      // would raise a generic "kosh did not produce X" error. The
-      // structured failure_kind lets the detail page surface the
-      // retry-with-Share-Link affordance instead.
+      // Gate + unknown-command detection always win over the normal
+      // exit path: Kosh exits cleanly (code=0) after either, but no
+      // report JSON was produced so finalizeSuccess would raise a
+      // generic "kosh did not produce X" error. Structured
+      // failure_kind lets the detail page render the right
+      // recovery card.
       if (detectedGate) {
         await recordGateFailure(runId, detectedGate);
+      } else if (detectedUnknownCommand) {
+        await recordUnknownCommandFailure(runId, detectedUnknownCommand);
       } else if (code === 0 || code === null) {
         // Success path — pick up the report JSON, push to HM.
         try {
@@ -542,15 +554,20 @@ async function maybeUpdateKosh(
   logPath: string,
 ): Promise<void> {
   try {
+    // -uno excludes untracked files from the status output. Kosh runs
+    // leave behind report artifacts (screenshots, JSON dumps, temp
+    // worktrees under .claude/) — those can't conflict with a
+    // fast-forward pull, so blocking on them means the auto-update
+    // never runs for anyone who's used Kosh more than once.
     const { stdout: status } = await execFileAsync(
       "git",
-      ["-C", koshPath, "status", "--porcelain"],
+      ["-C", koshPath, "status", "--porcelain", "-uno"],
       { timeout: 5_000 },
     );
     if (status.trim().length > 0) {
       await appendLog(
         logPath,
-        `[kosh update] skipped — working tree has local changes\n`,
+        `[kosh update] skipped — tracked files have local changes\n`,
       );
       return;
     }
@@ -613,6 +630,40 @@ const GATE_LABEL: Record<QaGateType, string> = {
   password: "password",
   private: "private-site",
 };
+
+/**
+ * Persist an unknown-command failure so the detail page can render
+ * the "Update Kosh" recovery card. The command slug (e.g. "aeo") is
+ * stored in `failure_kind` so the UI can name it back to the user.
+ */
+async function recordUnknownCommandFailure(
+  runId: string,
+  command: string,
+): Promise<void> {
+  const db = await getDb();
+  db.prepare(
+    `UPDATE qa_runs
+       SET status = 'failed',
+           completed_at = datetime('now'),
+           error_message = ?,
+           failure_kind = ?
+     WHERE id = ?`,
+  ).run(
+    `Kosh doesn't recognize /kosh:${command} — your Kosh clone is out of date.`,
+    `unknown-command:${command}`,
+    runId,
+  );
+}
+
+/**
+ * Match Claude Code's "Unknown command: /kosh:<slug>" output when
+ * Kosh's clone hasn't been updated to include a command Smithers is
+ * invoking. Simple regex — Claude's error message is stable.
+ */
+function classifyUnknownCommand(text: string): string | null {
+  const m = /unknown command:\s*\/kosh:(\S+)/i.exec(text);
+  return m ? m[1]! : null;
+}
 
 /**
  * Classify a stdout chunk as a gate-detection event. Prefers the

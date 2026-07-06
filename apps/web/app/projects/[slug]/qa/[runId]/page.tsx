@@ -8,6 +8,7 @@ import { PageShell } from "@/components/page-shell";
 import { QaFindingsIssueBuilder } from "@/components/qa/qa-findings-issue-builder";
 import { QaGateFailedCard } from "@/components/qa/qa-gate-failed-card";
 import { QaRunControls } from "@/components/qa/qa-run-controls";
+import { QaUnknownCommandCard } from "@/components/qa/qa-unknown-command-card";
 import { QaVaultPathChips } from "@/components/qa/qa-vault-path-chips";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -109,6 +110,11 @@ export default async function QaRunDetailPage({
                 | "password"
                 | "private") ?? "coming-soon"
             }
+          />
+        ) : run.status === "failed" &&
+          run.failure_kind?.startsWith("unknown-command:") ? (
+          <QaUnknownCommandCard
+            command={run.failure_kind.slice("unknown-command:".length)}
           />
         ) : run.status === "failed" ? (
           <Card className="border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/20">

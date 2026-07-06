@@ -74,14 +74,17 @@ export async function POST() {
     const branchRes = await git("rev-parse", "--abbrev-ref", "HEAD");
     const branch = branchRes.stdout.trim();
 
-    const statusRes = await git("status", "--porcelain");
+    // Ignore untracked files (`-uno`) so screenshot artifacts /
+    // scratch dirs left over from earlier Kosh runs don't wedge the
+    // update — only tracked-file modifications actually block a pull.
+    const statusRes = await git("status", "--porcelain", "-uno");
     if (statusRes.stdout.trim().length > 0) {
       return NextResponse.json(
         {
           ok: false,
           reason: "dirty-tree",
           message:
-            "Kosh clone has uncommitted local changes. Commit or stash them before updating.",
+            "Kosh clone has uncommitted changes to tracked files. Commit or stash them before updating.",
         },
         { status: 409 },
       );
