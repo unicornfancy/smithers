@@ -44,7 +44,7 @@ export async function queueAllQaRunsAction(input: {
   target_url: string;
   env?: QaEnv;
 }): Promise<ActionResult<{ run_ids: string[] }>> {
-  const types: QaTestType[] = ["functional-design", "performance", "a11y"];
+  const types: QaTestType[] = ["functional-design", "performance", "a11y", "aeo"];
   const ids: string[] = [];
   for (const t of types) {
     const res = await startQaRun({
@@ -58,7 +58,7 @@ export async function queueAllQaRunsAction(input: {
       return {
         ok: false,
         reason: res.reason,
-        message: `Queued ${ids.length}/3 — then ${t} failed: ${res.message ?? res.reason}`,
+        message: `Queued ${ids.length}/${types.length} — then ${t} failed: ${res.message ?? res.reason}`,
       };
     }
     ids.push(res.run_id);

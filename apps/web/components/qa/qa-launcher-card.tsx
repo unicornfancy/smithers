@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-type TestType = "functional-design" | "performance" | "a11y";
+type TestType = "functional-design" | "performance" | "a11y" | "aeo";
 type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
 interface PendingRun {
@@ -53,6 +53,7 @@ const TEST_LABEL: Record<TestType, string> = {
   "functional-design": "Functional & design",
   performance: "Performance",
   a11y: "Accessibility",
+  aeo: "AEO",
 };
 
 export function QaLauncherCard({
@@ -121,7 +122,7 @@ export function QaLauncherCard({
         target_url: url.trim(),
       });
       if (res.ok) {
-        toast.success("Queued all 3 audits");
+        toast.success("Queued all 4 audits");
         router.refresh();
       } else {
         toast.error(res.message ?? res.reason);
@@ -221,8 +222,8 @@ export function QaLauncherCard({
           </div>
         ) : null}
 
-        <div className="grid gap-2 sm:grid-cols-3">
-          {(["functional-design", "performance", "a11y"] as TestType[]).map((t) => (
+        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-4">
+          {(["functional-design", "performance", "a11y", "aeo"] as TestType[]).map((t) => (
             <Button
               key={t}
               variant="default"
@@ -253,7 +254,7 @@ export function QaLauncherCard({
           ) : (
             <ListPlus className="size-3.5" />
           )}
-          Queue all three (runs sequentially)
+          Queue all four (runs sequentially)
         </Button>
 
         <details className="text-muted-foreground border-t pt-3 text-xs">
@@ -269,7 +270,7 @@ export function QaLauncherCard({
               this project&apos;s Hive Mind.
             </p>
             <div className="grid gap-2 sm:grid-cols-3">
-              {(["functional-design", "performance", "a11y"] as TestType[]).map(
+              {(["functional-design", "performance", "a11y", "aeo"] as TestType[]).map(
                 (t) => (
                   <Button
                     key={t}

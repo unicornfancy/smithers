@@ -25,6 +25,7 @@ const TEST_LABEL: Record<string, string> = {
   "functional-design": "Functional & design",
   performance: "Performance",
   a11y: "Accessibility",
+  aeo: "AEO (Answer Engine Optimization)",
 };
 
 export async function generateMetadata({
@@ -48,7 +49,7 @@ export default async function QaRunDetailPage({
     getVault(),
   ]);
   if (!result) notFound();
-  const { run, md, log, json } = result;
+  const { run, md, html, log, json } = result;
   if (run.project_slug !== slug) notFound();
 
   const findings = parseKoshFindings(json);
@@ -111,6 +112,7 @@ export default async function QaRunDetailPage({
           <QaVaultPathChips
             jsonAbsPath={vaultPaths.json_abs_path}
             mdAbsPath={vaultPaths.md_abs_path}
+            htmlAbsPath={vaultPaths.html_abs_path}
           />
         ) : null}
 
@@ -123,15 +125,43 @@ export default async function QaRunDetailPage({
           />
         ) : null}
 
-        {md ? (
+        {html ? (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Report</CardTitle>
               <p className="text-muted-foreground text-xs">
                 Saved to Hive Mind at{" "}
                 <code className="bg-muted rounded px-1 text-[11px]">
-                  {run.report_md_relpath}
+                  {run.report_html_relpath}
                 </code>
+              </p>
+            </CardHeader>
+            <CardContent>
+              {/* Kosh's HTML output is self-contained (inline CSS/JS,
+                  embedded screenshots). Render inside a sandboxed iframe
+                  so its styles don't bleed into Smithers's chrome and any
+                  JS runs isolated from the parent origin. allow-scripts
+                  covers the collapsible-section interactivity; no other
+                  permissions granted. srcDoc lets us stream the body
+                  from server props without a separate API round-trip. */}
+              <iframe
+                title="Kosh QA report"
+                srcDoc={html}
+                sandbox="allow-scripts"
+                className="h-[80vh] w-full rounded border"
+              />
+            </CardContent>
+          </Card>
+        ) : md ? (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Report (Markdown — legacy)</CardTitle>
+              <p className="text-muted-foreground text-xs">
+                Saved to Hive Mind at{" "}
+                <code className="bg-muted rounded px-1 text-[11px]">
+                  {run.report_md_relpath}
+                </code>{" "}
+                — pre-Kosh v2 run. Newer runs render as inline HTML instead.
               </p>
             </CardHeader>
             <CardContent>

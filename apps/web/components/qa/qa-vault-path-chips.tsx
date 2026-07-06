@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 interface Props {
   jsonAbsPath: string | null;
   mdAbsPath: string | null;
+  htmlAbsPath?: string | null;
 }
 
 /**
@@ -21,14 +22,26 @@ interface Props {
  * in browsers — we render them with `download` and a friendly tooltip
  * so the user knows what to expect.
  */
-export function QaVaultPathChips({ jsonAbsPath, mdAbsPath }: Props) {
-  if (!jsonAbsPath && !mdAbsPath) return null;
+export function QaVaultPathChips({
+  jsonAbsPath,
+  mdAbsPath,
+  htmlAbsPath,
+}: Props) {
+  if (!jsonAbsPath && !mdAbsPath && !htmlAbsPath) return null;
+  const anyPath = htmlAbsPath ?? mdAbsPath ?? jsonAbsPath;
   return (
     <Card>
       <CardContent className="flex flex-wrap items-center gap-2 py-3">
         <span className="text-muted-foreground mr-1 text-xs font-medium uppercase tracking-wide">
           Saved at
         </span>
+        {htmlAbsPath ? (
+          <PathChip
+            label="HTML"
+            icon={<FileText className="size-3.5" />}
+            path={htmlAbsPath}
+          />
+        ) : null}
         {mdAbsPath ? (
           <PathChip
             label="Markdown"
@@ -43,7 +56,7 @@ export function QaVaultPathChips({ jsonAbsPath, mdAbsPath }: Props) {
             path={jsonAbsPath}
           />
         ) : null}
-        {(mdAbsPath ?? jsonAbsPath) ? (
+        {anyPath ? (
           <Button
             variant="ghost"
             size="sm"
@@ -51,7 +64,7 @@ export function QaVaultPathChips({ jsonAbsPath, mdAbsPath }: Props) {
             className="ml-auto h-7 gap-1.5 text-xs"
           >
             <a
-              href={`file://${encodeURI((mdAbsPath ?? jsonAbsPath)!.replace(/\/[^/]+$/, ""))}`}
+              href={`file://${encodeURI(anyPath.replace(/\/[^/]+$/, ""))}`}
               target="_blank"
               rel="noreferrer"
             >

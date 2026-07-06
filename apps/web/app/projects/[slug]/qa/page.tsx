@@ -104,7 +104,7 @@ export default async function ProjectQaPage({
               low: r.counts_low,
             },
             source: r.source,
-            has_md: Boolean(r.report_md_relpath),
+            has_md: Boolean(r.report_html_relpath || r.report_md_relpath),
           }))}
         />
       </PageShell>

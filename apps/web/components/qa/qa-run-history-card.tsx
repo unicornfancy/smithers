@@ -4,7 +4,7 @@ import { ClipboardCheck, FileWarning } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-type TestType = "functional-design" | "performance" | "a11y";
+type TestType = "functional-design" | "performance" | "a11y" | "aeo";
 type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
 interface Run {
@@ -34,6 +34,7 @@ const TEST_LABEL: Record<TestType, string> = {
   "functional-design": "Functional & design",
   performance: "Performance",
   a11y: "Accessibility",
+  aeo: "AEO",
 };
 
 const STATUS_TONE: Record<RunStatus, string> = {

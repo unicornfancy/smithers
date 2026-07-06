@@ -107,6 +107,7 @@ const TEST_LABEL: Record<QaTestType, string> = {
   "functional-design": "Functional & design",
   performance: "Performance",
   a11y: "Accessibility",
+  aeo: "AEO",
 };
 
 export interface BuildIssueInput {

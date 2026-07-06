@@ -154,6 +154,7 @@ function migrationV4(db: DB): void {
       log_path TEXT,
       report_json_relpath TEXT,
       report_md_relpath TEXT,
+      report_html_relpath TEXT,
       counts_critical INTEGER,
       counts_high INTEGER,
       counts_medium INTEGER,
@@ -164,4 +165,14 @@ function migrationV4(db: DB): void {
     CREATE INDEX IF NOT EXISTS idx_qa_runs_project
       ON qa_runs(project_slug, started_at DESC);
   `);
+
+  // Additive migration for existing DBs — Kosh v2 emits HTML reports
+  // instead of MD, so we track the HTML path alongside the legacy MD
+  // path (both stay readable so historical MD runs still render).
+  const cols = db
+    .prepare(`PRAGMA table_info(qa_runs)`)
+    .all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "report_html_relpath")) {
+    db.exec(`ALTER TABLE qa_runs ADD COLUMN report_html_relpath TEXT;`);
+  }
 }

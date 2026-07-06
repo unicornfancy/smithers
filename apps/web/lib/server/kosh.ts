@@ -23,8 +23,8 @@ import { getVault } from "./vault";
 
 const execFileAsync = promisify(execFile);
 
-/** Kosh test types — what /kosh:<type> the user can invoke. */
-export type QaTestType = "functional-design" | "performance" | "a11y";
+/** Kosh test types — what /kosh:<type> the user can invoke. `aeo` was added in Kosh v2 (PR #10). */
+export type QaTestType = "functional-design" | "performance" | "a11y" | "aeo";
 
 /** The environment the URL points at, fed to the kosh skills so they adjust strictness. */
 export type QaEnv = "local" | "development" | "staging" | "production";
@@ -52,7 +52,10 @@ export interface QaRunRow {
   pid: number | null;
   log_path: string | null;
   report_json_relpath: string | null;
+  /** Legacy — Kosh v1 wrote MD; kept null for v2 HTML runs. Read paths accept both. */
   report_md_relpath: string | null;
+  /** Kosh v2 emits self-contained HTML instead of MD. Populated for new runs. */
+  report_html_relpath: string | null;
   counts_critical: number | null;
   counts_high: number | null;
   counts_medium: number | null;
@@ -90,12 +93,14 @@ const KOSH_TYPE_TO_OUTPUT_FILENAME: Record<QaTestType, string> = {
   "functional-design": "qa-report-functional.json",
   performance: "qa-report-performance.json",
   a11y: "qa-report-accessibility.json",
+  aeo: "qa-report-aeo.json",
 };
 
 const KOSH_TYPE_TO_REPORT_SCRIPT_FLAG: Record<QaTestType, string> = {
   "functional-design": "--functional",
   performance: "--performance",
   a11y: "--accessibility",
+  aeo: "--aeo",
 };
 
 /** The folder inside the partner/project HM directory where reports land. */
@@ -159,6 +164,7 @@ function rowToQaRun(row: Record<string, unknown>): QaRunRow {
     log_path: (row.log_path as string | null) ?? null,
     report_json_relpath: (row.report_json_relpath as string | null) ?? null,
     report_md_relpath: (row.report_md_relpath as string | null) ?? null,
+    report_html_relpath: (row.report_html_relpath as string | null) ?? null,
     counts_critical:
       row.counts_critical === null ? null : Number(row.counts_critical),
     counts_high: row.counts_high === null ? null : Number(row.counts_high),
@@ -544,13 +550,13 @@ async function finalizeSuccess(args: {
     );
   }
 
-  const md = await generateMarkdownReport(koshPath, testType).catch(() => null);
+  const rendered = await generateReport(koshPath, testType).catch(() => null);
   await uploadAndStamp({
     runId,
     projectSlug,
     testType,
     json,
-    md,
+    rendered,
   });
 }
 
@@ -573,16 +579,25 @@ async function readKoshReportJson(
   }
 }
 
+export interface RenderedReport {
+  /** Extension of the file we found — `html` for Kosh v2, `md` for legacy v1 runs. */
+  ext: "html" | "md";
+  /** Full file body. */
+  body: string;
+}
+
 /**
- * Invoke kosh's bundled run-qa-report.sh to convert JSON → Markdown.
- * Returns the rendered MD or null when the script isn't there / fails.
- * The script always writes the MD to `reports/<UPPER>_<TYPE>_QA_REPORT_<DATE>.md`
- * — we then read that file off disk.
+ * Invoke kosh's bundled `run-qa-report.sh` to convert JSON → the
+ * user-facing report, then read the most recently-written report off
+ * disk. Kosh v2 emits self-contained HTML (`<NAME>_<TYPE>_QA_REPORT_
+ * <DATE>.html`); v1 wrote Markdown. We scan for HTML first and fall
+ * back to `.md` so a mixed clone (updated Kosh code but old MD files
+ * still on disk from prior runs) still surfaces something.
  */
-async function generateMarkdownReport(
+async function generateReport(
   koshPath: string,
   testType: QaTestType,
-): Promise<string | null> {
+): Promise<RenderedReport | null> {
   const script = join(koshPath, "scripts", "run-qa-report.sh");
   if (!existsSync(script)) return null;
   const jsonPath = join(
@@ -599,22 +614,45 @@ async function generateMarkdownReport(
   } catch {
     return null;
   }
-  // Find the most recently written .md in reports/
-  const reportsDir = join(koshPath, "reports");
+  return await readLatestReportFile(join(koshPath, "reports"));
+}
+
+async function readLatestReportFile(
+  reportsDir: string,
+): Promise<RenderedReport | null> {
   try {
     const entries = await readdir(reportsDir, { withFileTypes: true });
-    const mdFiles = await Promise.all(
+    const candidates = await Promise.all(
       entries
-        .filter((e) => e.isFile() && e.name.endsWith(".md"))
+        .filter(
+          (e) =>
+            e.isFile() &&
+            (e.name.endsWith(".html") || e.name.endsWith(".md")),
+        )
         .map(async (e) => {
           const full = join(reportsDir, e.name);
           const s = await stat(full);
-          return { path: full, mtime: s.mtimeMs };
+          return {
+            path: full,
+            mtime: s.mtimeMs,
+            ext: e.name.endsWith(".html") ? ("html" as const) : ("md" as const),
+          };
         }),
     );
-    if (mdFiles.length === 0) return null;
-    mdFiles.sort((a, b) => b.mtime - a.mtime);
-    return await readFile(mdFiles[0]!.path, "utf-8");
+    if (candidates.length === 0) return null;
+    // Prefer HTML when a same-timestamp pair exists; otherwise most-recent
+    // wins. Simplest signal: sort HTML above MD when mtime is very close
+    // (within 5 seconds).
+    candidates.sort((a, b) => {
+      const dt = b.mtime - a.mtime;
+      if (Math.abs(dt) < 5_000 && a.ext !== b.ext) {
+        return a.ext === "html" ? -1 : 1;
+      }
+      return dt;
+    });
+    const winner = candidates[0]!;
+    const body = await readFile(winner.path, "utf-8");
+    return { ext: winner.ext, body };
   } catch {
     return null;
   }
@@ -631,9 +669,9 @@ async function uploadAndStamp(args: {
   projectSlug: string;
   testType: QaTestType;
   json: unknown;
-  md: string | null;
+  rendered: RenderedReport | null;
 }): Promise<void> {
-  const { runId, projectSlug, testType, json, md } = args;
+  const { runId, projectSlug, testType, json, rendered } = args;
   const vault = await getVault();
   const project = await vault.readProject(projectSlug);
   if (!project) throw new Error(`Project "${projectSlug}" not found in vault`);
@@ -649,7 +687,9 @@ async function uploadAndStamp(args: {
   const stamp = stampForFilename(new Date());
   const baseName = `${stamp}-${testType}`;
   const jsonRel = `${HM_REPORTS_FOLDER}/${baseName}.json`;
-  const mdRel = `${HM_REPORTS_FOLDER}/${baseName}.md`;
+  const renderedRel = rendered
+    ? `${HM_REPORTS_FOLDER}/${baseName}.${rendered.ext}`
+    : null;
 
   const mcp = await getMcpClient();
   await mcp.hiveMind.writeProjectFile(
@@ -658,12 +698,12 @@ async function uploadAndStamp(args: {
     jsonRel,
     JSON.stringify(json, null, 2) + "\n",
   );
-  if (md) {
+  if (rendered && renderedRel) {
     await mcp.hiveMind.writeProjectFile(
       partnerSlug,
       projectSlugHm,
-      mdRel,
-      md,
+      renderedRel,
+      rendered.body,
     );
   }
   await mcp.hiveMind
@@ -672,12 +712,15 @@ async function uploadAndStamp(args: {
 
   const counts = extractIssueCounts(json);
   const db = await getDb();
+  const htmlRel = rendered?.ext === "html" ? renderedRel : null;
+  const mdRel = rendered?.ext === "md" ? renderedRel : null;
   db.prepare(
     `UPDATE qa_runs
        SET status = 'completed',
            completed_at = datetime('now'),
            report_json_relpath = ?,
            report_md_relpath = ?,
+           report_html_relpath = ?,
            counts_critical = ?,
            counts_high = ?,
            counts_medium = ?,
@@ -685,7 +728,8 @@ async function uploadAndStamp(args: {
        WHERE id = ?`,
   ).run(
     jsonRel,
-    md ? mdRel : null,
+    mdRel,
+    htmlRel,
     counts.critical,
     counts.high,
     counts.medium,
@@ -782,7 +826,7 @@ export async function ingestQaRun(
     };
   }
   const json = JSON.parse(await readFile(jsonPath, "utf-8")) as unknown;
-  const md = await generateMarkdownReport(koshPath, input.test_type).catch(
+  const rendered = await generateReport(koshPath, input.test_type).catch(
     () => null,
   );
 
@@ -807,7 +851,7 @@ export async function ingestQaRun(
       projectSlug: input.project_slug,
       testType: input.test_type,
       json,
-      md,
+      rendered,
     });
   } catch (err) {
     await recordError(
@@ -831,6 +875,7 @@ export async function readQaRunReport(
   run: QaRunRow;
   json: unknown | null;
   md: string | null;
+  html: string | null;
   log: string | null;
 } | null> {
   const run = await getQaRun(runId);
@@ -855,9 +900,10 @@ export async function readQaRunReport(
     }
   };
 
-  const [jsonRaw, md] = await Promise.all([
+  const [jsonRaw, md, html] = await Promise.all([
     tryRead(run.report_json_relpath),
     tryRead(run.report_md_relpath),
+    tryRead(run.report_html_relpath),
   ]);
   let json: unknown | null = null;
   if (jsonRaw) {
@@ -877,7 +923,7 @@ export async function readQaRunReport(
     }
   }
 
-  return { run, json, md, log };
+  return { run, json, md, html, log };
 }
 
 /**
@@ -891,6 +937,7 @@ export async function getQaRunVaultPaths(
 ): Promise<{
   json_abs_path: string | null;
   md_abs_path: string | null;
+  html_abs_path: string | null;
 } | null> {
   const run = await getQaRun(runId);
   if (!run) return null;
@@ -902,7 +949,7 @@ export async function getQaRunVaultPaths(
     project?.hive_mind_partner_slug ?? project?.partner ?? null;
   const projectSlugHm = project?.hive_mind_project_slug ?? project?.slug ?? null;
   if (!hivePath || !partnerSlug || !projectSlugHm) {
-    return { json_abs_path: null, md_abs_path: null };
+    return { json_abs_path: null, md_abs_path: null, html_abs_path: null };
   }
   return {
     json_abs_path: run.report_json_relpath
@@ -910,6 +957,9 @@ export async function getQaRunVaultPaths(
       : null,
     md_abs_path: run.report_md_relpath
       ? hmProjectAbsPath(hivePath, partnerSlug, projectSlugHm, run.report_md_relpath)
+      : null,
+    html_abs_path: run.report_html_relpath
+      ? hmProjectAbsPath(hivePath, partnerSlug, projectSlugHm, run.report_html_relpath)
       : null,
   };
 }
