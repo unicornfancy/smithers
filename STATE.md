@@ -1,6 +1,97 @@
 # STATE.md — Smithers (snapshot)
 
-_Updated 2026-06-02_
+_Updated 2026-07-06_
+
+## Just completed (2026-06-24 → 2026-07-06 — v1.0 release + polish sweep)
+
+The month between v0.2.1 and 1.0. Two large new features (SITREP + AFK), a /today expansion, Kosh QA cleanup, an in-app updater, and about a dozen fixes that shook out as more TAMs started installing.
+
+### v1.0 shipped (ac702e9, 09a7a43, 14fb68e onward)
+
+- Sidebar label `v0.0.1 · pre-alpha` → `v1.0.0`; the AppHeader "pre-alpha" chip dropped (09a7a43).
+- OVERVIEW.md dropped its Draft banner; added /today's new cards, /afk, /digest, and /projects/[slug]/qa to the Surfaces table; added SITREP / AFK / Kosh QA to AI affordances; documented Update Smithers next to Restart; replaced "Pre-release status" TODO with a 1.0 release status listing what's in and what's deferred.
+- README pitch refreshed for Waiting on you / SITREP / AFK / self-updating. ONBOARDING callout for Update Smithers next to Restart.
+- Tagged `v1.0.0` and pushed. GitHub Release created with the same content.
+- Companion vault draft `Drafts/Smithers v1.0 P2 announcement.md` for the internal P2 post.
+
+### `/today` expansion (993a545, c5f205f, 2e36427, 852784f, 7ad87f7)
+
+Three new /today cards inserted after the highlight banner:
+- **Waiting on you** — cross-project Zendesk threads where the partner replied last, sorted by most-recent reply first (older = false-positive tail). Shared `makeAuthorNameMatcher` extracted from `weekly-facts.ts` so /today and the weekly-update generator use the same signature logic. Matcher gained a first-name-in-tail fallback so "Best, / Katie" style two-line sign-offs classify correctly (852784f).
+- **@-Mentions** — Linear `*Mention*` notification_type pings + GitHub @-mention pings filtered from the existing Pings feed.
+- **Deadlines** — Linear projects with `targetDate` inside a configurable window (default 14 days; `today.deadlines_window_days` in config, editable from Settings → Workflow).
+
+Plus new `runZendeskStatusSyncJob` scheduler + `/api/jobs/zendesk-status-sync` — periodic re-poll of every attached ticket across all partner/team projects so the Waiting on you card doesn't surface tickets someone else already closed. Per-TAM signature aliases for the matcher (nicknames, initials, last-name-only sig) noted in PLAN as a deferred enhancement (7ad87f7).
+
+### SITREP composer (4d43d18, 2c0aa00, f8b6ced, ed177be)
+
+Workbench Knowledge tab → paste-ready P2 comment for a project's status post.
+
+- New `compose-sitrep` agent + `composeSitrepAction` + `GenerateSitrepButton` + section card. Gathers Linear (project + updates + open issues), primary Zendesk thread + recent activity, open follow-ups; drafts markdown with a status one-liner (with Linear health + link), latest activity, primary Zendesk thread, open items / what's next. Copy-only — no auto-post (4d43d18).
+- Fix: primary Zendesk recent activity was slicing the wrong end of a newest-first array (`slice(-6)` = oldest 6). Now `slice(0, 6).reverse()` per the field's oldest-first contract, so the agent sees fresh partner replies (2c0aa00).
+- Prompt tweaks: Linear project link appended to the Status line when set (f8b6ced); `## SITREP - <iso_date>` H2 title; primary-Zendesk line labeled `**Primary Zendesk thread:**` (ed177be).
+
+### AFK handoff post (a56549a, 7084c71, 72ea27f, aa83c39, 14fb68e)
+
+New `/afk` route + sidebar entry + `compose-afk-notes` agent. Pick date range + coverage handle + optional intro; per-project Linear/Zendesk/follow-up snapshots stitched into a single markdown post ordered hot / at-risk first, then active. Copy-only.
+
+Later restructured to a strict per-project shape after Katie flagged the earlier layout as noisy:
+
+```
+### [Project Name](p2_url)
+**[Primary Zendesk thread](url). [Slack channel](url). [Linear](url).**
+TAM Coverage: <handle>
+Latest Activity: <summary>
+Next Steps: <coverage-period work only>
+```
+
+- Bold-line link tokens degrade individually; the whole line drops only if all three URLs are missing. H3 falls back to plain text when p2_url is missing.
+- `resolveSlackUrl` helper normalizes `project.slack_channel` (accepts full URL, bare channel id `C0BBXNBDKCP`, or plain name → `a8c.slack.com/channels/<name>`).
+- Intro no longer promises "I'll check messages once a day" — Automattic AFK culture treats time off as fully off. Default close now reads `"<coverage_handle> has the wheel — please send anything urgent their way."` (14fb68e).
+- Linear-secondary-TAM lookup for a per-project coverage override (`tam_coverage_override`) plumbed but unfilled in v1 — see PLAN.
+
+### Kosh QA polish (7b80461, 05546eb, c01d48a)
+
+- Cancel button on every queued / running row in the launcher card (was only on the detail page); toast text differs by state ("Cancelled run" vs "Removed from queue").
+- Coming Soon tip above the URL input pointing at the WPCOM Share Link workaround for splash-mode sites.
+- Fixed `spawn gh ENOENT` in the Findings → GH Issue flow. Next.js server actions can run with a stripped PATH that omits Homebrew locations. First attempt used `/usr/bin/which gh` — but `which` searches the *spawn's* PATH, which was the very thing missing `/usr/local/bin`. Final fix: probe `/opt/homebrew/bin/gh`, `/usr/local/bin/gh`, `/usr/bin/gh` directly; `SMITHERS_GH_PATH` env override for exotic installs (05546eb → c01d48a).
+
+### Update Smithers card (397e726)
+
+Settings → Diagnostics grew an **Update Smithers** card next to Restart. `POST /api/dev/update` runs `git fetch + pull --rebase --ff-only origin main` from the repo root; refuses to run with a dirty tree or off `main`. Reports whether `package.json` / `pnpm-lock.yaml` moved and hints `pnpm install + Restart` when they did. `GET` on the same route serves the current branch + HEAD oneline so the card always shows what version is running. No auto-install / auto-restart.
+
+### Call processing dialog stays open across accepts (f16c516)
+
+The `ProcessCallDialog` was mounted inside `unprocessedRecordings.map(...)` on the workbench. `analyzeCallAction` writes a Call Notes file, so after analyze the recording is technically "processed" — the next `router.refresh()` inside `acceptActions` re-rendered the workbench, the unprocessed row unmounted, and the dialog vanished before the user could push follow-ups or decisions. Moved the single `router.refresh()` to Dialog `onOpenChange` (fires on close), and dropped it from the three accept handlers.
+
+Same commit: `acceptCallDecisionsAction` was wrapping its HM notes.md mirror in `try { ... } catch { /* swallow */ }`, hiding failures. Now returns an optional `warnings[]` that the dialog surfaces via `toast.warning`. Vault-only projects also surface a warning that the Project Log panel doesn't read the body's `## Decisions` section.
+
+### Decisions log fix — bootstrap missing notes.md (c84772a)
+
+The HM MCP's `add-project-note` tool errors out when `notes.md` doesn't exist. HM projects scaffolded outside the standard `create-project` flow (e.g. WordPress Certifications) have `brief.md` + `call-transcripts/` but no `notes.md`, so every decision-log mirror silently failed. New `ensureHiveMindProjectNotes` vault helper seeds the file with a `# Notes` heading on first write. Idempotent.
+
+### Zendesk refresh saga (974e86f → 554630d → 4c55011 → e68e7b3)
+
+The workbench Refresh button was missing newly-closed tickets on The Pocket NYC (60+ tickets). Four commits before it worked:
+
+1. Lift `per_page` from 50 to Zendesk's API ceiling of 100 (974e86f). Not enough alone.
+2. Dropped the added `sort_by`/`sort_order` — the MCP tool likely doesn't whitelist them, so the whole call was rejecting silently. Added per-hint diagnostics to the toast so we could see hit counts, matched counts, and unseen ticket IDs (554630d).
+3. Partitioned the search into 3 status-scoped passes per hint (`status<solved`, `status:solved`, `status:closed`) so each bucket gets its own 100-row window (4c55011). Still missed 8 of 12 attached tickets.
+4. Root cause: the 8 missing tickets had subjects like "Google Site Kit setup" — partner-related but the partner name appeared nowhere in searchable text, so text-hint search literally could not match them. Fix: plumb partner contact emails from `hiveMindPartner.contacts[]` and add `requester:<email>` search passes alongside text hints (e68e7b3). For The Pocket that's now 2 hints × 3 statuses + 2 emails × 3 statuses = 12 total searches per refresh — enough to catch every attached ticket.
+
+### Workbench MCP timeout guards (a7a23fb)
+
+`Promise.all` block on the project workbench had three MCP calls with no `.catch()` — `contextA8C.listProjectActivity`, `hiveMind.getPartner`, `transcription.listRecordings`. A fresh user with unauthed MCPs would hit MCP -32001 and crash the whole page render. Each now degrades to an empty result matching the pattern the rest of the block already uses.
+
+### React key + stop-token fixes for the calls list (9a59623, 383b326)
+
+- `ProcessedCallRow` used `recording_id || title` as its React key. Legacy hand-saved Call Notes have no recording_id (they route through the filename-fallback path added earlier); Dropbox conflict-resolution + Fathom's `(1)` / `(2)` exports can produce multiple files with identical extracted titles → duplicate key warning, possibly dropped rows. New `rowKey()` falls back to `title + recorded_at + index`.
+- `partner: Automattic` internal projects (Certifications, Transparency) were claiming every Fathom recording / orphan Call Notes file because the partner tokenized to `automattic` — the company prefix on every internal call. Added `automattic` + `a8c` to `STOP_TOKENS` in `recording-match.ts`.
+
+### Small fixes worth logging
+
+- **Drafts archive 404** (d68a3f7) — path-derived `local:Drafts/<name>` ids change when the file moves to `Drafts/Archived Drafts/`; `router.refresh()` on the same URL then 404'd. Push to `/drafts` after archive instead.
+- **Legacy Call Notes filename fallback** (220442a) — `Call Notes/` files without frontmatter (hand-saved Fathom exports) never surfaced on the workbench. New `listOrphanCallNotes()` walks the folder for files lacking `project_slug`; page filters via the existing `recordingMatchesProject`; merges as processed-call rows with empty `recording_id` (UI suppresses Process/View buttons — just shows date + title).
 
 ## Just completed (2026-06-02 PM — Ask Smithers Cmd-K palette: A + B + C)
 

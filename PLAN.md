@@ -27,6 +27,20 @@ The call-transcript-prompt + follow-up automation cards shipped 2026-05-26. /set
 - **Future follow-up automations** — auto-draft a nudge when a follow-up crosses the escalate threshold. Settings already exposes the threshold day counts; the auto-draft trigger is the next slice.
 - **Signature aliases for the Zendesk author-name matcher** — the matcher in `lib/server/author-name-matcher.ts` reads `identity.name` and tries (a) full name anywhere, (b) first name in body tail. Covers ~90% of TAMs out of the box. Edges where it'd miss: nicknames (Robert → Bob), last-name-only sign-offs ("— Smith"), initials, unusual styles. Shape: add `identity.signature_aliases: string[]` config + a small "Signature aliases" input on `/setup` + `/settings → Identity`, one alias per line, tested same as the first-name tail fallback. ~30 lines total. Defer until a TAM actually trips on this — telling them "set your nickname as identity.name" is the workaround in the meantime.
 
+## AFK — Linear-secondary-TAM lookup for per-project coverage override
+
+`compose-afk-notes` already carries a `tam_coverage_override` slot per `AfkProjectSlice`; the AFK action just leaves it undefined so the form's global `coverage_handle` is used uniformly. To honor Katie's original ask that per-project coverage can come from Linear instead of the form default:
+
+- Extend the Linear client with `getProjectMembers(projectId)` (Linear GraphQL exposes `project.members[]`).
+- In `generateAfkPostAction`, when a project has `linear_project_id`, fetch members, filter for someone tagged "secondary TAM" (convention TBD — could be a Linear label, a description-line pattern, or "second lead"), and populate `tam_coverage_override` with the resolved handle.
+- The agent prompt already uses the override when set (see the AFK "TAM Coverage" rules block).
+
+Trigger to revisit: Katie decides how she wants secondary TAMs tagged in Linear.
+
+## Release cadence — deferred decision
+
+Considered switching the Update Smithers card to pull the latest git tag instead of `origin/main` so a mid-day broken push doesn't reach users. Katie decided to keep pushing to `main` and manually nudge TAMs to update at release checkpoints. Revisit when we have enough users that a bad main commit is genuinely disruptive.
+
 ## Background job scheduling — remaining jobs
 
 Daily briefing, ping monitor, Fathom sync, and Hive Mind sync all shipped 2026-05-26→27. Remaining:
