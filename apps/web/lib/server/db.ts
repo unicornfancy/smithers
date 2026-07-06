@@ -7,7 +7,7 @@ import Database, { type Database as DB } from "better-sqlite3";
 
 import { loadConfig } from "./config";
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 let cached: DB | null = null;
 let cachedPath: string | null = null;
@@ -75,7 +75,8 @@ function applyMigrations(db: DB): void {
   if (current < 2) migrationV2(db);
   if (current < 3) migrationV3(db);
   if (current < 4) migrationV4(db);
-  // Future migrations land here as `if (current < 5) migrationV5(db); ...`
+  if (current < 5) migrationV5(db);
+  // Future migrations land here as `if (current < 6) migrationV6(db); ...`
 
   db.prepare(
     "INSERT INTO meta(key, value) VALUES('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -165,14 +166,29 @@ function migrationV4(db: DB): void {
     CREATE INDEX IF NOT EXISTS idx_qa_runs_project
       ON qa_runs(project_slug, started_at DESC);
   `);
+}
 
-  // Additive migrations for existing DBs.
-  //   report_html_relpath — Kosh v2 emits HTML reports instead of MD;
-  //     we track the HTML path alongside the legacy MD path so
-  //     historical MD runs still render.
-  //   failure_kind — structured failure classification (e.g. "gated:
-  //     coming-soon") so the detail page can render a specialized
-  //     failure card. Free-text error_message stays untouched.
+/**
+ * Additive columns on `qa_runs` for Kosh v2 (HTML reports + structured
+ * failure classification). Sat inside migrationV4 originally, which
+ * only fires on fresh installs (schema_version < 4) — existing V4
+ * DBs never picked the columns up, so `failure_kind` was always
+ * missing and gate-detection couldn't persist. Bumped the schema
+ * version to 5 and moved the ALTERs here so pre-existing installs
+ * finally get the columns on next restart.
+ *
+ *   report_html_relpath — Kosh v2 emits HTML reports instead of MD;
+ *     we track the HTML path alongside the legacy MD path so
+ *     historical MD runs still render.
+ *   failure_kind — structured failure classification (e.g. "gated:
+ *     coming-soon", "unknown-command:aeo") so the detail page can
+ *     render a specialized recovery card. Free-text error_message
+ *     stays untouched.
+ *
+ * Guarded by PRAGMA table_info so a fresh install (where the columns
+ * are already in the CREATE TABLE) is a no-op.
+ */
+function migrationV5(db: DB): void {
   const cols = db
     .prepare(`PRAGMA table_info(qa_runs)`)
     .all() as Array<{ name: string }>;

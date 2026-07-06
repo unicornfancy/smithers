@@ -507,10 +507,39 @@ async function launchSubprocess(args: {
       // generic "kosh did not produce X" error. Structured
       // failure_kind lets the detail page render the right
       // recovery card.
+      //
+      // Each recorder is wrapped in its own try/catch so a DB error
+      // (e.g. a schema mismatch on an un-migrated DB) can still fall
+      // through to recordError below — otherwise the row stays
+      // stuck at `running` and the user sees a phantom in-flight
+      // audit forever. This bit Katie's very first gate-detection
+      // run: the column didn't exist yet on her installed DB, the
+      // update threw, and the run never transitioned out of running.
+      let handled = false;
       if (detectedGate) {
-        await recordGateFailure(runId, detectedGate);
-      } else if (detectedUnknownCommand) {
-        await recordUnknownCommandFailure(runId, detectedUnknownCommand);
+        try {
+          await recordGateFailure(runId, detectedGate);
+          handled = true;
+        } catch (err) {
+          await appendLog(
+            logPath,
+            `\n[gate-record-failed] ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+        }
+      }
+      if (!handled && detectedUnknownCommand) {
+        try {
+          await recordUnknownCommandFailure(runId, detectedUnknownCommand);
+          handled = true;
+        } catch (err) {
+          await appendLog(
+            logPath,
+            `\n[unknown-command-record-failed] ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+        }
+      }
+      if (handled) {
+        // Already recorded via one of the structured paths above.
       } else if (code === 0 || code === null) {
         // Success path — pick up the report JSON, push to HM.
         try {
