@@ -39,18 +39,11 @@ Trigger to revisit: Katie decides how she wants secondary TAMs tagged in Linear.
 
 ## Kosh v2 gate handling — interactive auth passthrough
 
-**Status:** Kosh v2 (a8cteam51/kosh#16, 2026-07-06) added a reachability gate check to every skill. When the target URL loads a Coming Soon launchpad, password prompt, or private-site notice, Kosh pauses and fires a `PushNotification` asking the user to log in in the open browser window and say "continue." Smithers runs Kosh via `claude --print` — non-interactive — so that pause hangs the subprocess indefinitely; the QA run sits `running` until cancelled.
+**Status shipped 2026-07-06:** structured gate detection + retry-with-Share-Link affordance on the run detail page. When Kosh's reachability check trips, Smithers parses the gate type from the subprocess's stdout (preferred: machine-readable `[SMITHERS_GATE:<type>]` marker Smithers injects into the prompt; fallback: regex over Kosh's free-form language), stores it in a new `failure_kind` column as `gated:coming-soon` / `:password` / `:private`, and the detail page renders a `QaGateFailedCard` with the Share Link explanation inline plus a pre-filled URL input for one-click retry.
 
-**Workaround shipped 2026-07-06:** the QA launcher's Coming Soon tip explains the constraint and points at the WordPress.com Share Link URL as a gate-bypass. For unattended queue-all runs, Share Link URLs are the only working path today.
+**Deliberately not shipped: in-place resume.** Genuinely pausing the subprocess mid-run so the user can auth in the open browser and click Continue requires either (a) switching from `claude --print` to a headless interactive `claude` session Smithers pipes to/from over a socket, or (b) preserving Playwright browser state across separate `claude --print` invocations. (a) is a large rewrite; (b) needs Kosh-side cooperation (the browser is scoped to the subprocess today). The retry-with-Share-Link flow is more direct anyway — self-service, no waiting for the user to auth.
 
-**What lands when ready:**
-
-- Detect the gate-pause from Kosh's stdout stream (Kosh emits a well-known marker before pausing — check the actual output format when this is scoped).
-- Surface an in-app "Kosh paused — auth in the open browser, then click Continue" affordance on the run detail page. Play a browser notification so the user sees it even if the tab is backgrounded.
-- Provide a "Continue" button that writes to the subprocess's stdin OR — cleaner — restart Kosh with the session cookie already carried through. The session persistence approach may need Kosh-side cooperation.
-- Alternative shape: switch from `claude --print` to a headless interactive `claude` session that Smithers pipes to/from over a socket. Bigger lift but generalizes to any future Kosh interactivity.
-
-Blocked on: no active TAM has hit the gate-pause frequently enough to justify the plumbing yet — the Share Link workaround covers the common case. Revisit when a TAM without Share Link access needs to audit a gated site (probably during a partner-side rollout where staging is password-only).
+Revisit only if a TAM without Share Link access repeatedly needs to audit gated sites in situ, e.g. a partner-side flow where staging is password-only AND no share preview URL is available.
 
 ## Release cadence — deferred decision
 

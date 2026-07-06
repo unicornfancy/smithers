@@ -166,13 +166,20 @@ function migrationV4(db: DB): void {
       ON qa_runs(project_slug, started_at DESC);
   `);
 
-  // Additive migration for existing DBs — Kosh v2 emits HTML reports
-  // instead of MD, so we track the HTML path alongside the legacy MD
-  // path (both stay readable so historical MD runs still render).
+  // Additive migrations for existing DBs.
+  //   report_html_relpath — Kosh v2 emits HTML reports instead of MD;
+  //     we track the HTML path alongside the legacy MD path so
+  //     historical MD runs still render.
+  //   failure_kind — structured failure classification (e.g. "gated:
+  //     coming-soon") so the detail page can render a specialized
+  //     failure card. Free-text error_message stays untouched.
   const cols = db
     .prepare(`PRAGMA table_info(qa_runs)`)
     .all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === "report_html_relpath")) {
     db.exec(`ALTER TABLE qa_runs ADD COLUMN report_html_relpath TEXT;`);
+  }
+  if (!cols.some((c) => c.name === "failure_kind")) {
+    db.exec(`ALTER TABLE qa_runs ADD COLUMN failure_kind TEXT;`);
   }
 }

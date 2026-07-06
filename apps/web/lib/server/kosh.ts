@@ -61,8 +61,19 @@ export interface QaRunRow {
   counts_medium: number | null;
   counts_low: number | null;
   error_message: string | null;
+  /**
+   * Structured failure classifier. `gated:coming-soon` |
+   * `gated:password` | `gated:private` when Kosh v2's reachability
+   * gate check aborts the run; null for generic failures. Detail
+   * page keys off this to render a retry-with-Share-Link affordance
+   * instead of a raw error dump.
+   */
+  failure_kind: string | null;
   source: QaRunSource;
 }
+
+/** Gate types Kosh v2's reachability check surfaces. */
+export type QaGateType = "coming-soon" | "password" | "private";
 
 export interface KoshDetection {
   /** Path to the `claude` CLI on PATH, or null. */
@@ -165,6 +176,7 @@ function rowToQaRun(row: Record<string, unknown>): QaRunRow {
     report_json_relpath: (row.report_json_relpath as string | null) ?? null,
     report_md_relpath: (row.report_md_relpath as string | null) ?? null,
     report_html_relpath: (row.report_html_relpath as string | null) ?? null,
+    failure_kind: (row.failure_kind as string | null) ?? null,
     counts_critical:
       row.counts_critical === null ? null : Number(row.counts_critical),
     counts_high: row.counts_high === null ? null : Number(row.counts_high),
@@ -400,7 +412,25 @@ async function launchSubprocess(args: {
     // best effort — kosh will overwrite anyway
   }
 
-  const prompt = `/kosh:${testType} ${url} ${env}`;
+  // Kosh v2's reachability-gate check (a8cteam51/kosh#16) stops when
+  // a site is behind Coming Soon / password / private mode and — in
+  // unattended mode, which `--print` triggers — exits with a
+  // human-readable message. We ask Kosh to emit a machine-readable
+  // marker before stopping so the stdout-watcher below picks it up
+  // reliably; the fallback regex catches the free-form message when
+  // the LLM ignores the instruction.
+  const prompt = [
+    `/kosh:${testType} ${url} ${env}`,
+    "",
+    "SMITHERS_HINT: If your reachability-gate check trips (Coming Soon,",
+    "password-protected, or private site), print exactly this marker on a",
+    "line by itself before stopping — the invoking tool watches for it:",
+    "",
+    "  [SMITHERS_GATE:coming-soon]  (or :password / :private)",
+    "",
+    "Then stop with your normal unattended-mode message. Do not attempt",
+    "to wait for user input — this is a non-interactive subprocess.",
+  ].join("\n");
   // --plugin-dir loads kosh's commands/skills/hooks for this session;
   // --dangerously-skip-permissions pre-approves the Playwright MCP tools
   // (kosh's own .claude/settings.json approves them in an interactive
@@ -422,6 +452,12 @@ async function launchSubprocess(args: {
   child.stdin?.write(prompt);
   child.stdin?.end();
 
+  // Watch stdout for the gate marker (preferred) or a fallback regex
+  // over Kosh's free-form gate-detected language. First hit wins; we
+  // stash the classification and let the process complete naturally
+  // (Kosh's unattended branch exits promptly on its own).
+  let detectedGate: QaGateType | null = null;
+
   // Row was already marked running by drainQueue's atomic claim; just
   // stamp the pid now that spawn() has handed one back.
   const db = await getDb();
@@ -431,10 +467,14 @@ async function launchSubprocess(args: {
   );
 
   child.stdout?.on("data", (chunk) => {
-    void appendLog(logPath, chunk.toString());
+    const text = chunk.toString();
+    if (!detectedGate) detectedGate = classifyGate(text);
+    void appendLog(logPath, text);
   });
   child.stderr?.on("data", (chunk) => {
-    void appendLog(logPath, chunk.toString());
+    const text = chunk.toString();
+    if (!detectedGate) detectedGate = classifyGate(text);
+    void appendLog(logPath, text);
   });
 
   child.on("error", (err) => {
@@ -451,7 +491,15 @@ async function launchSubprocess(args: {
       const cur = await getQaRun(runId);
       if (cur?.status === "cancelled") return;
 
-      if (code === 0 || code === null) {
+      // Gate detection always wins over the normal exit path: even
+      // when Kosh exits cleanly (code=0) after its unattended-mode
+      // stop, there's no report JSON on disk and finalizeSuccess
+      // would raise a generic "kosh did not produce X" error. The
+      // structured failure_kind lets the detail page surface the
+      // retry-with-Share-Link affordance instead.
+      if (detectedGate) {
+        await recordGateFailure(runId, detectedGate);
+      } else if (code === 0 || code === null) {
         // Success path — pick up the report JSON, push to HM.
         try {
           await finalizeSuccess({
@@ -532,6 +580,66 @@ async function recordError(runId: string, err: Error): Promise<void> {
   db.prepare(
     `UPDATE qa_runs SET status = 'failed', completed_at = datetime('now'), error_message = ? WHERE id = ?`,
   ).run(err.message.slice(0, 2000), runId);
+}
+
+/**
+ * Persist a gate-detected failure with a structured `failure_kind` the
+ * detail page can key off. The friendly `error_message` lets the log
+ * pane show a coherent one-liner alongside the run's actual Kosh
+ * output.
+ */
+async function recordGateFailure(
+  runId: string,
+  gate: QaGateType,
+): Promise<void> {
+  const label = GATE_LABEL[gate];
+  const db = await getDb();
+  db.prepare(
+    `UPDATE qa_runs
+       SET status = 'failed',
+           completed_at = datetime('now'),
+           error_message = ?,
+           failure_kind = ?
+     WHERE id = ?`,
+  ).run(
+    `Site is behind a ${label} gate. Kosh needs access to audit — retry with a WordPress.com Share Link.`,
+    `gated:${gate}`,
+    runId,
+  );
+}
+
+const GATE_LABEL: Record<QaGateType, string> = {
+  "coming-soon": "Coming Soon",
+  password: "password",
+  private: "private-site",
+};
+
+/**
+ * Classify a stdout chunk as a gate-detection event. Prefers the
+ * machine-readable marker Smithers asks Kosh to emit; falls back to a
+ * pass over Kosh's free-form language for the three supported gates
+ * so an LLM that ignores the marker still lands us in the right
+ * failure card.
+ *
+ * Order matters in the fallback: "private" appears in some
+ * password-prompt copy ("private site password") so we check it after
+ * password. Coming-soon has the most unique lexicon and goes first.
+ */
+function classifyGate(text: string): QaGateType | null {
+  const marker = /\[SMITHERS_GATE:(coming-soon|password|private)\]/i.exec(text);
+  if (marker) return marker[1]!.toLowerCase() as QaGateType;
+  if (/coming[-\s]soon/i.test(text)) return "coming-soon";
+  if (/password[-\s]protected|password prompt|enter (?:the )?site password/i.test(text)) {
+    return "password";
+  }
+  if (/private[-\s]?site|private[-\s]?login|"Private Site"/i.test(text)) {
+    return "private";
+  }
+  // Generic "site is gated" without an obvious type — surface as
+  // coming-soon by convention (most common gate); the UI text is
+  // still useful for the user.
+  if (/site is gated|reachability gate/i.test(text)) return "coming-soon";
+  return null;
 }
 
 // --- Finalize -------------------------------------------------------------

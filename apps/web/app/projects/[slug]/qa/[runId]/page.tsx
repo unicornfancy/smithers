@@ -6,6 +6,7 @@ import { AppHeader } from "@/components/app-header";
 import { Markdown } from "@/components/markdown";
 import { PageShell } from "@/components/page-shell";
 import { QaFindingsIssueBuilder } from "@/components/qa/qa-findings-issue-builder";
+import { QaGateFailedCard } from "@/components/qa/qa-gate-failed-card";
 import { QaRunControls } from "@/components/qa/qa-run-controls";
 import { QaVaultPathChips } from "@/components/qa/qa-vault-path-chips";
 import { Button } from "@/components/ui/button";
@@ -95,7 +96,21 @@ export default async function QaRunDetailPage({
           />
         ) : null}
 
-        {run.status === "failed" ? (
+        {run.status === "failed" &&
+        run.failure_kind?.startsWith("gated:") ? (
+          <QaGateFailedCard
+            runId={run.id}
+            projectSlug={slug}
+            testType={run.test_type}
+            originalUrl={run.target_url}
+            gateType={
+              (run.failure_kind.slice("gated:".length) as
+                | "coming-soon"
+                | "password"
+                | "private") ?? "coming-soon"
+            }
+          />
+        ) : run.status === "failed" ? (
           <Card className="border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/20">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Run failed</CardTitle>

@@ -399,22 +399,21 @@ function ComingSoonTip() {
           Site gated? (Coming Soon, password, private)
         </p>
         <p className="text-muted-foreground">
-          Kosh v2 detects Coming Soon / password / private-mode pages and
-          pauses for interactive auth. Smithers runs Kosh non-interactively
-          (subprocess with{" "}
-          <code className="font-mono text-[11px]">--print</code>) so the
-          pause hangs the run — you&apos;ll see it queued until you cancel.
+          Kosh v2 detects Coming Soon / password / private-mode pages. Smithers
+          runs Kosh non-interactively, so it can&apos;t auto-resume after auth
+          — but the run fails cleanly with a{" "}
+          <span className="font-medium">Retry with URL</span> input on the run
+          detail page. Paste a WordPress.com{" "}
+          <span className="font-medium">Share Link</span> URL there to bypass
+          the gate.
         </p>
         <p className="text-muted-foreground">
-          <span className="font-medium">Workaround:</span> paste a
-          WordPress.com{" "}
-          <span className="font-medium">Share Link</span> URL that carries
-          access — it bypasses the gate. Find it under{" "}
+          Skip the round-trip by launching with the Share Link URL directly.
+          Find it under{" "}
           <span className="font-mono text-[11px]">
             Settings → General → Privacy → Share preview
           </span>
-          . For unattended runs (queue-all), only Share Link URLs work
-          today.
+          .
         </p>
       </div>
     </div>

@@ -79,6 +79,37 @@ export async function cancelQaRunAction(input: {
   return { ok: false, reason: "not-found-or-finished" };
 }
 
+/**
+ * Retry a gate-detected run with a new (typically Share Link) URL.
+ * Wraps startQaRun with the original run's test_type + project_slug
+ * so the user doesn't have to re-pick them.
+ */
+export async function retryQaRunWithUrlAction(input: {
+  original_run_id: string;
+  project_slug: string;
+  test_type: QaTestType;
+  target_url: string;
+}): Promise<ActionResult<{ run_id: string; queued_behind: number }>> {
+  const trimmed = input.target_url.trim();
+  if (!trimmed) {
+    return { ok: false, reason: "no-url", message: "Enter a URL to retry" };
+  }
+  const res = await startQaRun({
+    project_slug: input.project_slug,
+    test_type: input.test_type,
+    target_url: trimmed,
+  });
+  if (res.ok) {
+    revalidatePath(`/projects/${input.project_slug}/qa`);
+    revalidatePath(`/projects/${input.project_slug}/qa/${input.original_run_id}`);
+    return {
+      ok: true,
+      data: { run_id: res.run_id, queued_behind: res.queued_behind },
+    };
+  }
+  return { ok: false, reason: res.reason, message: res.message };
+}
+
 export async function ingestQaRunAction(input: {
   project_slug: string;
   test_type: QaTestType;
