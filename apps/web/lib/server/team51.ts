@@ -678,26 +678,39 @@ function pickOpRemedy(stderr: string, version: string | undefined): string {
   const versionHint = looksOldOpVersion(version)
     ? ` Also: your op CLI is ${version} — older versions had subprocess-handoff bugs. \`brew upgrade 1password-cli\` if you can.`
     : "";
+  // The Restart Dev Server button in /settings → Diagnostics orphans
+  // pnpm dev from Terminal (spawn with detached: true), which breaks
+  // 1Password 8's ancestry-based authorization: the desktop app
+  // can't find an authorized caller in the process chain and refuses
+  // the call SILENTLY (no biometric prompt). The fix: relaunch pnpm
+  // dev from Terminal.app directly. Called out in every remedy since
+  // it's the single most common cause we've seen.
+  const restartHint =
+    " If you used Smithers's in-app Restart button, that detaches pnpm dev from Terminal and 1Password loses the authorization chain — kill pnpm dev and relaunch it from a Terminal window directly.";
   if (/not signed in/i.test(stderr)) {
     return (
       "Run `op signin` in the SAME terminal that started pnpm dev, then restart the dev server so it inherits the fresh session. If you use 1Password 8 desktop integration, make sure the terminal is listed under Settings → Developer → Manage authorized apps." +
+      restartHint +
       versionHint
     );
   }
   if (/could not connect to 1Password|connecting to desktop app/i.test(stderr)) {
     return (
       "The 1Password 8 desktop app isn't running (or the CLI toggle is off). Open it, then check Settings → Developer → Integrate with 1Password CLI." +
+      restartHint +
       versionHint
     );
   }
   if (/not (?:currently )?authorized/i.test(stderr)) {
     return (
       "1Password 8 → Settings → Developer → Manage authorized apps. Add / re-authorize the terminal you use for pnpm dev." +
+      restartHint +
       versionHint
     );
   }
   return (
     "Run `op signin` in the pnpm-dev terminal, or turn on 1Password 8 → Settings → Developer → Integrate with 1Password CLI." +
+    restartHint +
     versionHint
   );
 }

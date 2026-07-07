@@ -1,7 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, Loader2, ShieldCheck, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  Info,
+  Loader2,
+  ShieldCheck,
+  XCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -69,6 +75,32 @@ export function Team51ToolsCard() {
         </p>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
+        {data?.tools.some((p) => p.tool === "op" && !p.ok) ? (
+          <div className="flex items-start gap-2.5 rounded-md border border-sky-200 bg-sky-50 p-3 text-xs dark:border-sky-900/50 dark:bg-sky-950/20">
+            <Info className="size-4 shrink-0 text-sky-700 dark:text-sky-300" />
+            <div className="min-w-0 space-y-1">
+              <p className="font-medium text-foreground">
+                Did you use the in-app Restart button to start pnpm dev?
+              </p>
+              <p className="text-muted-foreground">
+                Smithers&apos;s Restart Dev Server spawns pnpm dev with{" "}
+                <code className="font-mono text-[11px]">detached: true</code>,
+                which orphans it from Terminal. 1Password 8 checks the process
+                ancestry to authorize CLI callers — without a Terminal
+                ancestor, <code className="font-mono text-[11px]">op</code>{" "}
+                fails silently and no biometric prompt appears.
+              </p>
+              <p className="text-muted-foreground">
+                <span className="font-medium">Fix:</span> kill the current
+                pnpm dev, open Terminal.app directly, and run{" "}
+                <code className="font-mono text-[11px]">cd ~/smithers && pnpm dev</code>
+                . Provisioning workflows will work in that session; use{" "}
+                <code className="font-mono text-[11px]">Ctrl+C</code> + re-run
+                in Terminal (not the in-app button) for subsequent restarts.
+              </p>
+            </div>
+          </div>
+        ) : null}
         <Button
           type="button"
           variant="outline"
