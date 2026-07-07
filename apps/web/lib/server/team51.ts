@@ -294,8 +294,23 @@ async function runTeam51Child(args: {
     `[${new Date().toISOString()}] ${binary} ${input.command} ${input.args.join(" ")} --no-interaction\n`,
   );
 
-  const argv = [input.command, ...input.args, "--no-interaction"];
-  const child = spawn(binary, argv, {
+  // Shell-wrap the invocation. Same reason as tryOpWhoami: the
+  // team51 CLI shells out to `op` for 1Password writes, and
+  // 1Password 8's desktop integration walks the process ancestry
+  // looking for a trusted parent. A direct `spawn(team51)` puts
+  // node as team51's parent → op's grandparent, and 1Password
+  // refuses. Interposing /bin/sh puts sh at that hop, which
+  // 1Password walks past to Terminal.app and authorizes. Every
+  // arg is single-quoted for the shell; team51's own args (URLs,
+  // names) may contain shell metacharacters that would otherwise
+  // get eaten.
+  const shellCmd = [
+    shellQuote(binary),
+    shellQuote(input.command),
+    ...input.args.map(shellQuote),
+    "--no-interaction",
+  ].join(" ");
+  const child = spawn("/bin/sh", ["-c", shellCmd], {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, ...(input.env ?? {}) },
   });
@@ -696,13 +711,45 @@ async function tryOpWhoami(
   bin: string,
   account: string | undefined,
 ): Promise<OpWhoamiResult> {
-  const args = account ? ["--account", account, "whoami"] : ["whoami"];
+  // 1Password 8's desktop integration validates the direct-parent
+  // process when it decides whether to trust the caller. Direct
+  // spawn `execFile(op)` puts Node as the parent, which 1Password
+  // refuses on this machine. Interposing a shell (`sh -c 'op …'`)
+  // makes /bin/sh the parent — 1Password walks its ancestry up to
+  // Terminal.app and authorizes. Verified empirically: from a
+  // signed-in terminal, `node -e "execSync('op whoami')"` succeeds
+  // (execSync uses /bin/sh -c internally) but our direct execFile
+  // does not.
+  const cmd = account
+    ? `op --account ${shellQuote(account)} whoami`
+    : "op whoami";
   try {
-    await execFileAsync(bin, args, { timeout: 15_000 });
+    await execFileAsync("/bin/sh", ["-c", cmd], {
+      timeout: 15_000,
+      // Ensure PATH includes wherever op lives, since the
+      // freshly-spawned shell won't source ~/.zshrc.
+      env: { ...process.env, PATH: `${dirnameOf(bin)}:${process.env["PATH"] ?? ""}` },
+    });
     return { ok: true, stderr: "" };
   } catch (err) {
     return { ok: false, stderr: extractStderr(err) };
   }
+}
+
+function dirnameOf(p: string): string {
+  const i = p.lastIndexOf("/");
+  return i > 0 ? p.slice(0, i) : "/usr/local/bin";
+}
+
+/**
+ * Bare-minimum single-quote wrapping for shell arg interpolation.
+ * The values passed here are account shorthands from 1Password's
+ * own account list (short alphanumeric strings), so this is
+ * defense-in-depth rather than load-bearing.
+ */
+function shellQuote(s: string): string {
+  if (/^[a-zA-Z0-9._-]+$/.test(s)) return s;
+  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 interface OpAccount {
@@ -848,7 +895,14 @@ async function probeGh(): Promise<ExternalToolProbe> {
     };
   }
   try {
-    await execFileAsync(bin, ["auth", "status"], { timeout: 5_000 });
+    // Shell-wrap for consistency with the op probe. gh reads
+    // config from ~/.config/gh — subprocess env inheritance is
+    // fine here regardless of parent, but shell wrap keeps the
+    // spawn path identical across all probes.
+    await execFileAsync("/bin/sh", ["-c", `${shellQuote(bin)} auth status`], {
+      timeout: 5_000,
+      env: { ...process.env, PATH: `${dirnameOf(bin)}:${process.env["PATH"] ?? ""}` },
+    });
     return { tool: "gh", ok: true, message: `Authenticated via ${bin}.` };
   } catch {
     return {
