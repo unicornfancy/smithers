@@ -74,6 +74,19 @@ export interface SmithersConfig {
   transcription: {
     provider: "fathom" | "granola" | "manual" | "whisper" | "gemini";
   };
+  /**
+   * How Smithers keeps the local Kosh clone in sync with upstream.
+   * `stable` (default) tracks the latest git tag matching `vX.Y.Z` so
+   * a Smithers integration written against one Kosh version isn't
+   * silently broken by an upstream change. `trunk` follows the
+   * bleeding-edge branch (Kosh's default is `trunk`, not `main`).
+   * `pinned` locks to `pinned_tag` and never auto-updates past it.
+   */
+  kosh: {
+    channel: "stable" | "trunk" | "pinned";
+    /** Only read when channel === "pinned". Empty falls back to trunk-style. */
+    pinned_tag?: string;
+  };
   p2: {
     team_p2_url?: string;
     smithers_p2_post_url?: string;
@@ -247,6 +260,7 @@ const DEFAULTS: SmithersConfig = {
     effort: "high",
   },
   transcription: { provider: "fathom" },
+  kosh: { channel: "stable" },
   p2: {},
   working_rhythm: {
     timezone: "America/Los_Angeles",
@@ -402,6 +416,7 @@ function mergeWithDefaults(
     },
     agents: { ...DEFAULTS.agents, ...partial.agents },
     transcription: { ...DEFAULTS.transcription, ...partial.transcription },
+    kosh: { ...DEFAULTS.kosh, ...partial.kosh },
     p2: { ...DEFAULTS.p2, ...partial.p2 },
     working_rhythm: {
       ...DEFAULTS.working_rhythm,

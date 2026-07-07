@@ -1,31 +1,29 @@
 import "server-only";
 
-import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { promisify } from "node:util";
 
 import { NextResponse } from "next/server";
 
-import { detectKosh } from "@/lib/server/kosh";
+import { loadConfig } from "@/lib/server/config";
+import {
+  detectKosh,
+  getKoshCloneStatus,
+  syncKoshClone,
+} from "@/lib/server/kosh";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const execFileAsync = promisify(execFile);
-
 /**
- * Pull the latest Kosh from its remote. Fast-forward-only. Refuses to
- * run with a dirty working tree so Kosh mods (rare — Kosh ships as a
- * plugin, users shouldn't need to edit it) don't get stomped.
- *
- * Kosh's default branch is `trunk`, not `main`. We honor whatever
- * branch is currently checked out so Katie's local clone (which is on
- * trunk) works out of the box, and future branch renames don't need a
- * code change here.
+ * Move the local Kosh clone onto whatever the config'd channel
+ * resolves to (latest tag on `stable`, trunk on `trunk`, a specific
+ * tag on `pinned`). Fast-forward-only for branches; detached checkout
+ * for tags. Refuses on a dirty tracked-file working tree.
  *
  * The existing `maybeUpdateKosh` in kosh.ts auto-runs before every QA
- * run. This route is the manual button — use it when you know a
- * release just landed and don't want to wait for the next audit.
+ * run using the same helper. This route is the manual button — use it
+ * when you know a release just landed and don't want to wait for the
+ * next audit, or after switching channels in the UI.
  */
 export async function POST() {
   if (process.env.NODE_ENV === "production") {
@@ -40,7 +38,7 @@ export async function POST() {
   }
 
   const detect = await detectKosh();
-  if (!detect.kosh_path) {
+  if (!detect.kosh_path || !existsSync(detect.kosh_path)) {
     return NextResponse.json(
       {
         ok: false,
@@ -52,102 +50,31 @@ export async function POST() {
       { status: 404 },
     );
   }
-  const koshPath = detect.kosh_path;
-  if (!existsSync(koshPath)) {
+
+  const cfg = await loadConfig();
+  const result = await syncKoshClone(detect.kosh_path, cfg.kosh);
+
+  if (!result.ok) {
     return NextResponse.json(
-      {
-        ok: false,
-        reason: "no-kosh-path",
-        message: `Kosh directory not found at ${koshPath}`,
-      },
-      { status: 404 },
+      { ok: false, reason: "sync-failed", message: result.summary },
+      { status: 409 },
     );
   }
 
-  const git = async (...args: string[]) => {
-    // Absolute path to git — matches the Update Smithers route's
-    // hardening against stripped PATH in server-action workers.
-    return execFileAsync("/usr/bin/git", ["-C", koshPath, ...args]);
-  };
-
-  try {
-    const branchRes = await git("rev-parse", "--abbrev-ref", "HEAD");
-    const branch = branchRes.stdout.trim();
-
-    // Ignore untracked files (`-uno`) so screenshot artifacts /
-    // scratch dirs left over from earlier Kosh runs don't wedge the
-    // update — only tracked-file modifications actually block a pull.
-    const statusRes = await git("status", "--porcelain", "-uno");
-    if (statusRes.stdout.trim().length > 0) {
-      return NextResponse.json(
-        {
-          ok: false,
-          reason: "dirty-tree",
-          message:
-            "Kosh clone has uncommitted changes to tracked files. Commit or stash them before updating.",
-        },
-        { status: 409 },
-      );
-    }
-
-    const beforeRes = await git("rev-parse", "HEAD");
-    const beforeSha = beforeRes.stdout.trim();
-
-    await git("fetch", "origin", branch);
-    await git("pull", "--ff-only", "origin", branch);
-
-    const afterRes = await git("rev-parse", "HEAD");
-    const afterSha = afterRes.stdout.trim();
-
-    if (beforeSha === afterSha) {
-      return NextResponse.json({
-        ok: true,
-        changed: false,
-        sha: afterSha.slice(0, 7),
-        branch,
-        message: "Kosh already up to date.",
-      });
-    }
-
-    const logRes = await git(
-      "log",
-      "--oneline",
-      "-1",
-      "--format=%h %s",
-      afterSha,
-    );
-    const latest = logRes.stdout.trim();
-
-    const countRes = await git(
-      "rev-list",
-      "--count",
-      `${beforeSha}..${afterSha}`,
-    );
-    const newCommits = Number(countRes.stdout.trim()) || 0;
-
-    return NextResponse.json({
-      ok: true,
-      changed: true,
-      sha: afterSha.slice(0, 7),
-      branch,
-      latest,
-      new_commits: newCommits,
-      message: `Pulled ${newCommits} commit${newCommits === 1 ? "" : "s"} onto ${branch}. New Kosh logic takes effect on the next QA run.`,
-    });
-  } catch (err) {
-    return NextResponse.json(
-      {
-        ok: false,
-        reason: "git-failed",
-        message: err instanceof Error ? err.message : "git command failed",
-      },
-      { status: 500 },
-    );
-  }
+  return NextResponse.json({
+    ok: true,
+    changed: result.changed,
+    channel: cfg.kosh.channel,
+    target_kind: result.target?.kind ?? null,
+    target_name: result.target?.name ?? null,
+    head_sha: result.head?.slice(0, 7) ?? null,
+    summary: result.summary,
+  });
 }
 
 /**
- * Read-only HEAD info so the card can show what version Kosh is on.
+ * Read-only clone status. Card renders channel + resolved version +
+ * (for the pinned dropdown) the list of available tags.
  */
 export async function GET() {
   if (process.env.NODE_ENV === "production") {
@@ -168,26 +95,21 @@ export async function GET() {
     );
   }
   try {
-    const branch = (
-      await execFileAsync(
-        "/usr/bin/git",
-        ["-C", detect.kosh_path, "rev-parse", "--abbrev-ref", "HEAD"],
-      )
-    ).stdout.trim();
-    const head = (
-      await execFileAsync(
-        "/usr/bin/git",
-        [
-          "-C",
-          detect.kosh_path,
-          "log",
-          "--oneline",
-          "-1",
-          "--format=%h %s",
-        ],
-      )
-    ).stdout.trim();
-    return NextResponse.json({ ok: true, branch, head });
+    const [cfg, status] = await Promise.all([
+      loadConfig(),
+      getKoshCloneStatus(detect.kosh_path),
+    ]);
+    return NextResponse.json({
+      ok: true,
+      branch: status.branch,
+      head: status.head_oneline,
+      head_sha: status.head_sha.slice(0, 7),
+      current_tag: status.current_tag,
+      latest_tag: status.latest_tag,
+      available_tags: status.available_tags,
+      channel: cfg.kosh.channel,
+      pinned_tag: cfg.kosh.pinned_tag ?? "",
+    });
   } catch (err) {
     return NextResponse.json(
       {

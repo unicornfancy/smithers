@@ -327,6 +327,49 @@ export async function updateTranscriptionProviderAction(input: {
   }
 }
 
+/**
+ * Set the Kosh channel (`stable` / `trunk` / `pinned`) and, when
+ * channel === "pinned", the specific tag to lock to. Update Kosh
+ * card writes this then triggers a sync so HEAD moves to the new
+ * target immediately.
+ */
+export async function updateKoshChannelAction(input: {
+  channel: "stable" | "trunk" | "pinned";
+  pinned_tag?: string;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    const validChannels = new Set(["stable", "trunk", "pinned"]);
+    if (!validChannels.has(input.channel)) {
+      return { ok: false, reason: "unknown channel" };
+    }
+    const path = configLocalPath();
+    const current = await readYamlFile(path);
+    const next = structuredClone(current) as Record<string, unknown>;
+    const block = isObject(next["kosh"])
+      ? (next["kosh"] as Record<string, unknown>)
+      : {};
+    block["channel"] = input.channel;
+    if (input.channel === "pinned") {
+      const trimmed = input.pinned_tag?.trim();
+      if (!trimmed) {
+        return { ok: false, reason: "pinned_tag required for pinned channel" };
+      }
+      block["pinned_tag"] = trimmed;
+    } else if ("pinned_tag" in block) {
+      delete block["pinned_tag"];
+    }
+    next["kosh"] = block;
+    await writeYamlAtomic(path, next);
+    revalidatePath("/settings");
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "write failed",
+    };
+  }
+}
+
 export async function updateWeeklyUpdateFormatAction(
   template: string,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {

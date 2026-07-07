@@ -583,34 +583,298 @@ async function maybeUpdateKosh(
   logPath: string,
 ): Promise<void> {
   try {
-    // -uno excludes untracked files from the status output. Kosh runs
-    // leave behind report artifacts (screenshots, JSON dumps, temp
-    // worktrees under .claude/) — those can't conflict with a
-    // fast-forward pull, so blocking on them means the auto-update
-    // never runs for anyone who's used Kosh more than once.
-    const { stdout: status } = await execFileAsync(
-      "git",
-      ["-C", koshPath, "status", "--porcelain", "-uno"],
-      { timeout: 5_000 },
-    );
-    if (status.trim().length > 0) {
-      await appendLog(
-        logPath,
-        `[kosh update] skipped — tracked files have local changes\n`,
-      );
-      return;
-    }
-    const { stdout: pullOut, stderr: pullErr } = await execFileAsync(
-      "git",
-      ["-C", koshPath, "pull", "--ff-only"],
-      { timeout: 15_000 },
-    );
-    const summary = (pullOut || pullErr || "").trim().split("\n").slice(0, 4).join(" | ");
-    await appendLog(logPath, `[kosh update] ${summary || "ok"}\n`);
+    const cfg = await loadConfig();
+    const result = await syncKoshClone(koshPath, cfg.kosh);
+    const summary = result.summary || (result.ok ? "ok" : "failed");
+    await appendLog(logPath, `[kosh update] ${summary}\n`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await appendLog(logPath, `[kosh update] skipped — ${msg.split("\n")[0]}\n`);
   }
+}
+
+// --- Channel-aware clone sync ---------------------------------------------
+//
+// Kosh v2 shipped git-tagged releases (v1.0.0, v1.1.0, ...) alongside the
+// bleeding-edge `trunk` branch. Smithers respects the config'd channel:
+//
+//   stable   — latest v*.*.* tag. New users default here so upstream churn
+//              doesn't silently break the Smithers integration mid-day.
+//   trunk    — track the trunk branch (previous behavior). For Kosh
+//              collaborators + power users who want unreleased fixes.
+//   pinned   — lock to `pinned_tag` verbatim. When the config's tag is
+//              missing / empty, we fall through to trunk behavior so the
+//              clone doesn't get stuck on nothing.
+
+export type KoshChannel = "stable" | "trunk" | "pinned";
+
+export interface KoshChannelSpec {
+  channel: KoshChannel;
+  pinned_tag?: string;
+}
+
+interface KoshResolvedTarget {
+  kind: "branch" | "tag";
+  /** Human name for display / logs. */
+  name: string;
+  /** Target SHA (from `rev-parse`). */
+  ref: string;
+}
+
+const GIT_BIN = "/usr/bin/git";
+
+/**
+ * Resolve the channel spec to a concrete target (branch or tag) after
+ * fetching from origin. When channel === "stable" but no tags exist,
+ * or when channel === "pinned" but the tag isn't found, falls back to
+ * trunk-style resolution so we always return something usable.
+ */
+async function resolveKoshTarget(
+  koshPath: string,
+  spec: KoshChannelSpec,
+): Promise<KoshResolvedTarget> {
+  const git = (args: string[]) =>
+    execFileAsync(GIT_BIN, ["-C", koshPath, ...args], { timeout: 15_000 });
+
+  // Fetch remote refs so `origin/*` and tag SHAs are current.
+  await git(["fetch", "--tags", "--prune", "origin"]).catch(() => undefined);
+
+  if (spec.channel === "pinned" && spec.pinned_tag?.trim()) {
+    try {
+      const { stdout } = await git([
+        "rev-parse",
+        "--verify",
+        `refs/tags/${spec.pinned_tag.trim()}`,
+      ]);
+      return { kind: "tag", name: spec.pinned_tag.trim(), ref: stdout.trim() };
+    } catch {
+      // Fall through to trunk if the pinned tag doesn't exist.
+    }
+  }
+
+  if (spec.channel === "stable") {
+    const tag = await latestSemverTag(koshPath).catch(() => null);
+    if (tag) return tag;
+    // No tags — fall through to trunk-style.
+  }
+
+  // Trunk (explicit) or fallback path. The clone's default branch is
+  // "trunk" today; ask git for whatever origin/HEAD resolves to so a
+  // future rename to "main" doesn't need a code change here.
+  const trunk = await resolveDefaultBranch(koshPath).catch(() => "trunk");
+  const { stdout } = await git(["rev-parse", `origin/${trunk}`]);
+  return { kind: "branch", name: trunk, ref: stdout.trim() };
+}
+
+async function latestSemverTag(
+  koshPath: string,
+): Promise<KoshResolvedTarget | null> {
+  const { stdout } = await execFileAsync(GIT_BIN, [
+    "-C",
+    koshPath,
+    "tag",
+    "-l",
+    "v[0-9]*.[0-9]*.[0-9]*",
+  ]);
+  const tags = stdout
+    .split("\n")
+    .map((t) => t.trim())
+    .filter((t) => /^v\d+\.\d+\.\d+$/.test(t));
+  if (tags.length === 0) return null;
+  // Semver-sort descending. Simple three-tuple compare is enough for
+  // Kosh's release cadence — no pre-release / build metadata yet.
+  tags.sort((a, b) => {
+    const [ax, ay, az] = a.slice(1).split(".").map(Number) as [number, number, number];
+    const [bx, by, bz] = b.slice(1).split(".").map(Number) as [number, number, number];
+    if (ax !== bx) return bx - ax;
+    if (ay !== by) return by - ay;
+    return bz - az;
+  });
+  const top = tags[0]!;
+  const { stdout: sha } = await execFileAsync(GIT_BIN, [
+    "-C",
+    koshPath,
+    "rev-parse",
+    `refs/tags/${top}`,
+  ]);
+  return { kind: "tag", name: top, ref: sha.trim() };
+}
+
+async function resolveDefaultBranch(koshPath: string): Promise<string> {
+  const { stdout } = await execFileAsync(GIT_BIN, [
+    "-C",
+    koshPath,
+    "symbolic-ref",
+    "refs/remotes/origin/HEAD",
+  ]);
+  // e.g. "refs/remotes/origin/trunk"
+  const parts = stdout.trim().split("/");
+  return parts[parts.length - 1] ?? "trunk";
+}
+
+export interface KoshSyncResult {
+  ok: boolean;
+  /** Target we resolved to (post-fetch). */
+  target: KoshResolvedTarget | null;
+  /** SHA the clone is on now. */
+  head: string | null;
+  /** Did we actually move HEAD? False on no-op / already up to date. */
+  changed: boolean;
+  /** One-line summary for logs / toast. */
+  summary: string;
+}
+
+/**
+ * Do whatever's needed to get the local clone onto the target the
+ * config picks. Fast-forward pull for branch targets, `checkout` for
+ * tag targets (detached HEAD is fine — Kosh is loaded as a plugin,
+ * we don't need branch semantics). Refuses on tracked-file changes;
+ * untracked report artifacts are ignored.
+ */
+export async function syncKoshClone(
+  koshPath: string,
+  spec: KoshChannelSpec,
+): Promise<KoshSyncResult> {
+  const git = (args: string[]) =>
+    execFileAsync(GIT_BIN, ["-C", koshPath, ...args], { timeout: 30_000 });
+
+  const dirty = await git(["status", "--porcelain", "-uno"]).then(
+    (r) => r.stdout.trim().length > 0,
+    () => false,
+  );
+  if (dirty) {
+    return {
+      ok: false,
+      target: null,
+      head: null,
+      changed: false,
+      summary: "skipped — tracked files have local changes",
+    };
+  }
+
+  const target = await resolveKoshTarget(koshPath, spec).catch(() => null);
+  if (!target) {
+    return {
+      ok: false,
+      target: null,
+      head: null,
+      changed: false,
+      summary: "skipped — couldn't resolve channel target",
+    };
+  }
+
+  const beforeSha = await git(["rev-parse", "HEAD"]).then(
+    (r) => r.stdout.trim(),
+    () => "",
+  );
+
+  if (beforeSha === target.ref) {
+    return {
+      ok: true,
+      target,
+      head: beforeSha,
+      changed: false,
+      summary: `already on ${target.kind === "tag" ? target.name : `${target.name} @ ${beforeSha.slice(0, 7)}`}`,
+    };
+  }
+
+  try {
+    if (target.kind === "tag") {
+      // Detached checkout — quiet the advice noise.
+      await git([
+        "-c",
+        "advice.detachedHead=false",
+        "checkout",
+        target.name,
+      ]);
+    } else {
+      // On the right branch? If not, check it out first.
+      const currentBranch = await git(["rev-parse", "--abbrev-ref", "HEAD"]).then(
+        (r) => r.stdout.trim(),
+        () => "",
+      );
+      if (currentBranch !== target.name) {
+        await git(["checkout", target.name]);
+      }
+      await git(["pull", "--ff-only", "origin", target.name]);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.split("\n")[0]! : String(err);
+    return {
+      ok: false,
+      target,
+      head: beforeSha,
+      changed: false,
+      summary: `failed — ${msg}`,
+    };
+  }
+
+  const afterSha = await git(["rev-parse", "HEAD"]).then(
+    (r) => r.stdout.trim(),
+    () => "",
+  );
+  const label = target.kind === "tag" ? target.name : `${target.name} @ ${afterSha.slice(0, 7)}`;
+  return {
+    ok: true,
+    target,
+    head: afterSha,
+    changed: afterSha !== beforeSha,
+    summary: `moved to ${label}`,
+  };
+}
+
+/**
+ * Read the clone's current channel state + resolvable versions. Used
+ * by the Update Kosh card + a hypothetical channel-switcher UI.
+ */
+export interface KoshCloneStatus {
+  branch: string;
+  head_sha: string;
+  head_oneline: string;
+  current_tag: string | null;
+  available_tags: string[];
+  latest_tag: string | null;
+}
+
+export async function getKoshCloneStatus(
+  koshPath: string,
+): Promise<KoshCloneStatus> {
+  const git = (args: string[]) =>
+    execFileAsync(GIT_BIN, ["-C", koshPath, ...args]);
+
+  const [branch, headSha, headLine] = await Promise.all([
+    git(["rev-parse", "--abbrev-ref", "HEAD"]).then((r) => r.stdout.trim()),
+    git(["rev-parse", "HEAD"]).then((r) => r.stdout.trim()),
+    git(["log", "--oneline", "-1", "--format=%h %s"]).then((r) => r.stdout.trim()),
+  ]);
+
+  const currentTag = await git(["describe", "--tags", "--exact-match", "HEAD"])
+    .then((r) => r.stdout.trim() || null)
+    .catch(() => null);
+
+  const tagsRaw = await git(["tag", "-l", "v[0-9]*.[0-9]*.[0-9]*"])
+    .then((r) => r.stdout)
+    .catch(() => "");
+  const availableTags = tagsRaw
+    .split("\n")
+    .map((t) => t.trim())
+    .filter((t) => /^v\d+\.\d+\.\d+$/.test(t));
+  availableTags.sort((a, b) => {
+    const [ax, ay, az] = a.slice(1).split(".").map(Number) as [number, number, number];
+    const [bx, by, bz] = b.slice(1).split(".").map(Number) as [number, number, number];
+    if (ax !== bx) return bx - ax;
+    if (ay !== by) return by - ay;
+    return bz - az;
+  });
+
+  return {
+    branch,
+    head_sha: headSha,
+    head_oneline: headLine,
+    current_tag: currentTag,
+    available_tags: availableTags,
+    latest_tag: availableTags[0] ?? null,
+  };
 }
 
 async function appendLog(logPath: string, text: string): Promise<void> {
