@@ -7,7 +7,7 @@ import Database, { type Database as DB } from "better-sqlite3";
 
 import { loadConfig } from "./config";
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 let cached: DB | null = null;
 let cachedPath: string | null = null;
@@ -76,7 +76,8 @@ function applyMigrations(db: DB): void {
   if (current < 3) migrationV3(db);
   if (current < 4) migrationV4(db);
   if (current < 5) migrationV5(db);
-  // Future migrations land here as `if (current < 6) migrationV6(db); ...`
+  if (current < 6) migrationV6(db);
+  // Future migrations land here as `if (current < 7) migrationV7(db); ...`
 
   db.prepare(
     "INSERT INTO meta(key, value) VALUES('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -198,4 +199,44 @@ function migrationV5(db: DB): void {
   if (!cols.some((c) => c.name === "failure_kind")) {
     db.exec(`ALTER TABLE qa_runs ADD COLUMN failure_kind TEXT;`);
   }
+}
+
+/**
+ * `team51_runs` — one row per team51-cli invocation. Mirrors the
+ * `qa_runs` shape (project_slug, target-descriptor, status, log_path,
+ * pid, timings, structured failure_kind). We stash the resolved
+ * argv as JSON in `args_json` so retries and detail pages can render
+ * exactly what was passed; the CLI's stdout/stderr live in the log
+ * file at `log_path`, not the DB.
+ *
+ * `command` is the Symfony command slug (e.g. `wpcom:create-site`);
+ * `command_group` groups related commands (`wpcom` / `pressable` /
+ * `deployhq` / `github`) so a workbench card can filter by group.
+ * `result_json` holds parsed post-run structured data — e.g. the new
+ * site URL from a create-site run — so we can write back to
+ * frontmatter without re-parsing stdout every time.
+ */
+function migrationV6(db: DB): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS team51_runs (
+      id TEXT PRIMARY KEY,
+      project_slug TEXT NOT NULL,
+      command TEXT NOT NULL,
+      command_group TEXT NOT NULL,
+      args_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT,
+      pid INTEGER,
+      exit_code INTEGER,
+      log_path TEXT,
+      failure_kind TEXT,
+      error_message TEXT,
+      result_json TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_team51_runs_project
+      ON team51_runs(project_slug, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_team51_runs_status
+      ON team51_runs(status);
+  `);
 }

@@ -26,6 +26,7 @@ import { PartnerCard } from "@/components/partner-card";
 import { ProjectHandoffSection } from "@/components/project-handoff-section";
 import { ProjectLaunchPostSection } from "@/components/project-launch-post-section";
 import { ProjectSitrepSection } from "@/components/project-sitrep-section";
+import { Team51ProvisioningSection } from "@/components/team51/team51-provisioning-section";
 import { ProjectBriefSection } from "@/components/project-brief-section";
 import {
   CallNotesPanel,
@@ -41,6 +42,7 @@ import { ForYouTodayPanel } from "@/components/for-you-today-panel";
 import { getAgentRuntimeStatus } from "@/lib/server/agents";
 import { loadConfig } from "@/lib/server/config";
 import { listQaRuns } from "@/lib/server/kosh";
+import { listTeam51RunsForProject } from "@/lib/server/team51";
 import { getMcpClient } from "@/lib/server/mcp";
 import { findAgendaForPartner } from "@/lib/server/agenda-for-partner";
 import { recordingMatchesProject } from "@/lib/server/recording-match";
@@ -128,6 +130,7 @@ export default async function ProjectWorkbenchPage({
     hiveMindProject,
     agendaForPartner,
     qaRuns,
+    team51Runs,
     processedCallNotes,
     orphanCallNotes,
     driveActivityResult,
@@ -204,6 +207,7 @@ export default async function ProjectWorkbenchPage({
       vault.getHiveMindProject(hmPartnerSlug, hmProjectSlug).catch(() => null),
       findAgendaForPartner(detail.partner).catch(() => null),
       listQaRuns(detail.slug).catch(() => []),
+      listTeam51RunsForProject(detail.slug, 6).catch(() => []),
       vault.listCallNotesForProject(detail.slug).catch(() => []),
       vault.listOrphanCallNotes().catch(() => []),
       (async () => {
@@ -627,6 +631,29 @@ export default async function ProjectWorkbenchPage({
       />
     ),
   });
+
+  // Provisioning card is only useful on partner projects — team /
+  // personal projects don't need Automattic-side site infrastructure.
+  if (isPartner) {
+    sections.push({
+      id: "team51-provisioning",
+      title: "Provisioning",
+      node: (
+        <Team51ProvisioningSection
+          projectSlug={detail.slug}
+          suggestedName={detail.name}
+          defaultRepository={detail.github_repo ?? ""}
+          recentRuns={team51Runs.map((r) => ({
+            id: r.id,
+            command: r.command,
+            status: r.status,
+            started_at: r.started_at,
+            failure_kind: r.failure_kind,
+          }))}
+        />
+      ),
+    });
+  }
 
   sections.push({
     id: "agenda",
