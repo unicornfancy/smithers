@@ -14,6 +14,8 @@ interface Probe {
   ok: boolean;
   message: string;
   remedy?: string;
+  detail?: string;
+  version?: string;
 }
 
 interface ToolsResponse {
@@ -97,10 +99,13 @@ export function Team51ToolsCard() {
             {data.tools.map((p) => (
               <ProbeRow
                 key={p.tool}
-                label={TOOL_LABEL[p.tool]}
+                label={
+                  p.version ? `${TOOL_LABEL[p.tool]} · ${p.version}` : TOOL_LABEL[p.tool]
+                }
                 ok={p.ok}
                 message={p.message}
                 remedy={p.remedy}
+                detail={p.detail}
               />
             ))}
           </div>
@@ -115,11 +120,13 @@ function ProbeRow({
   ok,
   message,
   remedy,
+  detail,
 }: {
   label: string;
   ok: boolean;
   message: string;
   remedy?: string;
+  detail?: string;
 }) {
   return (
     <div className="flex items-start gap-2">
@@ -128,16 +135,19 @@ function ProbeRow({
       ) : (
         <XCircle className="size-3.5 shrink-0 text-rose-700 dark:text-rose-300" />
       )}
-      <div className="min-w-0 flex-1 space-y-0.5">
+      <div className="min-w-0 flex-1 space-y-1">
         <p className="text-foreground font-medium">{label}</p>
         <p className="text-muted-foreground">{message}</p>
-        {remedy ? (
+        {detail ? (
           <p className="text-muted-foreground text-[11px]">
-            Fix:{" "}
+            Raw:{" "}
             <code className="bg-muted rounded px-1 py-0.5 font-mono">
-              {remedy}
+              {detail}
             </code>
           </p>
+        ) : null}
+        {remedy ? (
+          <p className="text-muted-foreground text-[11px]">Fix: {remedy}</p>
         ) : null}
       </div>
     </div>

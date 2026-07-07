@@ -567,6 +567,14 @@ export interface ExternalToolProbe {
   message: string;
   /** For fixups: the exact command the user would run to fix it. */
   remedy?: string;
+  /**
+   * Raw last line of stderr (truncated) when the probe failed —
+   * lets the Test tools card show what the CLI actually complained
+   * about instead of a paraphrase. Missing on success.
+   */
+  detail?: string;
+  /** Resolved version string (e.g. "2.30.0") when it can be read. */
+  version?: string;
 }
 
 /**
@@ -602,20 +610,130 @@ async function probeOp(): Promise<ExternalToolProbe> {
       remedy: "brew install 1password-cli",
     };
   }
+
+  // Version stamp helps users diagnose stale-CLI vs. auth-config issues.
+  // Older `op` versions (<= 2.20-ish) had known desktop-integration
+  // bugs with subprocess callers, so surface the version prominently.
+  let version: string | undefined;
   try {
-    // `op whoami` is the cheapest signed-in check.
-    await execFileAsync(bin, ["whoami"], { timeout: 5_000 });
-    return { tool: "op", ok: true, message: `Signed in via ${bin}.` };
+    const { stdout } = await execFileAsync(bin, ["--version"], {
+      timeout: 3_000,
+    });
+    version = stdout.trim();
   } catch {
+    /* ignore — version is informational */
+  }
+
+  try {
+    // 15s to accommodate a biometric prompt if desktop integration
+    // kicks one off. `op whoami` is the cheapest signed-in check.
+    await execFileAsync(bin, ["whoami"], { timeout: 15_000 });
+    return {
+      tool: "op",
+      ok: true,
+      message: `Signed in via ${bin}.`,
+      version,
+    };
+  } catch (err) {
+    const stderr = extractStderr(err);
+    const detail = firstMeaningfulLine(stderr);
+    // Classify by the exact error `op` reports so the remedy is
+    // specific instead of a hand-wavy "check auth".
+    const remedy = pickOpRemedy(stderr, version);
     return {
       tool: "op",
       ok: false,
-      message:
-        "`op whoami` failed — session expired or 1Password 8 desktop integration off.",
-      remedy:
-        "Run `op signin` in the terminal hosting pnpm dev, or turn on 1Password 8 → Settings → Developer → Integrate with 1Password CLI.",
+      message: opFailureSummary(stderr),
+      remedy,
+      detail,
+      version,
     };
   }
+}
+
+/**
+ * `op` prints structured error lines like:
+ *   [ERROR] 2026/... account is not signed in
+ *   [ERROR] 2026/... could not connect to 1Password
+ *   [ERROR] 2026/... this account isn't currently authorized
+ * The classifier picks a specific summary + remedy. Falls back to
+ * the raw first line when no pattern matches so the user always
+ * sees `op`'s own words.
+ */
+function opFailureSummary(stderr: string): string {
+  if (/not signed in/i.test(stderr)) {
+    return "1Password says: account is not signed in.";
+  }
+  if (/could not connect to 1Password|connecting to desktop app/i.test(stderr)) {
+    return "1Password says: can't connect to the desktop app.";
+  }
+  if (/not (?:currently )?authorized/i.test(stderr)) {
+    return "1Password says: this caller isn't authorized.";
+  }
+  const first = firstMeaningfulLine(stderr);
+  return first ? `\`op whoami\` failed: ${first}` : "`op whoami` failed.";
+}
+
+function pickOpRemedy(stderr: string, version: string | undefined): string {
+  const versionHint = looksOldOpVersion(version)
+    ? ` Also: your op CLI is ${version} — older versions had subprocess-handoff bugs. \`brew upgrade 1password-cli\` if you can.`
+    : "";
+  if (/not signed in/i.test(stderr)) {
+    return (
+      "Run `op signin` in the SAME terminal that started pnpm dev, then restart the dev server so it inherits the fresh session. If you use 1Password 8 desktop integration, make sure the terminal is listed under Settings → Developer → Manage authorized apps." +
+      versionHint
+    );
+  }
+  if (/could not connect to 1Password|connecting to desktop app/i.test(stderr)) {
+    return (
+      "The 1Password 8 desktop app isn't running (or the CLI toggle is off). Open it, then check Settings → Developer → Integrate with 1Password CLI." +
+      versionHint
+    );
+  }
+  if (/not (?:currently )?authorized/i.test(stderr)) {
+    return (
+      "1Password 8 → Settings → Developer → Manage authorized apps. Add / re-authorize the terminal you use for pnpm dev." +
+      versionHint
+    );
+  }
+  return (
+    "Run `op signin` in the pnpm-dev terminal, or turn on 1Password 8 → Settings → Developer → Integrate with 1Password CLI." +
+    versionHint
+  );
+}
+
+/**
+ * `op` versions before ~2.20 had subprocess-handoff bugs with the
+ * 1Password 8 desktop integration. Coarse semver check — if we
+ * can't parse the version, don't nag.
+ */
+function looksOldOpVersion(version: string | undefined): boolean {
+  if (!version) return false;
+  const m = /^(\d+)\.(\d+)/.exec(version);
+  if (!m) return false;
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  if (major < 2) return true;
+  if (major === 2 && minor < 20) return true;
+  return false;
+}
+
+function extractStderr(err: unknown): string {
+  if (err && typeof err === "object") {
+    const obj = err as { stderr?: unknown; message?: unknown };
+    if (typeof obj.stderr === "string") return obj.stderr;
+    if (typeof obj.message === "string") return obj.message;
+  }
+  return String(err);
+}
+
+function firstMeaningfulLine(text: string): string {
+  return (
+    text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l.length > 0) ?? ""
+  ).slice(0, 240);
 }
 
 async function probeGh(): Promise<ExternalToolProbe> {
