@@ -180,6 +180,13 @@ export interface StartTeam51RunInput {
    * leaving true hangs open forever.
    */
   timeout_ms?: number;
+  /**
+   * External tools this command depends on. Probed BEFORE the
+   * subprocess spawns; if any fail, the run is recorded as
+   * `external-auth-failed:<tool>` without touching the CLI at all.
+   * Empty = skip pre-flight.
+   */
+  required_tools?: ExternalTool[];
 }
 
 export interface StartTeam51RunResult {
@@ -230,6 +237,31 @@ export async function startTeam51Run(
     JSON.stringify(input.args),
     logPath,
   );
+
+  // Pre-flight external tools BEFORE spawning. Catches the common
+  // "op session expired" case without wasting a subprocess. If any
+  // probe fails, we stamp `external-auth-failed:<tool>` and return
+  // the run_id — the detail page renders the right recovery card.
+  if (input.required_tools && input.required_tools.length > 0) {
+    const probes = await probeExternalTools(input.required_tools);
+    const firstFail = probes.find((p) => !p.ok);
+    if (firstFail) {
+      await appendLog(
+        logPath,
+        `[preflight] ${firstFail.tool}: ${firstFail.message}\n` +
+          (firstFail.remedy ? `[preflight remedy] ${firstFail.remedy}\n` : ""),
+      );
+      await recordTeam51Failure(
+        runId,
+        `external-auth-failed:${firstFail.tool}`,
+        firstFail.remedy
+          ? `${firstFail.message} ${firstFail.remedy}`
+          : firstFail.message,
+        null,
+      );
+      return { ok: true, run_id: runId };
+    }
+  }
 
   // Fire and forget — the spawn callback owns the row's lifecycle
   // and log tail from here. Errors caught + recorded to the row.

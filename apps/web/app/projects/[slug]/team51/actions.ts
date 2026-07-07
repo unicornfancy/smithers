@@ -53,6 +53,12 @@ export async function startWpcomCreateSiteAction(input: {
     command: "wpcom:create-site",
     command_group: "wpcom",
     args,
+    // wpcom:create-site pushes generated credentials into 1Password
+    // (via `op`) and — when a repository option is set — touches
+    // GitHub via `gh`. Both need to be authenticated in the env
+    // Smithers spawned into. Pre-flight catches expired sessions
+    // before we run a destructive command.
+    required_tools: input.repository?.trim() ? ["op", "gh"] : ["op"],
   });
 
   if (!res.ok) {
