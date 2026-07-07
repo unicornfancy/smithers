@@ -2,8 +2,17 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ExternalLink, PlusCircle, Terminal } from "lucide-react";
+import {
+  Copy,
+  ExternalLink,
+  PlusCircle,
+  Server,
+  Terminal,
+} from "lucide-react";
 
+import { PressableCloneSiteDialog } from "@/components/team51/pressable-clone-site-dialog";
+import { PressableCreateSiteDialog } from "@/components/team51/pressable-create-site-dialog";
+import { RunWpCliDialog } from "@/components/team51/run-wp-cli-dialog";
 import { WpcomCreateSiteDialog } from "@/components/team51/wpcom-create-site-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +36,10 @@ interface Props {
   projectSlug: string;
   suggestedName: string;
   defaultRepository: string;
+  /** Pressable clone-site source — from project's production_url. */
+  defaultSourceSite: string;
+  /** WP-CLI target — falls back through staging_url / production_url. */
+  defaultWpCliSite: string;
   recentRuns: RecentRun[];
 }
 
@@ -53,9 +66,14 @@ export function Team51ProvisioningSection({
   projectSlug,
   suggestedName,
   defaultRepository,
+  defaultSourceSite,
+  defaultWpCliSite,
   recentRuns,
 }: Props) {
   const [wpcomOpen, setWpcomOpen] = React.useState(false);
+  const [pressableOpen, setPressableOpen] = React.useState(false);
+  const [cloneOpen, setCloneOpen] = React.useState(false);
+  const [wpCliOpen, setWpCliOpen] = React.useState(false);
 
   return (
     <>
@@ -85,6 +103,36 @@ export function Team51ProvisioningSection({
             >
               <PlusCircle className="size-3.5" />
               Create WordPress.com site
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => setPressableOpen(true)}
+              className="gap-1.5"
+            >
+              <Server className="size-3.5" />
+              Create Pressable site
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => setCloneOpen(true)}
+              className="gap-1.5"
+            >
+              <Copy className="size-3.5" />
+              Clone Pressable site
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setWpCliOpen(true)}
+              className="gap-1.5"
+            >
+              <Terminal className="size-3.5" />
+              Run WP-CLI
             </Button>
           </div>
 
@@ -136,6 +184,25 @@ export function Team51ProvisioningSection({
         projectSlug={projectSlug}
         suggestedName={suggestedName}
         defaultRepository={defaultRepository}
+      />
+      <PressableCreateSiteDialog
+        open={pressableOpen}
+        onOpenChange={setPressableOpen}
+        projectSlug={projectSlug}
+        suggestedName={suggestedName}
+        defaultRepository={defaultRepository}
+      />
+      <PressableCloneSiteDialog
+        open={cloneOpen}
+        onOpenChange={setCloneOpen}
+        projectSlug={projectSlug}
+        defaultSourceSite={defaultSourceSite}
+      />
+      <RunWpCliDialog
+        open={wpCliOpen}
+        onOpenChange={setWpCliOpen}
+        projectSlug={projectSlug}
+        defaultSite={defaultWpCliSite}
       />
     </>
   );

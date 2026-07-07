@@ -643,6 +643,10 @@ export default async function ProjectWorkbenchPage({
           projectSlug={detail.slug}
           suggestedName={detail.name}
           defaultRepository={detail.github_repo ?? ""}
+          defaultSourceSite={detail.production_url ?? ""}
+          defaultWpCliSite={
+            detail.staging_url ?? detail.production_url ?? ""
+          }
           recentRuns={team51Runs.map((r) => ({
             id: r.id,
             command: r.command,
