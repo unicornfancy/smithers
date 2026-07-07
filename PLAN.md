@@ -45,6 +45,32 @@ Trigger to revisit: Katie decides how she wants secondary TAMs tagged in Linear.
 
 Revisit only if a TAM without Share Link access repeatedly needs to audit gated sites in situ, e.g. a partner-side flow where staging is password-only AND no share preview URL is available.
 
+## team51 CLI — post-success frontmatter write-back
+
+**Status shipped 2026-07-07:** four workflows (`wpcom:create-site`,
+`pressable:create-site`, `pressable:clone-site`, `run-site-wp-cli-command`)
+run via `--no-interaction` with Smithers-native forms replacing the
+CLI's prompts, structured failure classification + recovery cards,
+and external-tool pre-flight (op / gh / SSH). Detail page carries
+the log tail on success but doesn't parse structured results yet.
+
+**What lands when ready:**
+
+- Parse the CLI's final "Created site at https://…" output for
+  create-site variants and offer a "Write to staging_url"
+  button on the completed detail page. Simple regex per command.
+- For clone-site: capture the new domain + write to
+  `project.staging_url` if empty.
+- For run-wp-cli-command: skip write-back — command output is
+  transient.
+
+**Not scoped yet:** additional team51 commands beyond the top-4.
+Full command list is at `~/team51-cli/commands/`; likely
+next-most-useful based on Katie's usage patterns:
+`pressable:add-collaborator`, `deployhq:create-project`,
+`github:create-issue`. Each is ~150 lines of dialog + action + a
+`Team51CommandSlug` extension.
+
 ## Release cadence — deferred decision
 
 Considered switching the Update Smithers card to pull the latest git tag instead of `origin/main` so a mid-day broken push doesn't reach users. Katie decided to keep pushing to `main` and manually nudge TAMs to update at release checkpoints. Revisit when we have enough users that a bad main commit is genuinely disruptive.

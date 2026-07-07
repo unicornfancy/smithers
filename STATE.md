@@ -1,6 +1,89 @@
 # STATE.md — Smithers (snapshot)
 
-_Updated 2026-07-06_
+_Updated 2026-07-07_
+
+## Just completed (2026-07-07 — team51 CLI shell-out integration)
+
+Smithers can now drive the team51 CLI (Symfony Console PHP app at
+`/usr/local/bin/team51` → `~/team51-cli/team51-cli.php`) from
+project workbenches. Four workflows ship in v1: `wpcom:create-site`,
+`pressable:create-site`, `pressable:clone-site` (launch-day), and
+one shared `run-site-wp-cli-command` dialog covering the WPCOM +
+Pressable variants.
+
+### How the CLI-prompt problem was solved
+
+The team51 CLI's Symfony Console commands prompt for missing args
+during `initialize()` + `interact()`. Piping that through a web UI
+would need a pty — complex, fragile, no real UX win. Instead
+Smithers renders a web form matching each command's declared args
++ options (grepped from `~/team51-cli/commands/*.php`), pre-fills
+from project frontmatter, and spawns with `--no-interaction`
+appended so the CLI never blocks on a prompt. Symfony's built-in
+confirmation prompt (which `-n` short-circuits to false) is
+replaced by an in-dialog confirmation banner + Create button.
+
+### Foundation module
+
+- `apps/web/lib/server/team51.ts`:
+  - `resolveTeam51Binary()` probes Homebrew paths + `/usr/bin` +
+    `SMITHERS_TEAM51_PATH` escape hatch (same pattern as `gh`).
+  - `startTeam51Run()` inserts a `team51_runs` row, runs external-
+    tool pre-flight if the caller declared `required_tools`, then
+    spawns the child with `--no-interaction`. stdout/stderr stream
+    to `~/.smithers/team51-logs/<run_id>.log`. On exit, classifies.
+  - `classifyTeam51Failure()` maps stderr tail + exit code to
+    structured `Team51FailureKind`: `user-cancelled`,
+    `duplicate-resource`, `auth-failed`, `missing-arg`, `timeout`,
+    `unknown-command`, `external-auth-failed:<tool>`,
+    `generic-failure`. Symfony-native error patterns for the first
+    four; `op` / `gh` patterns for the fifth.
+  - `probeExternalTools()` runs `op whoami`, `gh auth status`, and
+    GitHub SSH `-T BatchMode=yes` with 5s timeouts. Powers both
+    pre-flight and the Diagnostics probe card.
+  - `cancelTeam51Run()` SIGTERM + row stamp.
+- New `team51_runs` table (migration V6, additive) mirrors
+  `qa_runs`: id, project_slug, command, command_group, args_json,
+  status, timings, pid, exit_code, log_path, failure_kind,
+  error_message, result_json.
+
+### Provisioning card on the workbench
+
+Sits on the Knowledge tab under `id: "team51-provisioning"`,
+partner-projects only. Four buttons: Create WordPress.com site,
+Create Pressable site, Clone Pressable site, Run WP-CLI. Recent
+runs list underneath with status pill + link to the detail page.
+
+### Failure recovery cards
+
+`/projects/[slug]/team51/[runId]` uses the same shape as the Kosh
+QA detail page. `Team51FailedCard` switches on `failure_kind` and
+renders seven branches — each pointing at the actionable fix. The
+`external-auth-failed:op` branch calls out the 1Password 8 desktop
+CLI integration as the durable fix (session-based `op signin`
+lives in the terminal that spawned `pnpm dev` and expires ~30 min).
+
+### Diagnostics probe card
+
+Settings → Diagnostics → **Team51 CLI + external tools** runs the
+same probes the pre-flight uses (`op` / `gh` / GitHub SSH). Green
+check on pass; red X with the fix command inline on fail. Backed
+by `GET /api/dev/team51-tools?tools=op,gh`.
+
+### ONBOARDING callout
+
+New Day-to-day gotcha explaining why 1Password 8 CLI integration
+matters for Smithers's Provisioning workflows.
+
+### Deliberately out of scope for this pass
+
+- **Post-success frontmatter write-back** — the CLI prints new
+  site URLs at the end of a create-site run; we haven't parsed
+  them into `staging_url` / `production_url` yet. Log tail carries
+  the info for now.
+- **Interactive resume** for CLIs that need mid-run input (same
+  category as Kosh v2's reachability-gate pause). Not built for
+  team51 since the current commands work fully non-interactively.
 
 ## Just completed (2026-06-24 → 2026-07-06 — v1.0 release + polish sweep)
 

@@ -485,6 +485,7 @@ These will save you frustration once you're using Smithers regularly.
 - **The background scheduler is opt-in.** `/settings` has cards for Daily briefing, Ping monitor, Transcription sync, Hive Mind sync, Team roster sync. Each only fires while `pnpm dev` is up; for firing when dev is down, see `scripts/launchd/com.smithers.<job>.plist.example`.
 - **Nothing posts automatically.** Every AI draft is yours to review before sending. "Save as draft" writes to your vault; nothing leaves your machine without an explicit Send / Post.
 - **Markdown is the source of truth.** Anything Smithers shows you came from a file you can open and edit yourself. The SQLite cache at `~/.smithers/state.db` is purely for performance; deleting it just makes the next request slower.
+- **If you use the team51 CLI Provisioning workflows, turn on 1Password 8 CLI integration.** The team51 CLI writes generated site passwords to 1Password via the `op` command. If you rely on the legacy `op signin` session-based auth, your session lives in the terminal that started `pnpm dev` and expires after ~30 minutes — every Provisioning run after that hits an `external-auth-failed:op` card mid-flow. The durable fix: **1Password 8 → Settings → Developer → "Integrate with 1Password CLI"**. Then every `op` call triggers a biometric prompt regardless of which subprocess called it. Sanity-check via `/settings → Diagnostics → Team51 CLI + external tools → Test tools`.
 
 ---
 
