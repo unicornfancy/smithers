@@ -5,10 +5,8 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  cleanWpcomName,
-  startWpcomCreateSiteAction,
-} from "@/app/projects/[slug]/team51/actions";
+import { startWpcomCreateSiteAction } from "@/app/projects/[slug]/team51/actions";
+import { cleanWpcomName } from "@/lib/team51-names";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

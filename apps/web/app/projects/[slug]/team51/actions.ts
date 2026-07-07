@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { cleanPressableName, cleanWpcomName } from "@/lib/team51-names";
 import {
   cancelTeam51Run,
   startTeam51Run,
@@ -77,24 +78,6 @@ export async function startWpcomCreateSiteAction(input: {
   return { ok: true, data: { run_id: res.run_id } };
 }
 
-/**
- * WPCOM site names have to be lowercase alphanumeric — the CLI
- * strips dashes and slugifies. Match the CLI's rule here so the
- * Smithers form preview matches what actually lands.
- *
- * See ~/team51-cli/commands/WPCOM_Site_Create.php line 81:
- *   `str_replace('-', '', slugify($input))`.
- */
-export function cleanWpcomName(raw: string): string {
-  return raw
-    .toLowerCase()
-    .normalize("NFKD")
-    // Drop combining marks
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "")
-    .slice(0, 40);
-}
-
 export async function cancelTeam51RunAction(input: {
   run_id: string;
   project_slug: string;
@@ -125,25 +108,10 @@ export async function suggestWpcomNameAction(projectSlug: string): Promise<{
 // ---------------------------------------------------------------------------
 
 /**
- * Pressable site names follow the same slugify rule as WPCOM but
- * PRESERVE dashes (WPCOM strips them). See
- * ~/team51-cli/commands/Pressable_Site_Create.php line 84:
- *   `slugify( get_string_input(...) )`.
- */
-export function cleanPressableName(raw: string): string {
-  return raw
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-}
-
-/**
  * Kick off `pressable:create-site`. Same shape as the WPCOM
  * equivalent but with an extra datacenter option and dashes
- * allowed in the site name.
+ * allowed in the site name (see `cleanPressableName` in
+ * `lib/team51-names.ts`).
  */
 export async function startPressableCreateSiteAction(input: {
   project_slug: string;
