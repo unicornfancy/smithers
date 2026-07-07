@@ -611,9 +611,6 @@ async function probeOp(): Promise<ExternalToolProbe> {
     };
   }
 
-  // Version stamp helps users diagnose stale-CLI vs. auth-config issues.
-  // Older `op` versions (<= 2.20-ish) had known desktop-integration
-  // bugs with subprocess callers, so surface the version prominently.
   let version: string | undefined;
   try {
     const { stdout } = await execFileAsync(bin, ["--version"], {
@@ -621,34 +618,125 @@ async function probeOp(): Promise<ExternalToolProbe> {
     });
     version = stdout.trim();
   } catch {
-    /* ignore — version is informational */
+    /* informational */
   }
 
-  try {
-    // 15s to accommodate a biometric prompt if desktop integration
-    // kicks one off. `op whoami` is the cheapest signed-in check.
-    await execFileAsync(bin, ["whoami"], { timeout: 15_000 });
+  // Try op's default account first — that's what the team51 CLI
+  // itself will hit. If that fails, walk `op account list` and
+  // probe each explicitly so we can distinguish "no accounts CLI-
+  // authorized" from "authorized but wrong default." The per-account
+  // breakdown lands in `detail` so the Diagnostics card can show
+  // exactly which accounts are ready.
+  const defaultResult = await tryOpWhoami(bin, undefined);
+  if (defaultResult.ok) {
     return {
       tool: "op",
       ok: true,
-      message: `Signed in via ${bin}.`,
+      message: `Signed in via ${bin} (default account).`,
       version,
     };
-  } catch (err) {
-    const stderr = extractStderr(err);
-    const detail = firstMeaningfulLine(stderr);
-    // Classify by the exact error `op` reports so the remedy is
-    // specific instead of a hand-wavy "check auth".
-    const remedy = pickOpRemedy(stderr, version);
+  }
+
+  // Enumerate configured accounts + probe each individually.
+  const accounts = await listOpAccounts(bin);
+  const perAccount: Array<{ shorthand: string; ok: boolean; err?: string }> = [];
+  for (const acct of accounts) {
+    const r = await tryOpWhoami(bin, acct.shorthand);
+    perAccount.push({
+      shorthand: acct.shorthand,
+      ok: r.ok,
+      err: r.ok ? undefined : firstMeaningfulLine(r.stderr),
+    });
+  }
+  const anyAuthed = perAccount.find((p) => p.ok);
+  const detailLines: string[] = [];
+  if (accounts.length > 0) {
+    detailLines.push(
+      `Default: ${firstMeaningfulLine(defaultResult.stderr)}`,
+      `Configured accounts:`,
+      ...perAccount.map(
+        (p) => `  ${p.ok ? "✓" : "✗"} ${p.shorthand}${p.err ? " — " + p.err : ""}`,
+      ),
+    );
+  } else {
+    detailLines.push(firstMeaningfulLine(defaultResult.stderr));
+  }
+  const detail = detailLines.join(" · ").slice(0, 500);
+
+  if (anyAuthed) {
+    // At least one account works — the default just isn't set right.
     return {
       tool: "op",
       ok: false,
-      message: opFailureSummary(stderr),
-      remedy,
+      message: `1Password CLI has authorized accounts, but op's default isn't one of them.`,
+      remedy:
+        `Set the working account as default: run \`op account default ${anyAuthed.shorthand}\` in a terminal that has op auth. ` +
+        `Or point the team51 CLI at it directly via \`op --account ${anyAuthed.shorthand}\`.`,
       detail,
       version,
     };
   }
+
+  return {
+    tool: "op",
+    ok: false,
+    message: opFailureSummary(defaultResult.stderr),
+    remedy: pickOpRemedy(defaultResult.stderr, version),
+    detail,
+    version,
+  };
+}
+
+interface OpWhoamiResult {
+  ok: boolean;
+  stderr: string;
+}
+
+async function tryOpWhoami(
+  bin: string,
+  account: string | undefined,
+): Promise<OpWhoamiResult> {
+  const args = account ? ["--account", account, "whoami"] : ["whoami"];
+  try {
+    await execFileAsync(bin, args, { timeout: 15_000 });
+    return { ok: true, stderr: "" };
+  } catch (err) {
+    return { ok: false, stderr: extractStderr(err) };
+  }
+}
+
+interface OpAccount {
+  shorthand: string;
+}
+
+/**
+ * `op account list --format=json` returns configured accounts
+ * (`url`, `email`, `user_uuid`, `account_uuid`). Any of those can
+ * key `--account`; we use the subdomain slug from the URL as the
+ * shorthand since it's what humans use in `op signin --account X`.
+ */
+async function listOpAccounts(bin: string): Promise<OpAccount[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      bin,
+      ["account", "list", "--format=json"],
+      { timeout: 5_000 },
+    );
+    const parsed = JSON.parse(stdout) as Array<{ url?: string }>;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((a) => shortFromUrl(a.url))
+      .filter((s): s is string => Boolean(s))
+      .map((shorthand) => ({ shorthand }));
+  } catch {
+    return [];
+  }
+}
+
+function shortFromUrl(url: string | undefined): string | null {
+  if (!url) return null;
+  const m = /^([^.]+)\./.exec(url.trim());
+  return m ? m[1]! : url.trim();
 }
 
 /**
