@@ -12,7 +12,7 @@ Katie proposed the pivot that actually works: **Smithers composes the command fr
 
 - `startTeam51Run` no longer spawns a Node subprocess. It writes `/tmp/smithers-team51-<id>.sh`, `osascript`s Terminal.app to open it, and returns the run_id.
 - The generated script tees the CLI output to a log file, then `curl`s the log + exit code back to `POST /api/team51/complete/[runId]?token=<one-time>`. The script leaves the terminal window open until the user hits Return — so they can read the outcome.
-- `completeTeam51Run` (in `team51.ts`) validates the one-time token (constant-time compare), classifies success / failure by exit code, parses the log for a URL via per-command regex (WPCOM → `production_url`, Pressable → `staging_url`), and offers a one-click write-back on the detail page.
+- `completeTeam51Run` (in `team51.ts`) validates the one-time token (constant-time compare), classifies success / failure by exit code, parses the log for a URL via per-command regex, and offers a one-click write-back on the detail page. All three create/clone variants write to `staging_url` — the fresh URLs from team51 (`foo.wordpress.com`, `foo.mystagingwebsite.com`) are pre-launch; `production_url` is reserved for the final launch URL the partner will use.
 - Migration V7 adds `postback_token` (nulled after completion) and `captured_url` columns to `team51_runs`.
 - New `Team51RunPoll` client component polls the detail page every 3s while status is queued/running so it transitions to completed/failed as soon as the postback fires.
 - New `Team51WriteBackButton` on the completed state: writes the captured URL to project frontmatter idempotently, shows a confirmation.

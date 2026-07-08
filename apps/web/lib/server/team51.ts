@@ -508,13 +508,14 @@ export async function readTeam51RunLog(runId: string): Promise<string | null> {
 // --- Frontmatter write-back ------------------------------------------------
 
 /**
- * Write the captured URL into the project's frontmatter. Which
- * field depends on the command:
- *   - wpcom:create-site → production_url (fresh sites go live)
- *   - pressable:create-site → staging_url (partners typically get
- *     Pressable as staging before WPCOM production)
- *   - pressable:clone-site → staging_url (the clone IS the staging)
- * Returns whether anything was written.
+ * Write the captured URL into the project's frontmatter. Both the
+ * WPCOM and Pressable create-site flows produce pre-launch URLs
+ * (foo.wordpress.com / foo.mystagingwebsite.com) — those are
+ * staging, not the final live domain the partner will use. The
+ * production_url field is reserved for the eventual launch URL
+ * (typically a custom domain set separately). So every
+ * create/clone variant writes to `staging_url`. Returns whether
+ * anything was written.
  */
 export async function writeBackCapturedUrl(
   runId: string,
@@ -547,7 +548,6 @@ export async function writeBackCapturedUrl(
 function frontmatterFieldForCommand(command: Team51CommandSlug): string | null {
   switch (command) {
     case "wpcom:create-site":
-      return "production_url";
     case "pressable:create-site":
     case "pressable:clone-site":
       return "staging_url";

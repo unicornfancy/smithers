@@ -15,7 +15,7 @@ interface Props {
 }
 
 const FIELD_HINT: Record<string, string> = {
-  "wpcom:create-site": "production_url",
+  "wpcom:create-site": "staging_url",
   "pressable:create-site": "staging_url",
   "pressable:clone-site": "staging_url",
 };
