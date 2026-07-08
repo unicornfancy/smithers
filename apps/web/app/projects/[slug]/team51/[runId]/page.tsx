@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ExternalLink, XCircle } from "lucide-react";
 
 import { AppHeader } from "@/components/app-header";
 import { PageShell } from "@/components/page-shell";
-import { Team51FailedCard } from "@/components/team51/team51-failed-card";
-import { Team51RunControls } from "@/components/team51/team51-run-controls";
+import { Team51RunPoll } from "@/components/team51/team51-run-poll";
+import { Team51WriteBackButton } from "@/components/team51/team51-write-back-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getTeam51Run, readTeam51RunLog } from "@/lib/server/team51";
@@ -46,13 +46,13 @@ export default async function Team51RunDetailPage({
 
   const log = await readTeam51RunLog(runId).catch(() => null);
 
-  const isActive = run.status === "queued" || run.status === "running";
   const args: string[] = safeParseJsonArray(run.args_json);
+  const isActive = run.status === "queued" || run.status === "running";
 
   return (
     <>
       <AppHeader
-        title={`${COMMAND_LABEL[run.command] ?? run.command}`}
+        title={COMMAND_LABEL[run.command] ?? run.command}
         subtitle={`Run started ${run.started_at} · status: ${run.status}`}
         actions={
           <Button variant="ghost" size="sm" asChild>
@@ -64,12 +64,31 @@ export default async function Team51RunDetailPage({
         }
       />
       <PageShell>
+        {isActive ? <Team51RunPoll /> : null}
+
         {isActive ? (
-          <Team51RunControls
-            runId={run.id}
-            projectSlug={slug}
-            status={run.status as "queued" | "running"}
-          />
+          <Card className="border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">
+                Running in Terminal
+              </CardTitle>
+              <p className="text-muted-foreground text-xs">
+                Smithers opened a Terminal window that&apos;s running the
+                CLI. Watch it for prompts (Symfony&apos;s &ldquo;Are you
+                sure?&rdquo; confirmation, 1Password&apos;s biometric
+                approval when credentials get written). This page will
+                refresh when the command reports back — usually within
+                seconds of the Terminal script finishing.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground text-xs">
+                Leave the Terminal window open until you see &ldquo;Reported.
+                Safe to close.&rdquo; If it closed early or the postback
+                failed, hit Refresh — the log&apos;s still on disk.
+              </p>
+            </CardContent>
+          </Card>
         ) : null}
 
         <Card>
@@ -78,8 +97,7 @@ export default async function Team51RunDetailPage({
           </CardHeader>
           <CardContent>
             <pre className="bg-muted overflow-x-auto rounded p-3 text-[11px]">
-              team51 {run.command} {args.map(escapeArg).join(" ")}{" "}
-              --no-interaction
+              team51 {run.command} {args.map(escapeArg).join(" ")}
             </pre>
           </CardContent>
         </Card>
@@ -92,24 +110,58 @@ export default async function Team51RunDetailPage({
                 Completed
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground text-xs">
-                Full log below. Look for URLs, credentials, and post-create
-                steps in the tail — Smithers doesn&apos;t parse those into
-                structured fields yet.
-              </p>
+            <CardContent className="flex flex-col gap-3">
+              {run.captured_url ? (
+                <div className="flex flex-col gap-2">
+                  <p className="text-muted-foreground text-xs">
+                    Captured URL:
+                  </p>
+                  <a
+                    href={run.captured_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sky-600 dark:text-sky-400 inline-flex items-center gap-1 font-mono text-xs underline-offset-2 hover:underline"
+                  >
+                    {run.captured_url}
+                    <ExternalLink className="size-3" />
+                  </a>
+                  <Team51WriteBackButton
+                    runId={run.id}
+                    command={run.command}
+                    projectSlug={slug}
+                  />
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-xs">
+                  No URL parsed from the log — this is expected for
+                  WP-CLI runs and for commands whose output format
+                  Smithers doesn&apos;t know yet.
+                </p>
+              )}
             </CardContent>
           </Card>
         ) : null}
 
-        {run.status === "failed" && run.failure_kind ? (
-          <Team51FailedCard
-            projectSlug={slug}
-            runId={run.id}
-            failureKind={run.failure_kind}
-            errorMessage={run.error_message}
-            logTail={log}
-          />
+        {run.status === "failed" ? (
+          <Card className="border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/20">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <XCircle className="size-4 text-rose-700 dark:text-rose-300" />
+                Run failed
+                {run.exit_code != null ? (
+                  <span className="text-muted-foreground text-xs font-normal">
+                    (exit {run.exit_code})
+                  </span>
+                ) : null}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground text-xs">
+                {run.error_message ??
+                  "See the log below for the full CLI output."}
+              </p>
+            </CardContent>
+          </Card>
         ) : null}
 
         {log ? (
@@ -121,6 +173,18 @@ export default async function Team51RunDetailPage({
               <pre className="bg-muted max-h-[70vh] overflow-auto rounded p-3 text-[11px]">
                 {log}
               </pre>
+            </CardContent>
+          </Card>
+        ) : isActive ? (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Run log</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground text-xs">
+                Log appears here after the Terminal script POSTs its
+                output back to Smithers.
+              </p>
             </CardContent>
           </Card>
         ) : null}
@@ -138,12 +202,6 @@ function safeParseJsonArray(raw: string): string[] {
   }
 }
 
-/**
- * Shell-safe rendering of an arg for the command preview. We don't
- * exec through a shell — this is display-only — but wrapping args
- * with spaces / special chars in single quotes makes the preview
- * copy-pasteable into a terminal without gotchas.
- */
 function escapeArg(arg: string): string {
   if (/^[a-zA-Z0-9_@:./=-]+$/.test(arg)) return arg;
   return `'${arg.replace(/'/g, `'\\''`)}'`;

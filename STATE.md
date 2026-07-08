@@ -1,6 +1,42 @@
 # STATE.md — Smithers (snapshot)
 
-_Updated 2026-07-07_
+_Updated 2026-07-08_
+
+## Just completed (2026-07-08 — team51 CLI: scrap subprocess, switch to Terminal-launched)
+
+The subprocess-based team51 integration shipped 2026-07-07 never worked against 1Password's desktop CLI integration. Root cause traced across a ~30-message debugging session: 1Password 8's ancestry-based caller authorization refuses `op` when the direct parent is `node` (Smithers's dev server) — and no shell-wrapping trick reliably fools it once pnpm dev has been restarted via the in-app button (which detaches from Terminal → no shell ancestor at all).
+
+Katie proposed the pivot that actually works: **Smithers composes the command from a web form, writes a shell script that runs it + POSTs the log back on completion, then AppleScripts Terminal.app to open the script.** The CLI runs interactively in a real Terminal window — every prompt, every biometric, every ancestry check works because a real terminal is a real terminal.
+
+### What replaced what
+
+- `startTeam51Run` no longer spawns a Node subprocess. It writes `/tmp/smithers-team51-<id>.sh`, `osascript`s Terminal.app to open it, and returns the run_id.
+- The generated script tees the CLI output to a log file, then `curl`s the log + exit code back to `POST /api/team51/complete/[runId]?token=<one-time>`. The script leaves the terminal window open until the user hits Return — so they can read the outcome.
+- `completeTeam51Run` (in `team51.ts`) validates the one-time token (constant-time compare), classifies success / failure by exit code, parses the log for a URL via per-command regex (WPCOM → `production_url`, Pressable → `staging_url`), and offers a one-click write-back on the detail page.
+- Migration V7 adds `postback_token` (nulled after completion) and `captured_url` columns to `team51_runs`.
+- New `Team51RunPoll` client component polls the detail page every 3s while status is queued/running so it transitions to completed/failed as soon as the postback fires.
+- New `Team51WriteBackButton` on the completed state: writes the captured URL to project frontmatter idempotently, shows a confirmation.
+
+### What got scrapped
+
+- `Team51ToolsCard` in Diagnostics (external-tool probes are unnecessary — the terminal shows any auth failures inline).
+- `/api/dev/team51-tools` route.
+- `Team51RunControls` (cancel button — user cancels in the terminal with Ctrl+C).
+- `Team51FailedCard`'s seven-way `failure_kind` switch (kept a lightweight `classifyFailureFromLog` for coloring but the log itself is the diagnostic).
+- `probeExternalTools`, `probeOp`, `probeGh`, `probeSsh`, `classifyGate`, `classifyTeam51Failure` — all the subprocess-era classification and pre-flight code.
+- The `required_tools` field on `StartTeam51RunInput`.
+- The 1Password ancestry guidance in ONBOARDING (no longer applicable) — replaced with a one-time macOS Automation permission callout.
+
+### Trade-offs the new design accepts
+
+- No live log tail in Smithers during the run. The user watches the Terminal window; Smithers's detail page shows the log after postback.
+- First AppleScript invocation triggers a macOS Automation permission dialog. One-time — the OS remembers Allow.
+- Session state can be interrupted if the user closes the terminal early. The CLI still finishes and the site still gets created; Smithers just doesn't get the URL for automatic frontmatter write-back. Log is still on disk.
+- macOS-only (already a Smithers-wide constraint).
+
+### The four workflows still ship
+
+`wpcom:create-site`, `pressable:create-site`, `pressable:clone-site`, `wpcom/pressable:run-site-wp-cli-command`. Same dialogs, same forms, same pre-fill from project frontmatter. Only the internals of `startTeam51Run` changed. `--no-interaction` is no longer appended — the CLI's own confirmation prompt fires naturally in the terminal.
 
 ## Just completed (2026-07-07 — team51 CLI shell-out integration)
 

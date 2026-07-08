@@ -7,7 +7,7 @@ import Database, { type Database as DB } from "better-sqlite3";
 
 import { loadConfig } from "./config";
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 let cached: DB | null = null;
 let cachedPath: string | null = null;
@@ -77,7 +77,8 @@ function applyMigrations(db: DB): void {
   if (current < 4) migrationV4(db);
   if (current < 5) migrationV5(db);
   if (current < 6) migrationV6(db);
-  // Future migrations land here as `if (current < 7) migrationV7(db); ...`
+  if (current < 7) migrationV7(db);
+  // Future migrations land here as `if (current < 8) migrationV8(db); ...`
 
   db.prepare(
     "INSERT INTO meta(key, value) VALUES('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -239,4 +240,28 @@ function migrationV6(db: DB): void {
     CREATE INDEX IF NOT EXISTS idx_team51_runs_status
       ON team51_runs(status);
   `);
+}
+
+/**
+ * Terminal-launched team51 architecture: Smithers writes a shell
+ * script to /tmp, AppleScripts Terminal.app to open it, and the
+ * script POSTs the log + exit code back on completion. That
+ * postback needs:
+ *   - `postback_token` — one-time random token in the callback URL
+ *     so an arbitrary local process can't complete someone else's
+ *     run.
+ *   - `captured_url` — parsed URL from the log (e.g. new WPCOM
+ *     site URL) so the detail page can offer a one-click write-back
+ *     to project frontmatter without re-parsing every render.
+ */
+function migrationV7(db: DB): void {
+  const cols = db
+    .prepare(`PRAGMA table_info(team51_runs)`)
+    .all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "postback_token")) {
+    db.exec(`ALTER TABLE team51_runs ADD COLUMN postback_token TEXT;`);
+  }
+  if (!cols.some((c) => c.name === "captured_url")) {
+    db.exec(`ALTER TABLE team51_runs ADD COLUMN captured_url TEXT;`);
+  }
 }

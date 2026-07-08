@@ -1,20 +1,48 @@
 import "server-only";
 
 import { spawn } from "node:child_process";
-import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { promisify } from "node:util";
-import { execFile } from "node:child_process";
+import { chmod, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { join } from "node:path";
 
 import { loadConfig } from "./config";
 import { getDb } from "./db";
+import { getVault } from "./vault";
 
-const execFileAsync = promisify(execFile);
+/**
+ * Team51 CLI integration — Terminal-launched flow.
+ *
+ * The team51 CLI is a Symfony Console PHP app that reads/writes to
+ * external tools (op, gh, Automattic APIs) which authenticate against
+ * per-shell process ancestry. Running the CLI as a Node subprocess
+ * from Smithers's dev server fails because Node isn't in 1Password's
+ * trusted ancestry chain (see git log for the ~30-message debugging
+ * epic that led us here).
+ *
+ * The design that works: Smithers COMPOSES the exact command from a
+ * web form, writes a shell script that runs it + POSTs the log back,
+ * then AppleScripts Terminal.app to open the script. The CLI runs
+ * with a real Terminal ancestor, all interactive prompts (Symfony's
+ * confirmation, `op`'s biometric) happen naturally, and when the
+ * script finishes it curls the log + exit code back to Smithers.
+ * Smithers parses the log for structured results (new site URLs)
+ * and offers to write them into project frontmatter.
+ *
+ * Trade-offs vs. the old subprocess design:
+ *   ✓ Works with 1Password's ancestry-based auth on every restart.
+ *   ✓ Matches the terminal workflow existing TAMs already know.
+ *   ✓ No `--no-interaction`; CLI prompts / errors surface inline.
+ *   ✗ No live log tail in Smithers during the run — the user
+ *     watches the terminal window. Detail page shows the log once
+ *     the postback fires.
+ *   ✗ First AppleScript invocation prompts for macOS Automation
+ *     permission (one-time).
+ *   ✗ macOS-only (Smithers is macOS-only anyway).
+ */
 
 // --- Types -----------------------------------------------------------------
 
-/** Symfony command slug — e.g. `wpcom:create-site`. */
 export type Team51CommandSlug =
   | "wpcom:create-site"
   | "pressable:create-site"
@@ -25,26 +53,11 @@ export type Team51CommandSlug =
 export type Team51CommandGroup = "wpcom" | "pressable" | "github" | "deployhq";
 
 export type Team51RunStatus =
-  | "queued"
-  | "running"
+  | "queued" // Script written, Terminal launch pending / in flight
+  | "running" // Running in Terminal, awaiting postback
   | "completed"
   | "failed"
   | "cancelled";
-
-/**
- * Structured failure classification. `external-auth-failed:<tool>`
- * for auth errors from tools the CLI shells out to (e.g. `op`,
- * `gh`); other classes surface Symfony's own error patterns.
- */
-export type Team51FailureKind =
-  | "user-cancelled"
-  | "duplicate-resource"
-  | "auth-failed"
-  | "missing-arg"
-  | "timeout"
-  | "unknown-command"
-  | "external-auth-failed"
-  | "generic-failure";
 
 export interface Team51RunRow {
   id: string;
@@ -58,56 +71,24 @@ export interface Team51RunRow {
   pid: number | null;
   exit_code: number | null;
   log_path: string | null;
-  /** Structured failure_kind: prefix like `external-auth-failed:op`. */
   failure_kind: string | null;
   error_message: string | null;
-  /** Post-run structured result (site URL, ID, credentials, etc.). JSON string. */
   result_json: string | null;
+  postback_token: string | null;
+  captured_url: string | null;
 }
 
-// --- Binary resolution -----------------------------------------------------
-
-/**
- * Resolve the `team51` CLI binary. Same probe pattern as `gh` in
- * kosh-findings.ts — check known Homebrew locations plus /usr/bin
- * directly, since Next.js server-action workers can run with a
- * stripped PATH that omits `/usr/local/bin`. The user's local
- * install is normally at `/usr/local/bin/team51` (a symlink to the
- * PHP entrypoint in `~/team51-cli`).
- *
- * Escape-hatch env override: `SMITHERS_TEAM51_PATH`.
- */
-export function resolveTeam51Binary(): string | null {
-  const envOverride = process.env["SMITHERS_TEAM51_PATH"];
-  if (envOverride && existsSync(envOverride)) return envOverride;
-  const candidates = [
-    "/opt/homebrew/bin/team51",
-    "/usr/local/bin/team51",
-    "/usr/bin/team51",
-  ];
-  for (const c of candidates) {
-    if (existsSync(c)) return c;
-  }
-  return null;
-}
-
-export interface Team51Detection {
-  binary: string | null;
-  ready: boolean;
-  reason?: string;
-}
-
-export async function detectTeam51(): Promise<Team51Detection> {
-  const binary = resolveTeam51Binary();
-  if (!binary) {
-    return {
-      binary: null,
-      ready: false,
-      reason:
-        "team51 CLI not found. Install per https://github.com/a8cteam51/team51-cli, or set SMITHERS_TEAM51_PATH.",
-    };
-  }
-  return { binary, ready: true };
+export interface Team51PublicRunRow {
+  id: string;
+  project_slug: string;
+  command: Team51CommandSlug;
+  command_group: Team51CommandGroup;
+  status: Team51RunStatus;
+  started_at: string;
+  completed_at: string | null;
+  exit_code: number | null;
+  captured_url: string | null;
+  failure_kind: string | null;
 }
 
 // --- DB helpers ------------------------------------------------------------
@@ -128,6 +109,24 @@ function rowToTeam51Run(row: Record<string, unknown>): Team51RunRow {
     failure_kind: (row["failure_kind"] as string | null) ?? null,
     error_message: (row["error_message"] as string | null) ?? null,
     result_json: (row["result_json"] as string | null) ?? null,
+    postback_token: (row["postback_token"] as string | null) ?? null,
+    captured_url: (row["captured_url"] as string | null) ?? null,
+  };
+}
+
+/** Strip `postback_token` — it's a secret and shouldn't reach clients. */
+export function toPublicRow(row: Team51RunRow): Team51PublicRunRow {
+  return {
+    id: row.id,
+    project_slug: row.project_slug,
+    command: row.command,
+    command_group: row.command_group,
+    status: row.status,
+    started_at: row.started_at,
+    completed_at: row.completed_at,
+    exit_code: row.exit_code,
+    captured_url: row.captured_url,
+    failure_kind: row.failure_kind,
   };
 }
 
@@ -142,93 +141,71 @@ export async function getTeam51Run(runId: string): Promise<Team51RunRow | null> 
 export async function listTeam51RunsForProject(
   projectSlug: string,
   limit = 20,
-): Promise<Team51RunRow[]> {
+): Promise<Team51PublicRunRow[]> {
   const db = await getDb();
   const rows = db
     .prepare(
       `SELECT * FROM team51_runs WHERE project_slug = ? ORDER BY started_at DESC LIMIT ?`,
     )
     .all(projectSlug, limit) as Array<Record<string, unknown>>;
-  return rows.map(rowToTeam51Run);
+  return rows.map(rowToTeam51Run).map(toPublicRow);
 }
 
-// --- Spawn + classify ------------------------------------------------------
+// --- Start (Terminal-launch flow) -----------------------------------------
 
 export interface StartTeam51RunInput {
   project_slug: string;
   command: Team51CommandSlug;
   command_group: Team51CommandGroup;
   /**
-   * Full argv AFTER the command slug — positional args first, then
-   * `--option=value` pairs. Callers must NOT include `--no-interaction` /
-   * `-n`; runTeam51 appends that automatically.
-   *
-   * Sensitive values (passwords, tokens) MUST NOT appear here — put
-   * them in `env` instead. args_json is persisted in the DB and
-   * shown in the detail page; env is not.
+   * Positional args first, then `--option=value` pairs. These get
+   * quoted for the shell script. Do NOT include `--no-interaction` —
+   * the whole point of this design is to let the CLI's interactive
+   * prompts (confirmation, biometric handoff to `op`) happen
+   * naturally in the terminal window.
    */
   args: string[];
-  /**
-   * Extra env vars to hand to the subprocess. Merged over
-   * process.env at spawn time. Use for anything sensitive.
-   */
-  env?: Record<string, string>;
-  /**
-   * Hard timeout in ms after which we SIGTERM the child + mark the
-   * run as `failed` with `failure_kind = "timeout"`. Defaults to
-   * 10 minutes — long enough for site-creation flows without
-   * leaving true hangs open forever.
-   */
-  timeout_ms?: number;
-  /**
-   * External tools this command depends on. Probed BEFORE the
-   * subprocess spawns; if any fail, the run is recorded as
-   * `external-auth-failed:<tool>` without touching the CLI at all.
-   * Empty = skip pre-flight.
-   */
-  required_tools?: ExternalTool[];
 }
 
-export interface StartTeam51RunResult {
-  ok: true;
-  run_id: string;
-}
-
-export interface StartTeam51RunError {
-  ok: false;
-  reason: "not-configured" | "spawn-failed";
-  message: string;
-}
+export type StartTeam51RunResult =
+  | { ok: true; run_id: string }
+  | { ok: false; reason: "spawn-failed"; message: string };
 
 /**
- * Kick off a team51-cli run. Persists a `team51_runs` row, spawns
- * the child, streams stdout/stderr to disk + the row's classifier,
- * and eventually stamps the row `completed` / `failed` / `cancelled`.
- * Returns the run id immediately so callers can navigate to a live
- * detail page.
+ * Kick off a team51 CLI run via Terminal.app.
  *
- * `--no-interaction` is appended so the CLI never blocks on a
- * prompt — Smithers renders the same prompts as web forms and
- * collects answers before this is called.
+ * 1. Insert a `team51_runs` row with a fresh one-time `postback_token`.
+ * 2. Write `/tmp/smithers-team51-<run_id>.sh` — runs the CLI, tees the
+ *    log, then curls the log + exit code back to
+ *    /api/team51/complete/<run_id>?token=<postback_token>.
+ * 3. `osascript` tells Terminal.app to open that script. First run
+ *    triggers a one-time macOS Automation permission prompt.
+ * 4. Return `run_id` so the caller can navigate to the detail page.
+ *
+ * The postback endpoint (POST /api/team51/complete/[runId]) parses
+ * the log for structured results (new site URL, etc.) and stamps
+ * the row `completed` / `failed`. Detail page polls the DB while
+ * status is queued/running.
  */
 export async function startTeam51Run(
   input: StartTeam51RunInput,
-): Promise<StartTeam51RunResult | StartTeam51RunError> {
-  const detect = await detectTeam51();
-  if (!detect.ready || !detect.binary) {
-    return { ok: false, reason: "not-configured", message: detect.reason ?? "" };
-  }
-
+): Promise<StartTeam51RunResult> {
   const runId = randomTeam51Id();
+  const postbackToken = randomBytes(24).toString("hex");
   const cfg = await loadConfig();
+  const scriptDir = join(cfg.paths.data, "team51-scripts");
   const logDir = join(cfg.paths.data, "team51-logs");
+  await mkdir(scriptDir, { recursive: true });
   await mkdir(logDir, { recursive: true });
+  const scriptPath = join(scriptDir, `${runId}.sh`);
   const logPath = join(logDir, `${runId}.log`);
 
   const db = await getDb();
   db.prepare(
-    `INSERT INTO team51_runs (id, project_slug, command, command_group, args_json, status, log_path)
-     VALUES (?, ?, ?, ?, ?, 'running', ?)`,
+    `INSERT INTO team51_runs
+       (id, project_slug, command, command_group, args_json,
+        status, log_path, postback_token)
+     VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)`,
   ).run(
     runId,
     input.project_slug,
@@ -236,323 +213,286 @@ export async function startTeam51Run(
     input.command_group,
     JSON.stringify(input.args),
     logPath,
+    postbackToken,
   );
 
-  // Pre-flight external tools BEFORE spawning. Catches the common
-  // "op session expired" case without wasting a subprocess. If any
-  // probe fails, we stamp `external-auth-failed:<tool>` and return
-  // the run_id — the detail page renders the right recovery card.
-  if (input.required_tools && input.required_tools.length > 0) {
-    const probes = await probeExternalTools(input.required_tools);
-    const firstFail = probes.find((p) => !p.ok);
-    if (firstFail) {
-      await appendLog(
-        logPath,
-        `[preflight] ${firstFail.tool}: ${firstFail.message}\n` +
-          (firstFail.remedy ? `[preflight remedy] ${firstFail.remedy}\n` : ""),
-      );
-      await recordTeam51Failure(
-        runId,
-        `external-auth-failed:${firstFail.tool}`,
-        firstFail.remedy
-          ? `${firstFail.message} ${firstFail.remedy}`
-          : firstFail.message,
-        null,
-      );
-      return { ok: true, run_id: runId };
-    }
-  }
-
-  // Fire and forget — the spawn callback owns the row's lifecycle
-  // and log tail from here. Errors caught + recorded to the row.
-  void runTeam51Child({
+  const scriptBody = buildRunScript({
     runId,
-    binary: detect.binary,
-    input,
+    postbackToken,
     logPath,
-  }).catch(async (err) => {
-    await appendLog(
-      logPath,
-      `\n[team51-runner-crashed] ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    await recordTeam51Failure(runId, "generic-failure", "Runner crashed", null);
+    command: input.command,
+    args: input.args,
   });
 
-  return { ok: true, run_id: runId };
+  try {
+    await writeFile(scriptPath, scriptBody, { encoding: "utf8" });
+    await chmod(scriptPath, 0o755);
+    await launchInTerminal(scriptPath);
+    // Mark running only after the AppleScript spawn returns. The
+    // postback will bump us to completed/failed.
+    db.prepare(
+      `UPDATE team51_runs SET status = 'running' WHERE id = ?`,
+    ).run(runId);
+    return { ok: true, run_id: runId };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    db.prepare(
+      `UPDATE team51_runs
+         SET status = 'failed',
+             failure_kind = 'launch-failed',
+             error_message = ?,
+             completed_at = datetime('now')
+         WHERE id = ?`,
+    ).run(message.slice(0, 500), runId);
+    return { ok: false, reason: "spawn-failed", message };
+  }
 }
 
-async function runTeam51Child(args: {
+// --- Script + AppleScript --------------------------------------------------
+
+function buildRunScript(args: {
   runId: string;
-  binary: string;
-  input: StartTeam51RunInput;
+  postbackToken: string;
   logPath: string;
-}): Promise<void> {
-  const { runId, binary, input, logPath } = args;
+  command: Team51CommandSlug;
+  args: string[];
+}): string {
+  const { runId, postbackToken, logPath, command } = args;
 
-  await appendLog(
-    logPath,
-    `[${new Date().toISOString()}] ${binary} ${input.command} ${input.args.join(" ")} --no-interaction\n`,
-  );
+  // Every value gets single-quoted so shell metacharacters in URLs /
+  // names don't misinterpret. `team51` binary path is intentionally
+  // NOT hardcoded — user's PATH resolves it (usually
+  // /usr/local/bin/team51).
+  const cmdLine = ["team51", shellQuote(command), ...args.args.map(shellQuote)].join(" ");
 
-  // Shell-wrap the invocation. Same reason as tryOpWhoami: the
-  // team51 CLI shells out to `op` for 1Password writes, and
-  // 1Password 8's desktop integration walks the process ancestry
-  // looking for a trusted parent. A direct `spawn(team51)` puts
-  // node as team51's parent → op's grandparent, and 1Password
-  // refuses. Interposing /bin/sh puts sh at that hop, which
-  // 1Password walks past to Terminal.app and authorizes. Every
-  // arg is single-quoted for the shell; team51's own args (URLs,
-  // names) may contain shell metacharacters that would otherwise
-  // get eaten.
-  const shellCmd = [
-    shellQuote(binary),
-    shellQuote(input.command),
-    ...input.args.map(shellQuote),
-    "--no-interaction",
-  ].join(" ");
-  const child = spawn("/bin/sh", ["-c", shellCmd], {
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, ...(input.env ?? {}) },
-  });
+  // Postback URL: token in query string so intermediaries in the
+  // localhost stack don't strip it. Also localhost-only.
+  const postbackUrl = `http://localhost:3000/api/team51/complete/${runId}?token=${postbackToken}`;
 
-  const db = await getDb();
-  db.prepare(`UPDATE team51_runs SET pid = ? WHERE id = ?`).run(
-    child.pid ?? null,
-    runId,
-  );
+  // Keep window open at the end so the user can read the outcome;
+  // otherwise macOS Terminal closes on script exit per its shell-exit
+  // preference.
+  return `#!/bin/bash
+set -o pipefail
 
-  let stderrBuf = "";
+RUN_ID='${runId}'
+LOG='${logPath.replace(/'/g, `'\\''`)}'
+POSTBACK_URL='${postbackUrl}'
 
-  child.stdout?.on("data", (chunk: Buffer) => {
-    void appendLog(logPath, chunk.toString());
-  });
-  child.stderr?.on("data", (chunk: Buffer) => {
-    const text = chunk.toString();
-    stderrBuf += text;
-    // Cap in-memory buffer at 40KB — we only need the tail for
-    // classification, and the full stderr is on disk anyway.
-    if (stderrBuf.length > 40_000) {
-      stderrBuf = stderrBuf.slice(-40_000);
-    }
-    void appendLog(logPath, text);
-  });
+echo "=== Smithers team51 run \${RUN_ID} ==="
+echo "Command:"
+echo "  ${cmdLine.replace(/'/g, `'\\''`)}"
+echo "----------------------------------------"
+echo ""
 
-  // Hard timeout — Symfony commands can take minutes but shouldn't
-  // truly hang. On timeout we SIGTERM and record `timeout`.
-  const timeoutMs = input.timeout_ms ?? 10 * 60 * 1000;
-  const timer = setTimeout(() => {
-    try {
-      child.kill("SIGTERM");
-    } catch {
-      /* already dead */
-    }
-    void appendLog(logPath, `\n[team51 timeout] killed after ${timeoutMs}ms\n`);
-  }, timeoutMs);
+# Run the command, capturing both stdout + stderr to the log and to
+# the terminal. PIPESTATUS captures the CLI's exit code (not tee's).
+{ ${cmdLine} ; } 2>&1 | tee "\${LOG}"
+EXIT_CODE=\${PIPESTATUS[0]}
 
-  child.on("error", (err) => {
-    void appendLog(logPath, `\n[team51 spawn error] ${err.message}\n`);
-  });
+echo ""
+echo "----------------------------------------"
+echo "Exit code: \${EXIT_CODE}"
+echo "Reporting result back to Smithers..."
 
-  await new Promise<void>((resolve) => {
-    child.on("close", async (code, signal) => {
-      clearTimeout(timer);
-      await appendLog(
-        logPath,
-        `\n[${new Date().toISOString()}] child exited code=${code} signal=${signal ?? "none"}\n`,
-      );
-      try {
-        // Cancel wins over any classification: user might have hit
-        // the Cancel button while the child was mid-flow.
-        const cur = await getTeam51Run(runId);
-        if (cur?.status === "cancelled") {
-          resolve();
-          return;
-        }
+# Best-effort postback. If Smithers isn't running, the user can
+# navigate to the run detail page later and it'll still show the log
+# via the on-disk file.
+curl -sS -X POST "\${POSTBACK_URL}" \\
+  -H "Content-Type: text/plain" \\
+  -H "X-Exit-Code: \${EXIT_CODE}" \\
+  --data-binary @"\${LOG}" \\
+  --max-time 10 \\
+  -o /dev/null 2>&1 && echo "Reported. Safe to close." || echo "Postback failed (Smithers not running?). Log is at \${LOG}."
 
-        // Timeout-kill fingerprint.
-        if (signal === "SIGTERM") {
-          await recordTeam51Failure(runId, "timeout", "Command timed out", code);
-          resolve();
-          return;
-        }
+echo ""
+echo "Press Return to close this window."
+read
+`;
+}
 
-        if (code === 0) {
-          const db2 = await getDb();
-          db2.prepare(
-            `UPDATE team51_runs SET status = 'completed', completed_at = datetime('now'), exit_code = 0 WHERE id = ?`,
-          ).run(runId);
-          resolve();
-          return;
-        }
-
-        // Non-zero. Classify from stderr tail.
-        const [kind, message] = classifyTeam51Failure(stderrBuf, code ?? -1);
-        await recordTeam51Failure(runId, kind, message, code);
-      } catch (err) {
-        await appendLog(
-          logPath,
-          `\n[team51 close handler crashed] ${err instanceof Error ? err.message : String(err)}\n`,
-        );
-        await recordTeam51Failure(
-          runId,
-          "generic-failure",
-          err instanceof Error ? err.message : "Close handler crashed",
-          code,
-        );
-      } finally {
-        resolve();
-      }
+async function launchInTerminal(scriptPath: string): Promise<void> {
+  // `osascript` tells Terminal.app to open a new window running the
+  // script. `activate` brings Terminal to the foreground so the user
+  // sees prompts / biometric requests. First run triggers a macOS
+  // Automation permission prompt (Smithers wants to control
+  // Terminal.app); the OS remembers Allow.
+  const script = `
+    tell application "Terminal"
+      activate
+      do script "${scriptPath.replace(/"/g, `\\"`)}"
+    end tell
+  `;
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("/usr/bin/osascript", ["-e", script], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    child.stderr?.on("data", (c: Buffer) => {
+      stderr += c.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`osascript exited ${code}: ${stderr.trim()}`));
     });
   });
 }
 
-async function recordTeam51Failure(
-  runId: string,
-  kind: string,
-  message: string,
-  exitCode: number | null,
-): Promise<void> {
-  try {
-    const db = await getDb();
-    db.prepare(
-      `UPDATE team51_runs
-         SET status = 'failed',
-             completed_at = datetime('now'),
-             exit_code = ?,
-             failure_kind = ?,
-             error_message = ?
-         WHERE id = ?`,
-    ).run(exitCode, kind, message.slice(0, 2000), runId);
-  } catch {
-    // Nothing to do — a DB error here would already show in the log
-    // and re-trying wouldn't help; leaving the row `running` is
-    // still better than crashing the caller.
-  }
-}
+// --- Postback + result parsing --------------------------------------------
 
-// --- Classifier ------------------------------------------------------------
+export interface CompleteInput {
+  runId: string;
+  token: string;
+  logBody: string;
+  exitCode: number;
+}
 
 /**
- * Map an exit code + stderr tail to a structured
- * (failure_kind, human message) pair. Order matters: more-specific
- * patterns are checked first so a duplicate-resource error doesn't
- * get swallowed by the generic "authentication" catch.
+ * Callback from the on-disk script when the CLI finishes. Validates
+ * the one-time token, persists the log, classifies success/failure,
+ * parses structured results (new site URL), and offers a
+ * frontmatter write-back path to the detail page.
  *
- * Patterns are pulled from the CLI's own error messages (grep'd
- * from ~/team51-cli/commands/*.php) and from external tools the
- * CLI shells out to (op, gh). Add new patterns here as we see them
- * in the wild — the classifier is the single seam.
+ * Never throws — all errors are recorded on the row so the detail
+ * page can surface them. Returns whether the token was valid so the
+ * endpoint can respond with 200 vs 403.
  */
-export function classifyTeam51Failure(
-  stderr: string,
-  exitCode: number,
-): [Team51FailureKind, string] {
-  const tail = stderr.slice(-8_000);
+export async function completeTeam51Run(
+  input: CompleteInput,
+): Promise<{ ok: boolean; reason?: string }> {
+  const run = await getTeam51Run(input.runId);
+  if (!run) return { ok: false, reason: "not-found" };
+  if (!run.postback_token) return { ok: false, reason: "token-missing" };
 
-  // Symfony `Not enough arguments` — Smithers should have passed
-  // this. Surfaces our own gaps so we can add form fields.
-  if (/Not enough arguments|not enough arguments/i.test(tail)) {
-    const m = /argument "([^"]+)"/i.exec(tail);
-    return [
-      "missing-arg",
-      m
-        ? `Smithers didn't pass the required "${m[1]}" argument.`
-        : "Smithers didn't pass a required argument.",
-    ];
-  }
-
-  // Symfony `Command "..." is not defined`.
-  if (/Command "([^"]+)" is not defined/i.test(tail)) {
-    const m = /Command "([^"]+)" is not defined/i.exec(tail);
-    return ["unknown-command", `team51 doesn't know the command "${m?.[1] ?? "?"}"`];
-  }
-
-  // User aborted at the confirmation prompt — exit code 2 is the
-  // team51 CLI's own convention.
-  if (exitCode === 2 && /aborted by user|Command aborted/i.test(tail)) {
-    return ["user-cancelled", "Command aborted."];
-  }
-
-  // Duplicate resource — CLI-specific error codes.
+  // Constant-time compare so a length-mismatch or content-mismatch
+  // both take the same time.
+  const expected = Buffer.from(run.postback_token);
+  const provided = Buffer.from(input.token);
   if (
-    /site_already_exists|already exists|already registered|repository already exists/i.test(
-      tail,
-    )
+    expected.length !== provided.length ||
+    !timingSafeEqual(expected, provided)
   ) {
-    return [
-      "duplicate-resource",
-      "A resource with this name already exists — try a different name.",
-    ];
+    return { ok: false, reason: "bad-token" };
   }
 
-  // External tool auth failures — `op` (1Password), `gh` (GitHub CLI).
-  if (
-    /\[ERROR\] .*(?:signin|1Password)|(?:op |op:).*not currently signed in|op vault list.*(?:error|not signed)/i.test(
-      tail,
-    )
-  ) {
-    return [
-      "external-auth-failed",
-      "The 1Password CLI (`op`) isn't authenticated. Fix: run `op signin` in the terminal that hosts pnpm dev, or enable 1Password 8 desktop CLI integration.",
-    ];
-  }
-  if (/gh: not authenticated|gh auth login|GitHub CLI is not authenticated/i.test(tail)) {
-    return [
-      "external-auth-failed",
-      "The GitHub CLI (`gh`) isn't authenticated. Fix: run `gh auth login` in your terminal.",
-    ];
-  }
-
-  // WPCOM / Automattic API auth.
-  if (
-    /(?:401|403|unauthorized|invalid_token|authentication failed|invalid credentials)/i.test(
-      tail,
-    )
-  ) {
-    return [
-      "auth-failed",
-      "team51 CLI hit an authentication error. Check `~/.team51/config.php` or your API tokens.",
-    ];
-  }
-
-  // Fallback: pull the last non-empty stderr line.
-  const lastMeaningful = tail
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !l.startsWith("["))
-    .slice(-1)[0];
-  return [
-    "generic-failure",
-    lastMeaningful || `Command exited with code ${exitCode}.`,
-  ];
-}
-
-// --- Cancel ----------------------------------------------------------------
-
-export async function cancelTeam51Run(runId: string): Promise<boolean> {
-  const run = await getTeam51Run(runId);
-  if (!run) return false;
-  if (run.status !== "running" && run.status !== "queued") return false;
-  if (run.pid) {
+  // Persist the log to disk (script already streamed it there via
+  // tee; we overwrite with what the postback carried for
+  // consistency, and in case the tee was interrupted).
+  if (run.log_path) {
     try {
-      process.kill(run.pid, "SIGTERM");
+      await writeFile(run.log_path, input.logBody, { encoding: "utf8" });
     } catch {
-      /* already dead */
+      /* non-fatal — the DB row still records status */
     }
   }
+
+  const captured = parseTeam51ResultUrl(run.command, input.logBody);
+  const status: Team51RunStatus = input.exitCode === 0 ? "completed" : "failed";
+  const failureKind =
+    input.exitCode === 0
+      ? null
+      : classifyFailureFromLog(input.logBody, input.exitCode);
+  const errorMessage =
+    input.exitCode === 0 ? null : lastMeaningfulLine(input.logBody);
+
   const db = await getDb();
   db.prepare(
-    `UPDATE team51_runs SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?`,
-  ).run(runId);
-  return true;
+    `UPDATE team51_runs
+       SET status = ?,
+           completed_at = datetime('now'),
+           exit_code = ?,
+           failure_kind = ?,
+           error_message = ?,
+           captured_url = ?,
+           postback_token = NULL
+     WHERE id = ?`,
+  ).run(
+    status,
+    input.exitCode,
+    failureKind,
+    errorMessage,
+    captured,
+    input.runId,
+  );
+
+  // Clean up the on-disk script — it's single-use. Log stays.
+  const cfg = await loadConfig();
+  const scriptPath = join(cfg.paths.data, "team51-scripts", `${input.runId}.sh`);
+  await unlink(scriptPath).catch(() => undefined);
+
+  return { ok: true };
+}
+
+/**
+ * Regex per command variant against the CLI's own success output.
+ * Pulled from team51-cli command sources — most create-site
+ * commands print a final line like:
+ *   "Successfully created site at https://foo.wordpress.com"
+ * or similar. Returns the first matching URL or null.
+ */
+export function parseTeam51ResultUrl(
+  command: Team51CommandSlug,
+  log: string,
+): string | null {
+  // Loose but ordered patterns — first match wins per command.
+  const patterns: Record<Team51CommandSlug, RegExp[]> = {
+    "wpcom:create-site": [
+      /Successfully created (?:site )?at\s+(https:\/\/[^\s]+)/i,
+      /new site (?:at |URL: ?)(https:\/\/[^\s]+)/i,
+      // Fallback: any WPCOM-shaped URL that appears late in the log.
+      /(https:\/\/[a-z0-9-]+\.wordpress\.com\/?)/i,
+    ],
+    "pressable:create-site": [
+      /Successfully created (?:site )?at\s+(https:\/\/[^\s]+)/i,
+      /new site (?:at |URL: ?)(https:\/\/[^\s]+)/i,
+      // Fallback: mystagingwebsite.com or similar Pressable domain.
+      /(https:\/\/[a-z0-9-]+\.(?:mystagingwebsite\.com|pressable\.com)\/?)/i,
+    ],
+    "pressable:clone-site": [
+      /Successfully cloned (?:site )?to\s+(https:\/\/[^\s]+)/i,
+      /clone (?:URL|available at):?\s*(https:\/\/[^\s]+)/i,
+      /(https:\/\/[a-z0-9-]+\.(?:mystagingwebsite\.com|pressable\.com)\/?)/i,
+    ],
+    // WP-CLI runs don't create resources.
+    "wpcom:run-site-wp-cli-command": [],
+    "pressable:run-site-wp-cli-command": [],
+  };
+  for (const re of patterns[command] ?? []) {
+    const m = re.exec(log);
+    if (m) return m[1] ?? m[0];
+  }
+  return null;
+}
+
+function classifyFailureFromLog(log: string, exitCode: number): string {
+  // Just enough classification for the detail page to color-code the
+  // outcome. The bulk of the diagnostic value lives in the log
+  // itself, which we always show.
+  if (exitCode === 2 && /aborted by user|Command aborted/i.test(log)) {
+    return "user-cancelled";
+  }
+  if (/site_already_exists|already exists|already registered/i.test(log)) {
+    return "duplicate-resource";
+  }
+  if (/401|403|unauthorized|invalid_token|authentication failed/i.test(log)) {
+    return "auth-failed";
+  }
+  return "generic-failure";
+}
+
+function lastMeaningfulLine(log: string): string {
+  return (
+    log
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith("==="))
+      .slice(-1)[0] ?? ""
+  ).slice(0, 500);
 }
 
 // --- Log tail --------------------------------------------------------------
 
-/**
- * Read the run's on-disk log for the detail page. Cap at the last
- * 200KB so a runaway CLI doesn't blow up the page render.
- */
 export async function readTeam51RunLog(runId: string): Promise<string | null> {
   const run = await getTeam51Run(runId);
   if (!run?.log_path) return null;
@@ -565,422 +505,61 @@ export async function readTeam51RunLog(runId: string): Promise<string | null> {
   }
 }
 
-// --- External-tool pre-flight ---------------------------------------------
+// --- Frontmatter write-back ------------------------------------------------
 
 /**
- * External tools the team51 CLI shells out to. Order roughly
- * matches how often a command uses them — 1Password is the
- * highest-risk failure surface (session expiry).
+ * Write the captured URL into the project's frontmatter. Which
+ * field depends on the command:
+ *   - wpcom:create-site → production_url (fresh sites go live)
+ *   - pressable:create-site → staging_url (partners typically get
+ *     Pressable as staging before WPCOM production)
+ *   - pressable:clone-site → staging_url (the clone IS the staging)
+ * Returns whether anything was written.
  */
-export type ExternalTool = "op" | "gh" | "ssh";
+export async function writeBackCapturedUrl(
+  runId: string,
+): Promise<{ written: boolean; field?: string; url?: string; message?: string }> {
+  const run = await getTeam51Run(runId);
+  if (!run) return { written: false, message: "run not found" };
+  if (!run.captured_url) return { written: false, message: "no URL captured" };
 
-export interface ExternalToolProbe {
-  tool: ExternalTool;
-  /** True when the probe found the tool AND it's authenticated. */
-  ok: boolean;
-  /** Short diagnostic — shown in the failure card and Test-tools output. */
-  message: string;
-  /** For fixups: the exact command the user would run to fix it. */
-  remedy?: string;
-  /**
-   * Raw last line of stderr (truncated) when the probe failed —
-   * lets the Test tools card show what the CLI actually complained
-   * about instead of a paraphrase. Missing on success.
-   */
-  detail?: string;
-  /** Resolved version string (e.g. "2.30.0") when it can be read. */
-  version?: string;
-}
+  const field = frontmatterFieldForCommand(run.command);
+  if (!field) return { written: false, message: "command has no writeback target" };
 
-/**
- * Run a cheap probe per external tool with a short timeout.
- * Parallelizable, so the Test-tools button can render results as
- * they arrive. Not called before every run — callers opt into
- * pre-flight per command.
- */
-export async function probeExternalTools(
-  tools: ExternalTool[],
-): Promise<ExternalToolProbe[]> {
-  return Promise.all(tools.map((t) => probeExternalTool(t)));
-}
-
-async function probeExternalTool(tool: ExternalTool): Promise<ExternalToolProbe> {
-  switch (tool) {
-    case "op":
-      return probeOp();
-    case "gh":
-      return probeGh();
-    case "ssh":
-      return probeSsh();
-  }
-}
-
-async function probeOp(): Promise<ExternalToolProbe> {
-  const bin = probePath("op");
-  if (!bin) {
-    return {
-      tool: "op",
-      ok: false,
-      message: "1Password CLI (`op`) not installed.",
-      remedy: "brew install 1password-cli",
-    };
-  }
-
-  let version: string | undefined;
+  const vault = await getVault();
+  const patch: Record<string, string> = { [field]: run.captured_url };
   try {
-    const { stdout } = await execFileAsync(bin, ["--version"], {
-      timeout: 3_000,
-    });
-    version = stdout.trim();
-  } catch {
-    /* informational */
-  }
-
-  // Try op's default account first — that's what the team51 CLI
-  // itself will hit. If that fails, walk `op account list` and
-  // probe each explicitly so we can distinguish "no accounts CLI-
-  // authorized" from "authorized but wrong default." The per-account
-  // breakdown lands in `detail` so the Diagnostics card can show
-  // exactly which accounts are ready.
-  const defaultResult = await tryOpWhoami(bin, undefined);
-  if (defaultResult.ok) {
+    const result = await vault.updateProjectFrontmatter(run.project_slug, patch);
     return {
-      tool: "op",
-      ok: true,
-      message: `Signed in via ${bin} (default account).`,
-      version,
+      written: result.changed,
+      field,
+      url: run.captured_url,
+      message: result.changed ? "written" : "already set to this value",
     };
-  }
-
-  // Enumerate configured accounts + probe each individually.
-  const accounts = await listOpAccounts(bin);
-  const perAccount: Array<{ shorthand: string; ok: boolean; err?: string }> = [];
-  for (const acct of accounts) {
-    const r = await tryOpWhoami(bin, acct.shorthand);
-    perAccount.push({
-      shorthand: acct.shorthand,
-      ok: r.ok,
-      err: r.ok ? undefined : firstMeaningfulLine(r.stderr),
-    });
-  }
-  const anyAuthed = perAccount.find((p) => p.ok);
-  const detailLines: string[] = [];
-  if (accounts.length > 0) {
-    detailLines.push(
-      `Default: ${firstMeaningfulLine(defaultResult.stderr)}`,
-      `Configured accounts:`,
-      ...perAccount.map(
-        (p) => `  ${p.ok ? "✓" : "✗"} ${p.shorthand}${p.err ? " — " + p.err : ""}`,
-      ),
-    );
-  } else {
-    detailLines.push(firstMeaningfulLine(defaultResult.stderr));
-  }
-  const detail = detailLines.join(" · ").slice(0, 500);
-
-  if (anyAuthed) {
-    // At least one account works — the default just isn't set right.
-    return {
-      tool: "op",
-      ok: false,
-      message: `1Password CLI has authorized accounts, but op's default isn't one of them.`,
-      remedy:
-        `Set the working account as default: run \`op account default ${anyAuthed.shorthand}\` in a terminal that has op auth. ` +
-        `Or point the team51 CLI at it directly via \`op --account ${anyAuthed.shorthand}\`.`,
-      detail,
-      version,
-    };
-  }
-
-  return {
-    tool: "op",
-    ok: false,
-    message: opFailureSummary(defaultResult.stderr),
-    remedy: pickOpRemedy(defaultResult.stderr, version),
-    detail,
-    version,
-  };
-}
-
-interface OpWhoamiResult {
-  ok: boolean;
-  stderr: string;
-}
-
-async function tryOpWhoami(
-  bin: string,
-  account: string | undefined,
-): Promise<OpWhoamiResult> {
-  // 1Password 8's desktop integration validates the direct-parent
-  // process when it decides whether to trust the caller. Direct
-  // spawn `execFile(op)` puts Node as the parent, which 1Password
-  // refuses on this machine. Interposing a shell (`sh -c 'op …'`)
-  // makes /bin/sh the parent — 1Password walks its ancestry up to
-  // Terminal.app and authorizes. Verified empirically: from a
-  // signed-in terminal, `node -e "execSync('op whoami')"` succeeds
-  // (execSync uses /bin/sh -c internally) but our direct execFile
-  // does not.
-  const cmd = account
-    ? `op --account ${shellQuote(account)} whoami`
-    : "op whoami";
-  try {
-    await execFileAsync("/bin/sh", ["-c", cmd], {
-      timeout: 15_000,
-      // Ensure PATH includes wherever op lives, since the
-      // freshly-spawned shell won't source ~/.zshrc.
-      env: { ...process.env, PATH: `${dirnameOf(bin)}:${process.env["PATH"] ?? ""}` },
-    });
-    return { ok: true, stderr: "" };
   } catch (err) {
-    return { ok: false, stderr: extractStderr(err) };
-  }
-}
-
-function dirnameOf(p: string): string {
-  const i = p.lastIndexOf("/");
-  return i > 0 ? p.slice(0, i) : "/usr/local/bin";
-}
-
-/**
- * Bare-minimum single-quote wrapping for shell arg interpolation.
- * The values passed here are account shorthands from 1Password's
- * own account list (short alphanumeric strings), so this is
- * defense-in-depth rather than load-bearing.
- */
-function shellQuote(s: string): string {
-  if (/^[a-zA-Z0-9._-]+$/.test(s)) return s;
-  return `'${s.replace(/'/g, `'\\''`)}'`;
-}
-
-interface OpAccount {
-  shorthand: string;
-}
-
-/**
- * `op account list --format=json` returns configured accounts
- * (`url`, `email`, `user_uuid`, `account_uuid`). Any of those can
- * key `--account`; we use the subdomain slug from the URL as the
- * shorthand since it's what humans use in `op signin --account X`.
- */
-async function listOpAccounts(bin: string): Promise<OpAccount[]> {
-  try {
-    const { stdout } = await execFileAsync(
-      bin,
-      ["account", "list", "--format=json"],
-      { timeout: 5_000 },
-    );
-    const parsed = JSON.parse(stdout) as Array<{ url?: string }>;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((a) => shortFromUrl(a.url))
-      .filter((s): s is string => Boolean(s))
-      .map((shorthand) => ({ shorthand }));
-  } catch {
-    return [];
-  }
-}
-
-function shortFromUrl(url: string | undefined): string | null {
-  if (!url) return null;
-  const m = /^([^.]+)\./.exec(url.trim());
-  return m ? m[1]! : url.trim();
-}
-
-/**
- * `op` prints structured error lines like:
- *   [ERROR] 2026/... account is not signed in
- *   [ERROR] 2026/... could not connect to 1Password
- *   [ERROR] 2026/... this account isn't currently authorized
- * The classifier picks a specific summary + remedy. Falls back to
- * the raw first line when no pattern matches so the user always
- * sees `op`'s own words.
- */
-function opFailureSummary(stderr: string): string {
-  if (/not signed in/i.test(stderr)) {
-    return "1Password says: account is not signed in.";
-  }
-  if (/could not connect to 1Password|connecting to desktop app/i.test(stderr)) {
-    return "1Password says: can't connect to the desktop app.";
-  }
-  if (/not (?:currently )?authorized/i.test(stderr)) {
-    return "1Password says: this caller isn't authorized.";
-  }
-  const first = firstMeaningfulLine(stderr);
-  return first ? `\`op whoami\` failed: ${first}` : "`op whoami` failed.";
-}
-
-function pickOpRemedy(stderr: string, version: string | undefined): string {
-  const versionHint = looksOldOpVersion(version)
-    ? ` Also: your op CLI is ${version} — older versions had subprocess-handoff bugs. \`brew upgrade 1password-cli\` if you can.`
-    : "";
-  // The Restart Dev Server button in /settings → Diagnostics orphans
-  // pnpm dev from Terminal (spawn with detached: true), which breaks
-  // 1Password 8's ancestry-based authorization: the desktop app
-  // can't find an authorized caller in the process chain and refuses
-  // the call SILENTLY (no biometric prompt). The fix: relaunch pnpm
-  // dev from Terminal.app directly. Called out in every remedy since
-  // it's the single most common cause we've seen.
-  const restartHint =
-    " If you used Smithers's in-app Restart button, that detaches pnpm dev from Terminal and 1Password loses the authorization chain — kill pnpm dev and relaunch it from a Terminal window directly.";
-  if (/not signed in/i.test(stderr)) {
-    return (
-      "Run `op signin` in the SAME terminal that started pnpm dev, then restart the dev server so it inherits the fresh session. If you use 1Password 8 desktop integration, make sure the terminal is listed under Settings → Developer → Manage authorized apps." +
-      restartHint +
-      versionHint
-    );
-  }
-  if (/could not connect to 1Password|connecting to desktop app/i.test(stderr)) {
-    return (
-      "The 1Password 8 desktop app isn't running (or the CLI toggle is off). Open it, then check Settings → Developer → Integrate with 1Password CLI." +
-      restartHint +
-      versionHint
-    );
-  }
-  if (/not (?:currently )?authorized/i.test(stderr)) {
-    return (
-      "1Password 8 → Settings → Developer → Manage authorized apps. Add / re-authorize the terminal you use for pnpm dev." +
-      restartHint +
-      versionHint
-    );
-  }
-  return (
-    "Run `op signin` in the pnpm-dev terminal, or turn on 1Password 8 → Settings → Developer → Integrate with 1Password CLI." +
-    restartHint +
-    versionHint
-  );
-}
-
-/**
- * `op` versions before ~2.20 had subprocess-handoff bugs with the
- * 1Password 8 desktop integration. Coarse semver check — if we
- * can't parse the version, don't nag.
- */
-function looksOldOpVersion(version: string | undefined): boolean {
-  if (!version) return false;
-  const m = /^(\d+)\.(\d+)/.exec(version);
-  if (!m) return false;
-  const major = Number(m[1]);
-  const minor = Number(m[2]);
-  if (major < 2) return true;
-  if (major === 2 && minor < 20) return true;
-  return false;
-}
-
-function extractStderr(err: unknown): string {
-  if (err && typeof err === "object") {
-    const obj = err as { stderr?: unknown; message?: unknown };
-    if (typeof obj.stderr === "string") return obj.stderr;
-    if (typeof obj.message === "string") return obj.message;
-  }
-  return String(err);
-}
-
-function firstMeaningfulLine(text: string): string {
-  return (
-    text
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .find((l) => l.length > 0) ?? ""
-  ).slice(0, 240);
-}
-
-async function probeGh(): Promise<ExternalToolProbe> {
-  const bin = probePath("gh");
-  if (!bin) {
     return {
-      tool: "gh",
-      ok: false,
-      message: "GitHub CLI (`gh`) not installed.",
-      remedy: "brew install gh",
-    };
-  }
-  try {
-    // Shell-wrap for consistency with the op probe. gh reads
-    // config from ~/.config/gh — subprocess env inheritance is
-    // fine here regardless of parent, but shell wrap keeps the
-    // spawn path identical across all probes.
-    await execFileAsync("/bin/sh", ["-c", `${shellQuote(bin)} auth status`], {
-      timeout: 5_000,
-      env: { ...process.env, PATH: `${dirnameOf(bin)}:${process.env["PATH"] ?? ""}` },
-    });
-    return { tool: "gh", ok: true, message: `Authenticated via ${bin}.` };
-  } catch {
-    return {
-      tool: "gh",
-      ok: false,
-      message: "`gh auth status` failed — not signed in.",
-      remedy: "Run `gh auth login`.",
+      written: false,
+      message: err instanceof Error ? err.message : String(err),
     };
   }
 }
 
-async function probeSsh(): Promise<ExternalToolProbe> {
-  const bin = probePath("ssh");
-  if (!bin) {
-    return {
-      tool: "ssh",
-      ok: false,
-      message: "`ssh` not found — unexpected for macOS.",
-    };
+function frontmatterFieldForCommand(command: Team51CommandSlug): string | null {
+  switch (command) {
+    case "wpcom:create-site":
+      return "production_url";
+    case "pressable:create-site":
+    case "pressable:clone-site":
+      return "staging_url";
+    default:
+      return null;
   }
-  try {
-    // Exit code 1 = auth OK but no shell allowed (GitHub's response).
-    // Exit code 255 = auth failed / can't reach.
-    const res = await execFileAsync(bin, [
-      "-T",
-      "-o",
-      "BatchMode=yes",
-      "-o",
-      "ConnectTimeout=5",
-      "git@github.com",
-    ]).catch((err: Error & { code?: number }) => err);
-    const code = (res as { code?: number }).code;
-    if (code === 1) {
-      return { tool: "ssh", ok: true, message: "GitHub SSH auth OK." };
-    }
-    return {
-      tool: "ssh",
-      ok: false,
-      message: `GitHub SSH probe returned code ${code}.`,
-      remedy:
-        "Add your SSH key to GitHub and start ssh-agent (`ssh-add ~/.ssh/id_ed25519`).",
-    };
-  } catch {
-    return {
-      tool: "ssh",
-      ok: false,
-      message: "GitHub SSH probe failed unexpectedly.",
-    };
-  }
-}
-
-function probePath(name: string): string | null {
-  const candidates = [
-    `/opt/homebrew/bin/${name}`,
-    `/usr/local/bin/${name}`,
-    `/usr/bin/${name}`,
-  ];
-  for (const c of candidates) {
-    if (existsSync(c)) return c;
-  }
-  return null;
 }
 
 // --- Internals -------------------------------------------------------------
 
-async function appendLog(logPath: string, text: string): Promise<void> {
-  try {
-    await appendFile(logPath, text);
-  } catch {
-    // Full-disk / log-gone case — status row is authoritative, so
-    // dropping the log line is acceptable.
-  }
-}
-
 function randomTeam51Id(): string {
-  // Same shape as qa run ids: alphanumeric, 20 chars, sortable
-  // enough for filesystem ordering. Prefix distinguishes from
-  // qa_ ids so a grep in ~/.smithers/ tells them apart.
+  // Prefix distinguishes from qa_ ids in ~/.smithers.
   const chars = "0123456789abcdefghijklmnopqrstuvwxyz";
   const now = Date.now().toString(36);
   const rand = Array.from({ length: 20 - 3 - now.length }, () =>
@@ -988,3 +567,16 @@ function randomTeam51Id(): string {
   ).join("");
   return `t51${now}${rand}`;
 }
+
+function shellQuote(s: string): string {
+  if (/^[a-zA-Z0-9._@:/=-]+$/.test(s)) return s;
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+// --- Legacy exports (needed while dialogs unchanged) -----------------------
+//
+// These type shells kept for back-compat with server actions that
+// still reference them. Actual runtime behavior is now delegated to
+// startTeam51Run above.
+
+export type ExternalTool = "op" | "gh" | "ssh";

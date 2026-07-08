@@ -225,7 +225,7 @@ export function PressableCreateSiteDialog({
           <div className="flex items-start gap-2.5 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs dark:border-amber-900/50 dark:bg-amber-950/20">
             <AlertTriangle className="size-4 shrink-0 text-amber-700 dark:text-amber-300" />
             <div className="space-y-1">
-              <p className="font-medium">This is the confirmation step.</p>
+              <p className="font-medium">Preview — Terminal confirms.</p>
               <p className="text-muted-foreground">{summary}</p>
             </div>
           </div>

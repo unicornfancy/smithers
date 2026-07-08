@@ -45,31 +45,15 @@ Trigger to revisit: Katie decides how she wants secondary TAMs tagged in Linear.
 
 Revisit only if a TAM without Share Link access repeatedly needs to audit gated sites in situ, e.g. a partner-side flow where staging is password-only AND no share preview URL is available.
 
-## team51 CLI — post-success frontmatter write-back
+## team51 CLI — Terminal-launched flow (v2)
 
-**Status shipped 2026-07-07:** four workflows (`wpcom:create-site`,
-`pressable:create-site`, `pressable:clone-site`, `run-site-wp-cli-command`)
-run via `--no-interaction` with Smithers-native forms replacing the
-CLI's prompts, structured failure classification + recovery cards,
-and external-tool pre-flight (op / gh / SSH). Detail page carries
-the log tail on success but doesn't parse structured results yet.
+**Status shipped 2026-07-08:** subprocess-based version scrapped; new Terminal-launched flow ships in its place. Four workflows (`wpcom:create-site`, `pressable:create-site`, `pressable:clone-site`, `run-site-wp-cli-command`) all now compose their command from the Smithers form, drop the composed command into a Terminal window via AppleScript, and receive the log back via a one-time-token-authenticated postback endpoint. Post-success frontmatter write-back (`production_url` / `staging_url`) is a one-click button on the completed run's detail page.
 
-**What lands when ready:**
+**Follow-ups worth considering:**
 
-- Parse the CLI's final "Created site at https://…" output for
-  create-site variants and offer a "Write to staging_url"
-  button on the completed detail page. Simple regex per command.
-- For clone-site: capture the new domain + write to
-  `project.staging_url` if empty.
-- For run-wp-cli-command: skip write-back — command output is
-  transient.
-
-**Not scoped yet:** additional team51 commands beyond the top-4.
-Full command list is at `~/team51-cli/commands/`; likely
-next-most-useful based on Katie's usage patterns:
-`pressable:add-collaborator`, `deployhq:create-project`,
-`github:create-issue`. Each is ~150 lines of dialog + action + a
-`Team51CommandSlug` extension.
+- **Additional commands beyond the top-4.** Full CLI list is at `~/team51-cli/commands/`. Based on Katie's usage patterns, the next-most-useful are `pressable:add-collaborator`, `deployhq:create-project`, `github:create-repository`. Each is ~150 lines of dialog + action + a `Team51CommandSlug` extension. No changes needed to the runner — it's fully generic.
+- **URL parsing patterns per command.** The current regexes in `parseTeam51ResultUrl` are best-effort against team51's actual output. When we ship additional create-* commands, we'll want to verify each command's real output format before adding its regex.
+- **Live log streaming during the run.** The Terminal-launched design gives up in-Smithers live tail. If we ever want it, the script could POST log chunks periodically (say every 5 lines) to a `/api/team51/log-chunk` endpoint. Nice-to-have but not asked for.
 
 ## Release cadence — deferred decision
 

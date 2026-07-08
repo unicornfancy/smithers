@@ -116,8 +116,9 @@ export function WpcomCreateSiteDialog({
           </DialogTitle>
           <DialogDescription>
             Runs{" "}
-            <code className="font-mono">team51 wpcom:create-site</code> with
-            everything pre-filled — no CLI prompts.
+            <code className="font-mono">team51 wpcom:create-site</code> in a
+            Terminal window Smithers opens for you. Watch the terminal for
+            the CLI&apos;s confirmation prompt and any 1Password biometric.
           </DialogDescription>
         </DialogHeader>
 
@@ -205,12 +206,12 @@ export function WpcomCreateSiteDialog({
           <div className="flex items-start gap-2.5 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs dark:border-amber-900/50 dark:bg-amber-950/20">
             <AlertTriangle className="size-4 shrink-0 text-amber-700 dark:text-amber-300" />
             <div className="space-y-1">
-              <p className="font-medium">This is the confirmation step.</p>
+              <p className="font-medium">Preview.</p>
               <p className="text-muted-foreground">{summary}</p>
               <p className="text-muted-foreground">
-                Once you click Create, the CLI runs against the real
-                Automattic APIs — pausing mid-flow won&apos;t un-do the
-                partial state.
+                The CLI itself will ask you to confirm in the Terminal
+                window Smithers opens — no destructive change happens
+                until you type &ldquo;y&rdquo; there.
               </p>
             </div>
           </div>

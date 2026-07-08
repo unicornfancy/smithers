@@ -89,9 +89,13 @@ export function Team51ProvisioningSection({
             Runs the{" "}
             <code className="font-mono text-[11px]">team51</code> CLI for
             workflows you&apos;d normally do in the terminal. Smithers
-            collects the same answers the CLI would ask for, passes them via{" "}
-            <code className="font-mono text-[11px]">--no-interaction</code>,
-            and streams the log to a detail page you can watch live.
+            collects the answers here, then opens a Terminal window
+            running the composed command. You watch the terminal for
+            prompts (Symfony&apos;s confirmation, 1Password biometric);
+            when the run finishes it posts the log back to Smithers
+            automatically. First launch triggers a one-time macOS
+            &ldquo;Allow Terminal automation&rdquo; permission — click
+            Allow.
           </p>
 
           <div className="flex flex-wrap gap-2">
