@@ -561,17 +561,24 @@ export async function readCallNotesTranscriptByRecordingId(
   return captured && captured.length > 0 ? captured : null;
 }
 
+/** Invisible sentinels around the ## Chat body. Assistant replies
+ * often contain markdown H2 headings (`## Something`) which would
+ * otherwise terminate the read-side "next H2" heuristic mid-chat.
+ * HTML comments render as nothing in Obsidian / GitHub / prose
+ * viewers but are stable to grep from disk. */
+const CHAT_START_MARKER = "<!-- smithers:chat-start -->";
+const CHAT_END_MARKER = "<!-- smithers:chat-end -->";
+
 /**
  * Read back the saved chat conversation stashed in a saved
- * call-notes file's `## Chat` section. Returns null when no chat
- * has been saved. Same slice pattern as
- * `readCallNotesTranscriptByRecordingId` — captures until the next
- * H2 (`## `) or EOF.
- *
- * Used by the /calls/notes/[id] detail page to surface the chat
- * that gets appended when the user hits "Save to Call Notes" from
- * the Chat with call panel in the Process Call dialog. Without
- * this the save lands invisibly and users can't tell it worked.
+ * call-notes file's `## Chat` section. Two matchers, in order:
+ *   1. Look for the `<!-- smithers:chat-start -->` /
+ *      `<!-- smithers:chat-end -->` sentinels (current format).
+ *   2. Legacy fallback: slice from `\n## Chat` to the next H2 or
+ *      EOF. Only used for chats saved before markers existed —
+ *      subject to the mid-chat-H2 truncation bug, which is why the
+ *      sentinels exist now.
+ * Returns null when no chat has been saved.
  */
 export async function readCallNotesChatByRecordingId(
   opts: ResolvedVaultOptions,
@@ -583,6 +590,20 @@ export async function readCallNotesChatByRecordingId(
   const raw = await tryReadFile(existing.absolute_path);
   if (!raw) return null;
   const { content } = parseMarkdown(raw);
+
+  // Modern-format read: between the sentinels. Robust to any
+  // markdown inside chat bodies.
+  const startIdx = content.indexOf(CHAT_START_MARKER);
+  const endIdx = content.indexOf(CHAT_END_MARKER);
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    const body = content
+      .slice(startIdx + CHAT_START_MARKER.length, endIdx)
+      .trim();
+    return body || null;
+  }
+
+  // Legacy format: slice to next H2 heading. Kept so pre-fix
+  // Body-Dao-style chats still render something, even if truncated.
   const match = /\n##\s+Chat\s*\n([\s\S]*?)(?=\n##\s+|\s*$)/i.exec(
     `\n${content}`,
   );
@@ -624,20 +645,37 @@ export async function appendChatToCallNotes(
   const chatSection = renderChatSection(messages);
 
   // Replace existing ## Chat block if present, otherwise append.
+  // Two shapes to handle:
+  //   1. Modern (has sentinels): replace from `## Chat` heading
+  //      through the CHAT_END_MARKER inclusive.
+  //   2. Legacy (no sentinels): replace from `\n## Chat` up to the
+  //      next `\n## ` heading (or EOF). Same slice logic as before
+  //      the fix — imperfect for chats containing internal H2, but
+  //      re-saving with the new format cleans it up.
   const CHAT_HEADING = "\n## Chat";
   const idx = raw.indexOf(CHAT_HEADING);
   let updated: string;
   if (idx !== -1) {
-    // Find the next ## heading after ## Chat, if any, to know the slice boundary.
     const afterHeading = idx + CHAT_HEADING.length;
-    const nextHeading = raw.indexOf("\n## ", afterHeading);
-    if (nextHeading !== -1) {
-      updated = raw.slice(0, idx) + chatSection + "\n" + raw.slice(nextHeading);
+    const endMarkerIdx = raw.indexOf(CHAT_END_MARKER, afterHeading);
+    const nextHeadingIdx = raw.indexOf("\n## ", afterHeading);
+    const boundary =
+      endMarkerIdx !== -1
+        ? endMarkerIdx + CHAT_END_MARKER.length
+        : nextHeadingIdx;
+    if (boundary !== -1) {
+      // Preserve everything before `## Chat` and everything at/after
+      // the boundary (which is either past the end marker for modern
+      // saves, or the next H2 for legacy).
+      updated =
+        raw.slice(0, idx) +
+        chatSection +
+        (endMarkerIdx !== -1 ? "" : "\n") +
+        raw.slice(boundary);
     } else {
       updated = raw.slice(0, idx) + chatSection;
     }
   } else {
-    // Append after trimming trailing newlines.
     updated = raw.trimEnd() + "\n" + chatSection;
   }
 
@@ -646,12 +684,14 @@ export async function appendChatToCallNotes(
 }
 
 function renderChatSection(messages: ChatMessage[]): string {
-  const lines: string[] = ["", "## Chat", ""];
+  const lines: string[] = ["", "## Chat", "", CHAT_START_MARKER, ""];
   for (const msg of messages) {
     const label = msg.role === "user" ? "**You:**" : "**Smithers:**";
     lines.push(`${label} ${msg.content.trim()}`);
     lines.push("");
   }
+  lines.push(CHAT_END_MARKER);
+  lines.push("");
   return lines.join("\n");
 }
 
