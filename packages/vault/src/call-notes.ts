@@ -561,6 +561,35 @@ export async function readCallNotesTranscriptByRecordingId(
   return captured && captured.length > 0 ? captured : null;
 }
 
+/**
+ * Read back the saved chat conversation stashed in a saved
+ * call-notes file's `## Chat` section. Returns null when no chat
+ * has been saved. Same slice pattern as
+ * `readCallNotesTranscriptByRecordingId` — captures until the next
+ * H2 (`## `) or EOF.
+ *
+ * Used by the /calls/notes/[id] detail page to surface the chat
+ * that gets appended when the user hits "Save to Call Notes" from
+ * the Chat with call panel in the Process Call dialog. Without
+ * this the save lands invisibly and users can't tell it worked.
+ */
+export async function readCallNotesChatByRecordingId(
+  opts: ResolvedVaultOptions,
+  recordingId: string,
+): Promise<string | null> {
+  if (!recordingId) return null;
+  const existing = await findCallNotesByRecordingId(opts, recordingId);
+  if (!existing) return null;
+  const raw = await tryReadFile(existing.absolute_path);
+  if (!raw) return null;
+  const { content } = parseMarkdown(raw);
+  const match = /\n##\s+Chat\s*\n([\s\S]*?)(?=\n##\s+|\s*$)/i.exec(
+    `\n${content}`,
+  );
+  const captured = match?.[1]?.trim();
+  return captured && captured.length > 0 ? captured : null;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;

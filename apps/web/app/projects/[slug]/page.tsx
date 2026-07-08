@@ -773,7 +773,9 @@ export default async function ProjectWorkbenchPage({
   sections.push({
     id: "personal-notes",
     title: "Personal notes",
-    node: <PersonalNotesPanel notes={detail.notes} />,
+    node: (
+      <PersonalNotesPanel projectSlug={detail.slug} notes={detail.notes} />
+    ),
   });
 
   sections.push({

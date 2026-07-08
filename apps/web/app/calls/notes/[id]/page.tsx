@@ -5,6 +5,7 @@ import {
   CheckSquare,
   ExternalLink,
   Inbox,
+  MessageSquare,
   Quote,
   ShieldCheck,
 } from "lucide-react";
@@ -58,9 +59,12 @@ export default async function CallNotesDetailPage({
 
   const a = note.analysis;
   const isExternal = recordingId.startsWith("external-");
-  const transcript = isExternal
-    ? await vault.readCallNotesTranscriptByRecordingId(recordingId).catch(() => null)
-    : null;
+  const [transcript, chat] = await Promise.all([
+    isExternal
+      ? vault.readCallNotesTranscriptByRecordingId(recordingId).catch(() => null)
+      : Promise.resolve(null),
+    vault.readCallNotesChatByRecordingId(recordingId).catch(() => null),
+  ]);
 
   return (
     <>
@@ -221,6 +225,31 @@ export default async function CallNotesDetailPage({
                   </li>
                 ))}
               </ul>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {chat ? (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MessageSquare className="text-muted-foreground size-4" />
+                Chat
+              </CardTitle>
+              <p className="text-muted-foreground text-xs">
+                Conversation saved from the &ldquo;Chat with call&rdquo;
+                panel in Process Call. Persists as the{" "}
+                <code className="bg-muted rounded px-1 font-mono text-[11px]">
+                  ## Chat
+                </code>{" "}
+                section in this note&apos;s markdown file — subsequent
+                saves replace it in full.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <Markdown source={chat} />
+              </div>
             </CardContent>
           </Card>
         ) : null}

@@ -39,6 +39,7 @@ import { encodeDraftIdForUrl } from "@/lib/draft-id-url";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Markdown } from "@/components/markdown";
 import { AddProjectTaskInput } from "@/components/add-project-task-input";
+import { PersonalNotesEditor } from "@/components/personal-notes-editor";
 import { DeleteProjectTaskButton } from "@/components/delete-project-task-button";
 import { EditableTaskText } from "@/components/editable-task-text";
 import { AddProjectLogNoteInput } from "@/components/add-project-log-note-input";
@@ -604,25 +605,25 @@ function FollowUpRow({
 
 // -- Personal notes (notes.md from folder layout) -------------------------
 
-export function PersonalNotesPanel({ notes }: { notes: SiblingFile | null }) {
+export function PersonalNotesPanel({
+  projectSlug,
+  notes,
+}: {
+  projectSlug: string;
+  notes: SiblingFile | null;
+}) {
   return (
     <Section
       icon={<StickyNote className="size-4" />}
       title="Personal notes"
-      meta={notes ? `updated ${formatDate(notes.modified_at)}` : "local only"}
+      meta={notes ? `updated ${formatDate(notes.modified_at)}` : "empty"}
     >
-      {notes ? (
-        <Markdown source={notes.body} />
-      ) : (
-        <ComingSoon>
-          Personal notes for this project (
-          <code className="bg-muted rounded px-1 py-0.5 text-[11px]">
-            Projects/&lt;slug&gt;/notes.md
-          </code>
-          ) are private and stay in your local vault &mdash; never synced to
-          Hive Mind. None exist yet for this project.
-        </ComingSoon>
-      )}
+      <PersonalNotesEditor
+        projectSlug={projectSlug}
+        initialBody={notes?.body ?? ""}
+        relativePath={notes?.relative_path ?? null}
+        isNew={notes === null}
+      />
     </Section>
   );
 }

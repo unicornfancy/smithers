@@ -39,6 +39,7 @@ import {
   listCallNotesForProject,
   listOrphanCallNotes,
   listRecentCallSlices,
+  readCallNotesChatByRecordingId,
   readCallNotesTranscriptByRecordingId,
   saveCallNotes,
   type AppendChatToCallNotesResult,
@@ -80,7 +81,10 @@ import {
   snoozeFollowUp,
   updateFollowUp,
 } from "./follow-ups";
-import { readProjectDetail } from "./project-detail";
+import {
+  readProjectDetail,
+  writeProjectPersonalNotes,
+} from "./project-detail";
 import {
   addProjectZendeskTicket,
   appendDecisionsToProject,
@@ -289,6 +293,7 @@ export {
   listCallNotesForProject,
   listOrphanCallNotes,
   listRecentCallSlices,
+  readCallNotesChatByRecordingId,
   readCallNotesTranscriptByRecordingId,
   listDailyNotes,
   listDrafts,
@@ -358,6 +363,10 @@ export interface Vault {
   listProjects: () => ReturnType<typeof listProjects>;
   readProject: (slug: string) => ReturnType<typeof readProject>;
   readProjectDetail: (slug: string) => ReturnType<typeof readProjectDetail>;
+  writeProjectPersonalNotes: (
+    slug: string,
+    body: string,
+  ) => ReturnType<typeof writeProjectPersonalNotes>;
   createProject: (
     input: CreateProjectInput,
   ) => ReturnType<typeof createProject>;
@@ -505,6 +514,9 @@ export interface Vault {
   readCallNotesTranscriptByRecordingId: (
     recordingId: string,
   ) => ReturnType<typeof readCallNotesTranscriptByRecordingId>;
+  readCallNotesChatByRecordingId: (
+    recordingId: string,
+  ) => ReturnType<typeof readCallNotesChatByRecordingId>;
   appendChatToCallNotes: (
     recordingId: string,
     messages: ChatMessage[],
@@ -574,6 +586,8 @@ export function createVault(options: VaultOptions): Vault {
     listProjects: () => listProjects(resolved),
     readProject: (slug) => readProject(resolved, slug),
     readProjectDetail: (slug) => readProjectDetail(resolved, slug),
+    writeProjectPersonalNotes: (slug, body) =>
+      writeProjectPersonalNotes(resolved, slug, body),
     createProject: (input) => createProject(resolved, input),
     createProjectScratchpad: (input) => createProjectScratchpad(resolved, input),
     listDrafts: () => listDrafts(resolved),
@@ -650,6 +664,8 @@ export function createVault(options: VaultOptions): Vault {
       findCallNotesByRecordingId(resolved, recordingId),
     readCallNotesTranscriptByRecordingId: (recordingId) =>
       readCallNotesTranscriptByRecordingId(resolved, recordingId),
+    readCallNotesChatByRecordingId: (recordingId) =>
+      readCallNotesChatByRecordingId(resolved, recordingId),
     appendChatToCallNotes: (recordingId, messages) =>
       appendChatToCallNotes(resolved, recordingId, messages),
     updateDraftBody: (draftId, newBody) =>

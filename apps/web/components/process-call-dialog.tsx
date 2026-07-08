@@ -558,7 +558,7 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
         chatMessages,
       );
       if (r.ok && r.changed) {
-        toast.success("Conversation saved to Call Notes");
+        toast.success("Saved. View it on this call's notes page (Chat section).");
         setChatSaved(true);
       } else if (r.ok && !r.changed) {
         toast.info(

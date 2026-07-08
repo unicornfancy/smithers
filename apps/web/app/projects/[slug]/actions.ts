@@ -1834,6 +1834,46 @@ export async function saveChatToCallNotesAction(
 }
 
 /**
+ * Save the project's personal notes body to the layout-aware sibling
+ * file (see `writeProjectPersonalNotes` in
+ * `packages/vault/src/project-detail.ts` for the exact path — folder
+ * layouts get `<folder>/notes.md`; flat layouts get
+ * `Projects/<name> — notes.md`).
+ *
+ * Personal notes are private: they never sync to Hive Mind — the
+ * vault helper throws for HM-kind projects. Returns
+ * `not-supported` in that case so the UI can hide the editor rather
+ * than surface an error.
+ */
+export async function savePersonalNotesAction(
+  slug: string,
+  body: string,
+): Promise<
+  | { ok: true; changed: boolean; relative_path: string }
+  | { ok: false; reason: "validation" | "not-supported"; message: string }
+> {
+  if (!slug)
+    return { ok: false, reason: "validation", message: "slug is required" };
+  try {
+    const vault = await getVault();
+    const result = await vault.writeProjectPersonalNotes(slug, body);
+    revalidatePath(`/projects/${slug}`);
+    return {
+      ok: true,
+      changed: result.changed,
+      relative_path: result.relative_path,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      reason: "not-supported",
+      message,
+    };
+  }
+}
+
+/**
  * Append a dated note to the Hive Mind project notes file. Requires the
  * project to have `hive_mind_partner_slug` set; returns `not-configured`
  * when it doesn't so the UI can show a setup CTA instead of an error.
