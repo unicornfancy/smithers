@@ -249,6 +249,66 @@ export async function updateIntervalJobAction(input: {
   }
 }
 
+/**
+ * Set `working_rhythm.active_hours.{start,end}` — the gate every
+ * periodic scheduler job (ping monitor, sync trio, roster/charter/
+ * zendesk syncs) checks before running. Empty strings clear the
+ * window (all jobs run any time, legacy behavior).
+ *
+ * Daily briefing bypasses this gate — it fires at
+ * `schedule.daily_briefing.time` regardless of active hours since
+ * that's usually before the user is online by design.
+ *
+ * `workdays` isn't editable here (still tuned via config file);
+ * jobs respect the existing `working_rhythm.workdays` set. On
+ * Sat/Sun a job never fires even inside the window.
+ */
+export async function updateActiveHoursAction(input: {
+  start?: string;
+  end?: string;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    const start = input.start?.trim() ?? "";
+    const end = input.end?.trim() ?? "";
+    for (const [name, v] of [
+      ["start", start],
+      ["end", end],
+    ] as const) {
+      if (v && !/^\d{1,2}:\d{2}$/.test(v)) {
+        return {
+          ok: false,
+          reason: `${name} must be HH:MM in 24-hour format or empty`,
+        };
+      }
+    }
+    const path = configLocalPath();
+    const current = await readYamlFile(path);
+    const next = structuredClone(current) as Record<string, unknown>;
+    const rhythmBlock = isObject(next["working_rhythm"])
+      ? (next["working_rhythm"] as Record<string, unknown>)
+      : {};
+    if (start === "" && end === "") {
+      delete rhythmBlock["active_hours"];
+    } else {
+      const activeBlock = isObject(rhythmBlock["active_hours"])
+        ? (rhythmBlock["active_hours"] as Record<string, unknown>)
+        : {};
+      activeBlock["start"] = start;
+      activeBlock["end"] = end;
+      rhythmBlock["active_hours"] = activeBlock;
+    }
+    next["working_rhythm"] = rhythmBlock;
+    await writeYamlAtomic(path, next);
+    revalidatePath("/settings");
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "write failed",
+    };
+  }
+}
+
 export async function updateScheduleAction(input: {
   daily_briefing_enabled?: boolean;
   daily_briefing_time?: string;

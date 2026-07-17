@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 
+import { isWithinActiveHours } from "@/lib/server/active-hours";
 import { loadConfig } from "@/lib/server/config";
 import { getMcpClient } from "@/lib/server/mcp";
 import { recomputeActioned } from "@/lib/server/ping-actioned";
@@ -29,6 +30,28 @@ export interface JobResult {
   duration_ms: number;
 }
 
+/**
+ * Gate for all periodic jobs. Returns a "skipped — outside active
+ * hours" JobResult when the current moment is outside the user's
+ * configured working_rhythm.active_hours window (or off a workday),
+ * or null when the job should run.
+ *
+ * Called at the top of each periodic run function — cheaper than
+ * wrapping the whole thing in an if/else, and keeps the "why did
+ * this job not do anything?" telemetry consistent across jobs.
+ * Daily briefing is deliberately not gated: it fires at a
+ * user-picked HH:MM (often before the user's active hours start).
+ */
+async function activeHoursGate(started: number): Promise<JobResult | null> {
+  const cfg = await loadConfig();
+  if (isWithinActiveHours(cfg)) return null;
+  return {
+    ok: true,
+    summary: "skipped — outside active hours",
+    duration_ms: Date.now() - started,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Ping monitor — re-runs the "did Katie reply?" detector against the current
 // Pings to Action list and writes verdicts to the ping_actioned cache.
@@ -36,6 +59,8 @@ export interface JobResult {
 
 export async function runPingMonitorJob(): Promise<JobResult> {
   const started = Date.now();
+  const skip = await activeHoursGate(started);
+  if (skip) return skip;
   try {
     const mcp = await getMcpClient();
     const pingsResult = await mcp.contextA8C.listPings({ limit: 25 });
@@ -76,6 +101,8 @@ export async function runPingMonitorJob(): Promise<JobResult> {
 
 export async function runTranscriptionSyncJob(): Promise<JobResult> {
   const started = Date.now();
+  const skip = await activeHoursGate(started);
+  if (skip) return skip;
   try {
     const transcription = await getTranscriptionAdapter();
     const result = await transcription.listRecordings({ limit: 50 });
@@ -109,6 +136,8 @@ export async function runTranscriptionSyncJob(): Promise<JobResult> {
 
 export async function runHiveMindSyncJob(): Promise<JobResult> {
   const started = Date.now();
+  const skip = await activeHoursGate(started);
+  if (skip) return skip;
   try {
     const cfg = await loadConfig();
     const hmPath = cfg.paths.hive_mind;
@@ -229,6 +258,8 @@ function firstLine(s: string): string {
 
 export async function runTeamRosterSyncJob(): Promise<JobResult> {
   const started = Date.now();
+  const skip = await activeHoursGate(started);
+  if (skip) return skip;
   try {
     const cfg = await loadConfig();
     const groupSlugs =
@@ -271,6 +302,8 @@ export async function runTeamRosterSyncJob(): Promise<JobResult> {
 
 export async function runTeamCharterSyncJob(): Promise<JobResult> {
   const started = Date.now();
+  const skip = await activeHoursGate(started);
+  if (skip) return skip;
   try {
     const cfg = await loadConfig();
     const sheetUrl = cfg.schedule?.team_charter_sync?.sheet_url?.trim();
@@ -306,6 +339,8 @@ export async function runTeamCharterSyncJob(): Promise<JobResult> {
 
 export async function runZendeskStatusSyncJob(): Promise<JobResult> {
   const started = Date.now();
+  const skip = await activeHoursGate(started);
+  if (skip) return skip;
   try {
     const { getVault } = await import("@/lib/server/vault");
     const { refreshZendeskMetadataAction } = await import(

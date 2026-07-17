@@ -104,6 +104,23 @@ export interface SmithersConfig {
     timezone: string;
     workdays: string[];
     briefing_time: string;
+    /**
+     * Active-hours gate. When both fields are set to a non-empty HH:MM,
+     * every periodic scheduler job (ping monitor + the sync trio + the
+     * charter/roster/zendesk syncs) checks the current local time
+     * against this window and skips when outside — protects token
+     * spend on after-hours / weekend fires that Katie's not around
+     * to look at anyway. Daily briefing bypasses the gate: it's
+     * user-chosen at `briefing_time` and typically fires before
+     * you're online by design. `workdays` still applies here — an
+     * active-hours job never fires on Sat/Sun even inside the window.
+     * When either field is empty, jobs run any time (legacy behavior).
+     */
+    active_hours?: {
+      /** HH:MM 24-hour local time. Interpreted in `timezone`. */
+      start: string;
+      end: string;
+    };
   };
   stall_thresholds: {
     follow_up_nudge_days: number;

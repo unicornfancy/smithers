@@ -2,6 +2,7 @@ import { getDefaultAnalyzeCallTranscriptPrompt } from "@smithers/agents";
 
 import { getSetupStatusAction } from "@/app/setup/actions";
 import { AboutCard } from "@/components/about-card";
+import { ActiveHoursCard } from "@/components/active-hours-card";
 import { ActivityLogCard } from "@/components/activity-log-card";
 import { AppHeader } from "@/components/app-header";
 import { CallTranscriptPromptCard } from "@/components/call-transcript-prompt-card";
@@ -92,6 +93,14 @@ export default async function SettingsPage() {
                 default_window_days: cfg.follow_ups?.default_window_days ?? 7,
                 today_deadlines_window_days:
                   cfg.today?.deadlines_window_days ?? 14,
+              }}
+            />
+            <ActiveHoursCard
+              initial={{
+                start: cfg.working_rhythm.active_hours?.start ?? "",
+                end: cfg.working_rhythm.active_hours?.end ?? "",
+                timezone: cfg.working_rhythm.timezone,
+                workdays: cfg.working_rhythm.workdays,
               }}
             />
             <ScheduleCard
