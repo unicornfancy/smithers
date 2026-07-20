@@ -43,7 +43,9 @@ Gather these before you begin so you're not stopping mid-setup to chase things d
 
 ## 1. Install the tools Smithers needs
 
-Smithers needs three command-line tools: **Homebrew** (a Mac package manager), **Node.js** (the runtime), and **pnpm** (a package manager). If you already have all three, skip ahead to step 2.
+Smithers needs three command-line tools: **Homebrew** (a Mac package manager), **nvm** (Node version manager), and **Node.js 22**. pnpm gets installed automatically in step 2 via `corepack`. If you already have Homebrew and nvm, skip to "Install Node 22".
+
+**Why nvm and not `brew install node`?** Homebrew always installs the *latest* Node, which drifts ahead of the project's pinned version and ahead of the ecosystem's prebuilt binaries. Native modules like `better-sqlite3` then fall back to compiling from source, which frequently fails. nvm reads `.nvmrc` and pins the exact version Smithers expects.
 
 ### Open Terminal
 
@@ -63,7 +65,7 @@ Type this command and press `Enter`:
 which brew
 ```
 
-- If it prints a path like `/opt/homebrew/bin/brew`, you already have Homebrew → skip to "Install Node and pnpm".
+- If it prints a path like `/opt/homebrew/bin/brew`, you already have Homebrew → skip to "Install nvm".
 - If it prints nothing (or "brew not found"), install it by pasting this in:
 
 ```bash
@@ -74,22 +76,31 @@ Homebrew will ask for your Mac password (you won't see characters as you type �
 
 **You should see:** an `==> Installation successful!` line near the end, followed by "Next steps" with a couple of commands to add Homebrew to your shell. **Run those exact commands** — they're customized for your username.
 
-### Install Node and pnpm
-
-Paste this and press `Enter`:
+### Install nvm
 
 ```bash
-brew install node pnpm
+brew install nvm
 ```
 
-This takes a minute or two. When it finishes, verify both installed:
+Then follow the "Caveats" instructions that `brew` prints — you need to add two lines to your shell config (typically `~/.zshrc`) so `nvm` is available in every new Terminal window. After editing, **close and reopen Terminal** so the config takes effect. Verify:
 
 ```bash
-node --version    # should print v20.x.x or higher
-pnpm --version    # should print 9.x.x or higher
+nvm --version    # should print 0.x.x
 ```
 
-**You should see** version numbers. If you get "command not found", close Terminal and reopen it — the install needs a fresh shell to pick up the new tools.
+### Install Node 22
+
+```bash
+nvm install 22
+nvm use 22
+nvm alias default 22
+```
+
+The last line makes Node 22 the default for all future Terminal windows. Verify:
+
+```bash
+node --version    # should print v22.x.x
+```
 
 ### Install Git (if you don't have it)
 
@@ -120,17 +131,64 @@ The `git clone` line downloads Smithers into a folder called `smithers` in your 
 yourname@yourmac smithers %
 ```
 
-Now install Smithers' own dependencies (the code libraries it uses):
+### Turn on Corepack (installs the right pnpm automatically)
+
+Smithers pins an exact pnpm version in `package.json`. Corepack ships with Node and will fetch that exact version the first time you run `pnpm` inside the smithers folder — no manual `brew install pnpm` needed. Enable it once:
+
+```bash
+corepack enable
+```
+
+### Install Smithers' dependencies
 
 ```bash
 pnpm install
 ```
 
-This takes 1–3 minutes the first time and downloads several hundred MB. **You should see** a lot of progress output, finishing with a `Done` line.
+The first time this runs, corepack downloads the pinned pnpm version (a few seconds), then pnpm downloads Smithers' dependencies (1–3 minutes, several hundred MB). **You should see** progress output ending with a `Done` line.
 
-**If something goes wrong:**
-- "command not found: pnpm" → restart Terminal (the install in step 1 needs a fresh shell).
-- Errors mentioning a Node version → check `node --version` is 20 or higher; if not, run `brew upgrade node`.
+### Verify you're on the right versions
+
+Paste this checkpoint before moving on — it catches the most common install failures before they cascade:
+
+```bash
+node --version    # expect v22.x.x
+pnpm --version    # expect 11.x.x
+```
+
+**If something goes wrong** (fold-out for the common errors):
+
+<details>
+<summary>Error: <code>packageManager dependency "pnpm@X.Y.Z" ... must use a registry package path</code></summary>
+
+Your global pnpm is a newer major version than the one Smithers pins. **This is exactly what corepack is meant to fix.** Run `corepack enable` (from step 2 above), then re-run `pnpm install`. If corepack isn't found, upgrade Node: `nvm install 22 && nvm use 22`.
+</details>
+
+<details>
+<summary>Error: <code>Failed at .../better-sqlite3/... ELIFECYCLE</code> or <code>gyp: No Xcode or CLT version detected</code></summary>
+
+`better-sqlite3` is trying to compile from source because there's no prebuilt binary for your Node version. Cause: you're not on Node 22. Fix:
+
+```bash
+nvm use 22
+rm -rf node_modules
+pnpm install
+```
+
+If `nvm use 22` says "N/A - version 'v22' is not yet installed", run `nvm install 22` first.
+</details>
+
+<details>
+<summary>Error: <code>command not found: pnpm</code></summary>
+
+Close Terminal and open a fresh window — corepack needs a new shell to pick up the pnpm shim. Then `cd ~/smithers && pnpm install`.
+</details>
+
+<details>
+<summary>Error: <code>command not found: nvm</code> or <code>command not found: corepack</code></summary>
+
+Either nvm wasn't sourced (see the "Install nvm" caveats — you need those two lines in `~/.zshrc`, then reopen Terminal), or Node isn't installed yet (`nvm install 22 && nvm use 22`).
+</details>
 
 ---
 
@@ -453,6 +511,8 @@ The most common first-run errors and how to fix them.
 | Linear inbox panel says "degraded" with stale cache | ContextA8C session expired. | Reload the page. If it persists, restart `pnpm dev` to re-OAuth on the next call. |
 | `Cannot find module '@modelcontextprotocol/sdk'` in browser console | Build cache out of sync. | `rm -rf apps/web/.next` then restart `pnpm dev`. |
 | `pnpm dev` fails to start with a port error | Another app (often a previous `pnpm dev`) is using port 3000. | Find it: `lsof -i :3000`. Quit that process, then restart. |
+| `pnpm install` errors mentioning `packageManager` version or a lockfile format | Global pnpm is a different major version than the pinned one. | `corepack enable`, then re-run `pnpm install`. Corepack auto-fetches the pinned pnpm. |
+| `better-sqlite3` fails to compile during install | You're on a Node version without prebuilt binaries (usually latest-latest Node from Homebrew). | `nvm use 22 && rm -rf node_modules && pnpm install`. If `nvm use` says the version isn't installed, `nvm install 22` first. |
 | The Terminal closes unexpectedly while Smithers is running | This stops Smithers. | Reopen Terminal, `cd ~/smithers`, run `pnpm dev` again. |
 | You're stuck on a specific error not listed here | — | Open [TROUBLESHOOTING.md](TROUBLESHOOTING.md) or ask in `#team-51`. |
 
