@@ -7,7 +7,7 @@ import Database, { type Database as DB } from "better-sqlite3";
 
 import { loadConfig } from "./config";
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 let cached: DB | null = null;
 let cachedPath: string | null = null;
@@ -78,7 +78,8 @@ function applyMigrations(db: DB): void {
   if (current < 5) migrationV5(db);
   if (current < 6) migrationV6(db);
   if (current < 7) migrationV7(db);
-  // Future migrations land here as `if (current < 8) migrationV8(db); ...`
+  if (current < 8) migrationV8(db);
+  // Future migrations land here as `if (current < 9) migrationV9(db); ...`
 
   db.prepare(
     "INSERT INTO meta(key, value) VALUES('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -264,4 +265,17 @@ function migrationV7(db: DB): void {
   if (!cols.some((c) => c.name === "captured_url")) {
     db.exec(`ALTER TABLE team51_runs ADD COLUMN captured_url TEXT;`);
   }
+}
+
+/**
+ * team51 CLI integration (V6 + V7) was rolled back on the team51-cli-v1
+ * branch. `DROP TABLE IF EXISTS` covers both a freshly-seeded DB (never
+ * saw the table) and a legacy one that ran V6 + V7 during its lifetime.
+ */
+function migrationV8(db: DB): void {
+  db.exec(`
+    DROP INDEX IF EXISTS idx_team51_runs_status;
+    DROP INDEX IF EXISTS idx_team51_runs_project;
+    DROP TABLE IF EXISTS team51_runs;
+  `);
 }
