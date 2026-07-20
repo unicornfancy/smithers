@@ -14,6 +14,7 @@ import {
   type ActionKind,
   type EntityType,
 } from "@/lib/server/user-actions";
+import { getVault } from "@/lib/server/vault";
 
 /**
  * Undo a previously-recorded user action. The Activity Log is the
@@ -459,6 +460,103 @@ export async function updateWeeklyUpdateFormatAction(
     return {
       ok: false,
       reason: err instanceof Error ? err.message : "write failed",
+    };
+  }
+}
+
+/**
+ * Union of every partner slug currently referenced in the vault (from
+ * `hive_mind_partner_slug` and slug-shaped `partner:` values) plus every
+ * folder under Hive Mind's `knowledge/partners/`. Feeds the Rename
+ * Partner card's "current slug" autocomplete so we don't ask users to
+ * hand-type something they can typo.
+ */
+export async function listKnownPartnerSlugsAction(): Promise<{
+  slugs: string[];
+}> {
+  try {
+    const vault = await getVault();
+    const projects = await vault.listProjects();
+    const slugSet = new Set<string>();
+    for (const p of projects) {
+      const hm = p.hive_mind_partner_slug?.trim().toLowerCase();
+      if (hm && /^[a-z0-9][a-z0-9-]*$/.test(hm)) slugSet.add(hm);
+      const partner = p.partner?.trim().toLowerCase();
+      if (partner && /^[a-z0-9][a-z0-9-]*$/.test(partner)) slugSet.add(partner);
+    }
+    const hmRoot = vault.options.hiveMindPath;
+    if (hmRoot) {
+      try {
+        const { readdir } = await import("node:fs/promises");
+        const { join } = await import("node:path");
+        const entries = await readdir(join(hmRoot, "knowledge", "partners"), {
+          withFileTypes: true,
+        });
+        for (const e of entries) {
+          if (e.isDirectory()) slugSet.add(e.name);
+        }
+      } catch {
+        // HM path unset or partners dir missing; skip silently.
+      }
+    }
+    return { slugs: Array.from(slugSet).sort() };
+  } catch {
+    return { slugs: [] };
+  }
+}
+
+export async function renamePartnerSlugAction(input: {
+  oldSlug?: string;
+  newSlug?: string;
+}): Promise<
+  | {
+      ok: true;
+      data: {
+        changed: boolean;
+        projects_updated: Array<{ slug: string; name: string }>;
+        projects_skipped: Array<{ slug: string; name: string; reason: string }>;
+        dir_renamed: boolean;
+        committed: boolean;
+        commit_sha?: string;
+      };
+    }
+  | { ok: false; reason: string; message: string }
+> {
+  const oldSlug = input.oldSlug?.trim() ?? "";
+  const newSlug = input.newSlug?.trim() ?? "";
+  if (!oldSlug || !newSlug) {
+    return {
+      ok: false,
+      reason: "invalid-slug",
+      message: "Both current and new slug are required.",
+    };
+  }
+  try {
+    const vault = await getVault();
+    const result = await vault.renameHiveMindPartnerSlug({ oldSlug, newSlug });
+    if (!result.ok) {
+      return { ok: false, reason: result.reason, message: result.message };
+    }
+    revalidatePath("/settings");
+    revalidatePath("/projects");
+    revalidatePath("/projects/[slug]", "page");
+    revalidatePath("/today");
+    return {
+      ok: true,
+      data: {
+        changed: result.changed,
+        projects_updated: result.projects_updated,
+        projects_skipped: result.projects_skipped,
+        dir_renamed: result.dir_renamed,
+        committed: result.committed,
+        commit_sha: result.commit_sha,
+      },
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "rename failed",
     };
   }
 }

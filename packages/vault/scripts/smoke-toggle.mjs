@@ -18,6 +18,7 @@ import {
   findCallNotesByRecordingId,
   parseProjectTasks,
   refreshProjectZendeskMetadata,
+  renameHiveMindPartnerSlug,
   resolveFollowUp,
   saveCallNotes,
   setPrimaryZendeskTicket,
@@ -1023,6 +1024,78 @@ if (sp2.created) throw new Error("expected created=false when file already exist
 const spRaw2 = readFileSync(sp1.absolute_path, "utf8");
 if (!spRaw2.includes("user edit")) throw new Error("expected existing file preserved");
 console.log("[scratchpad] OK — seeds frontmatter + Open Items, idempotent on existing file");
+
+// --- renameHiveMindPartnerSlug: standalone temp vault + HM clone (no git init) ---
+{
+  const { execSync } = await import("node:child_process");
+  const renameRoot = mkdtempSync(join(tmpdir(), "smithers-rename-"));
+  const rProjects = join(renameRoot, "vault", "Projects");
+  const rHmPartners = join(renameRoot, "hm", "knowledge", "partners");
+  mkdirSync(rProjects, { recursive: true });
+  mkdirSync(join(rHmPartners, "old-partner"), { recursive: true });
+  writeFileSync(
+    join(rHmPartners, "old-partner", "partner-knowledge.md"),
+    "# Old Partner\n",
+  );
+  writeFileSync(
+    join(rProjects, "A.md"),
+    "---\nslug: proj-a\nname: Project A\nkind: partner\npartner: old-partner\nhive_mind_partner_slug: old-partner\n---\n\n# Project A\n",
+  );
+  writeFileSync(
+    join(rProjects, "B.md"),
+    "---\nslug: proj-b\nname: Project B\nkind: partner\npartner: Old Partner Display\nhive_mind_partner_slug: old-partner\n---\n\n# Project B\n",
+  );
+  writeFileSync(
+    join(rProjects, "C.md"),
+    "---\nslug: proj-c\nname: Project C\nkind: partner\npartner: other-partner\nhive_mind_partner_slug: other-partner\n---\n\n# Project C\n",
+  );
+  const rOpts = resolveVaultOptions({
+    vaultPath: join(renameRoot, "vault"),
+    hiveMindPath: join(renameRoot, "hm"),
+  });
+
+  // Init a real git repo so the git-mv branch runs.
+  const hm = join(renameRoot, "hm");
+  execSync("git init -q && git add -A && git -c user.email=a@b -c user.name=x commit -q -m init", { cwd: hm });
+
+  // Rejects on invalid slugs.
+  const rInvalid = await renameHiveMindPartnerSlug(rOpts, { oldSlug: "Old Partner", newSlug: "new-partner" });
+  if (rInvalid.ok || rInvalid.reason !== "invalid-slug") throw new Error("expected invalid-slug rejection");
+
+  const rSame = await renameHiveMindPartnerSlug(rOpts, { oldSlug: "old-partner", newSlug: "old-partner" });
+  if (rSame.ok || rSame.reason !== "same-slug") throw new Error("expected same-slug rejection");
+
+  const rMissing = await renameHiveMindPartnerSlug(rOpts, { oldSlug: "no-such-slug", newSlug: "brand-new" });
+  if (rMissing.ok || rMissing.reason !== "hm-dir-missing") throw new Error("expected hm-dir-missing rejection");
+
+  // Happy path.
+  const rOk = await renameHiveMindPartnerSlug(rOpts, { oldSlug: "old-partner", newSlug: "new-partner" });
+  if (!rOk.ok) throw new Error("expected ok result, got: " + JSON.stringify(rOk));
+  if (!rOk.dir_renamed) throw new Error("expected dir_renamed=true");
+  if (!rOk.committed) throw new Error("expected committed=true");
+  if (rOk.projects_updated.length !== 2) throw new Error("expected 2 projects updated, got " + rOk.projects_updated.length);
+  const aRaw = readFileSync(join(rProjects, "A.md"), "utf8");
+  if (!aRaw.includes("partner: new-partner")) throw new Error("A.md: partner should be new-partner");
+  if (!aRaw.includes("hive_mind_partner_slug: new-partner")) throw new Error("A.md: hm slug should be new-partner");
+  const bRaw = readFileSync(join(rProjects, "B.md"), "utf8");
+  if (!bRaw.includes("partner: Old Partner Display")) throw new Error("B.md: display-name partner should be preserved");
+  if (!bRaw.includes("hive_mind_partner_slug: new-partner")) throw new Error("B.md: hm slug should be new-partner");
+  const cRaw = readFileSync(join(rProjects, "C.md"), "utf8");
+  if (!cRaw.includes("partner: other-partner")) throw new Error("C.md: unrelated project should be untouched");
+  const { statSync } = await import("node:fs");
+  if (!statSync(join(rHmPartners, "new-partner")).isDirectory()) throw new Error("HM dir should be renamed");
+
+  // Idempotent re-run: old dir is gone, new dir is in place, all projects already carry newSlug.
+  // Should succeed with changed=false rather than erroring out.
+  const rReRun = await renameHiveMindPartnerSlug(rOpts, { oldSlug: "old-partner", newSlug: "new-partner" });
+  if (!rReRun.ok) throw new Error("expected ok=true on idempotent re-run, got: " + JSON.stringify(rReRun));
+  if (rReRun.changed) throw new Error("expected changed=false on idempotent re-run");
+  if (rReRun.dir_renamed) throw new Error("expected dir_renamed=false on idempotent re-run");
+  if (rReRun.projects_updated.length !== 0) throw new Error("expected 0 projects_updated on idempotent re-run");
+
+  console.log("[rename-partner] OK — invalid/same/missing rejections + rewrite + git mv + commit + display-name preservation");
+  rmSync(renameRoot, { recursive: true, force: true });
+}
 
 console.log(`[smoke] cleaning up ${root}`);
 rmSync(root, { recursive: true, force: true });

@@ -1,9 +1,14 @@
-import { mkdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { access, mkdir, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import type { ResolvedVaultOptions } from "./config";
 import { fileExists, listDir, tryReadFile, writeFileAtomic } from "./fs";
 import { parseMarkdown } from "./frontmatter";
+import { listProjects, updateProjectFrontmatter } from "./projects";
+
+const execFileAsync = promisify(execFile);
 
 function hiveMindPartnersDir(opts: ResolvedVaultOptions): string | null {
   if (!opts.hiveMindPath) return null;
@@ -782,4 +787,262 @@ function asContactArray(v: unknown): HiveMindPartnerContact[] | undefined {
     });
   }
   return out.length ? out : undefined;
+}
+
+// -------- rename partner slug --------
+
+const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
+export interface RenamePartnerSlugInput {
+  oldSlug: string;
+  newSlug: string;
+}
+
+export type RenamePartnerSlugResult =
+  | {
+      ok: true;
+      changed: boolean;
+      projects_updated: Array<{ slug: string; name: string }>;
+      projects_skipped: Array<{ slug: string; name: string; reason: string }>;
+      dir_renamed: boolean;
+      committed: boolean;
+      commit_sha?: string;
+    }
+  | {
+      ok: false;
+      reason:
+        | "invalid-slug"
+        | "same-slug"
+        | "no-hive-mind-path"
+        | "hm-dir-missing"
+        | "new-hm-dir-exists"
+        | "rename-failed";
+      message: string;
+    };
+
+/**
+ * Rename a partner slug across every place Smithers persists it:
+ *   1. Every project frontmatter where `hive_mind_partner_slug` or a
+ *      slug-shaped `partner` field matches oldSlug.
+ *   2. The Hive Mind partner directory
+ *      (`knowledge/partners/<oldSlug>/` → `<newSlug>/`) — via `git mv`
+ *      when HM is a git checkout so the rename is tracked as one op.
+ *   3. A single git commit scoped to just the renamed paths, so any
+ *      other pending edits in the HM clone stay unstaged.
+ *
+ * Fully idempotent: if the HM dir is already at the new slug and every
+ * project already carries newSlug, returns `{ changed: false }` with
+ * empty lists. Safe to re-run after a partial failure.
+ *
+ * Projects with `kind: "hive-mind"` never accept vault writes — they
+ * land in `projects_skipped` with `reason: "hive-mind-project"`.
+ */
+export async function renameHiveMindPartnerSlug(
+  opts: ResolvedVaultOptions,
+  input: RenamePartnerSlugInput,
+): Promise<RenamePartnerSlugResult> {
+  const oldSlug = input.oldSlug.trim();
+  const newSlug = input.newSlug.trim();
+
+  if (!SLUG_PATTERN.test(oldSlug) || !SLUG_PATTERN.test(newSlug)) {
+    return {
+      ok: false,
+      reason: "invalid-slug",
+      message: "Slugs must be kebab-case: lowercase letters, digits, hyphens.",
+    };
+  }
+  if (oldSlug === newSlug) {
+    return {
+      ok: false,
+      reason: "same-slug",
+      message: "Old and new slugs are the same — nothing to rename.",
+    };
+  }
+  if (!opts.hiveMindPath) {
+    return {
+      ok: false,
+      reason: "no-hive-mind-path",
+      message: "hive_mind_path isn't configured — nothing to rename.",
+    };
+  }
+
+  const partnersDir = hiveMindPartnersDir(opts)!;
+  const oldDir = join(partnersDir, oldSlug);
+  const newDir = join(partnersDir, newSlug);
+  const oldDirExists = await isDir(oldDir);
+  const newDirExists = await isDir(newDir);
+
+  // Nothing to rename in HM AND nothing to rewrite in vault → hard fail.
+  // Otherwise it's ambiguous whether the caller made a typo or the state
+  // just drifted; safer to require the user re-check the source slug.
+  if (!oldDirExists && !newDirExists) {
+    return {
+      ok: false,
+      reason: "hm-dir-missing",
+      message: `No partner directory at ${oldDir} (or under the new slug). Check the current slug.`,
+    };
+  }
+  if (oldDirExists && newDirExists) {
+    return {
+      ok: false,
+      reason: "new-hm-dir-exists",
+      message: `Both ${oldDir} and ${newDir} exist. Merge or delete one before renaming.`,
+    };
+  }
+
+  const projects = await listProjects(opts);
+  const matches = projects.filter(
+    (p) =>
+      p.hive_mind_partner_slug === oldSlug ||
+      p.partner?.trim().toLowerCase() === oldSlug,
+  );
+
+  const projects_updated: Array<{ slug: string; name: string }> = [];
+  const projects_skipped: Array<{ slug: string; name: string; reason: string }> = [];
+
+  for (const p of matches) {
+    if (p.source.kind === "hive-mind") {
+      projects_skipped.push({
+        slug: p.slug,
+        name: p.name,
+        reason: "hive-mind-project",
+      });
+      continue;
+    }
+    try {
+      const patch: Record<string, string> = {};
+      if (p.hive_mind_partner_slug === oldSlug) {
+        patch.hive_mind_partner_slug = newSlug;
+      }
+      if (p.partner?.trim().toLowerCase() === oldSlug) {
+        patch.partner = newSlug;
+      }
+      const res = await updateProjectFrontmatter(opts, p.slug, patch);
+      if (res.changed) {
+        projects_updated.push({ slug: p.slug, name: p.name });
+      }
+    } catch (err) {
+      projects_skipped.push({
+        slug: p.slug,
+        name: p.name,
+        reason: err instanceof Error ? err.message : "unknown error",
+      });
+    }
+  }
+
+  let dir_renamed = false;
+  let committed = false;
+  let commit_sha: string | undefined;
+  if (oldDirExists) {
+    const usedGit = await tryGitMv(opts.hiveMindPath, oldDir, newDir);
+    if (usedGit === "not-a-git-repo") {
+      await rename(oldDir, newDir);
+      dir_renamed = true;
+    } else if (usedGit === "moved") {
+      dir_renamed = true;
+      const commit = await tryCommitRename(
+        opts.hiveMindPath,
+        oldSlug,
+        newSlug,
+        oldDir,
+        newDir,
+      );
+      if (commit) {
+        committed = true;
+        commit_sha = commit;
+      }
+    } else {
+      return {
+        ok: false,
+        reason: "rename-failed",
+        message: `git mv failed: ${usedGit}`,
+      };
+    }
+  }
+
+  const changed =
+    projects_updated.length > 0 || dir_renamed || projects_skipped.length > 0;
+  return {
+    ok: true,
+    changed,
+    projects_updated,
+    projects_skipped,
+    dir_renamed,
+    committed,
+    commit_sha,
+  };
+}
+
+async function isDir(path: string): Promise<boolean> {
+  try {
+    const s = await stat(path);
+    return s.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Returns "moved" on success, "not-a-git-repo" when the HM path isn't
+ * a git checkout (caller falls back to plain rename), or an error
+ * message on any other git failure.
+ */
+async function tryGitMv(
+  hmPath: string,
+  oldDir: string,
+  newDir: string,
+): Promise<"moved" | "not-a-git-repo" | string> {
+  try {
+    await access(join(hmPath, ".git"));
+  } catch {
+    return "not-a-git-repo";
+  }
+  try {
+    await execFileAsync("git", ["-C", hmPath, "mv", oldDir, newDir], {
+      timeout: 15_000,
+    });
+    return "moved";
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    return raw.split("\n").slice(0, 3).join(" ").slice(0, 400);
+  }
+}
+
+/**
+ * Commit only the renamed paths — that keeps any other pending edits in
+ * the HM clone unstaged and out of this commit. Best-effort: a failure
+ * (nothing staged, hook error, etc.) leaves the rename applied on-disk
+ * and returns undefined; the caller surfaces `committed: false`.
+ */
+async function tryCommitRename(
+  hmPath: string,
+  oldSlug: string,
+  newSlug: string,
+  oldDir: string,
+  newDir: string,
+): Promise<string | undefined> {
+  try {
+    await execFileAsync(
+      "git",
+      [
+        "-C",
+        hmPath,
+        "commit",
+        "-m",
+        `chore(partners): rename ${oldSlug} -> ${newSlug}`,
+        "--",
+        oldDir,
+        newDir,
+      ],
+      { timeout: 15_000 },
+    );
+    const { stdout } = await execFileAsync(
+      "git",
+      ["-C", hmPath, "rev-parse", "HEAD"],
+      { timeout: 5_000 },
+    );
+    return stdout.trim() || undefined;
+  } catch {
+    return undefined;
+  }
 }

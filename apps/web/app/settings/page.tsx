@@ -11,6 +11,7 @@ import { HiveMindReconcileCard } from "@/components/hive-mind-reconcile-card";
 import { IntervalJobCard } from "@/components/interval-job-card";
 import { McpHealthCard } from "@/components/mcp-health-card";
 import { PageShell } from "@/components/page-shell";
+import { RenamePartnerCard } from "@/components/rename-partner-card";
 import { RestartDevServerCard } from "@/components/restart-dev-server-card";
 import { UpdateKoshCard } from "@/components/update-kosh-card";
 import { UpdateSmithersCard } from "@/components/update-smithers-card";
@@ -200,6 +201,7 @@ export default async function SettingsPage() {
             <UpdateKoshCard />
             <McpHealthCard />
             <HiveMindReconcileCard />
+            <RenamePartnerCard />
             <ActivityLogCard />
           </SettingsSection>
 
