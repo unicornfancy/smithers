@@ -2,7 +2,16 @@ packages:
   - "apps/*"
   - "packages/*"
 
-# Native modules that may run install scripts. Listed explicitly so pnpm's
-# default block doesn't silently leave the package half-installed.
-onlyBuiltDependencies:
-  - better-sqlite3
+# Native modules that must run install scripts. pnpm 11 blocks postinstall
+# by default; explicit `true` here allows the compile that these need
+# (better-sqlite3 has no prebuilt binaries for every Node version, so it
+# falls back to source compilation via node-gyp).
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+  sharp: true
+
+# Migrated from package.json `pnpm.overrides` (pnpm 11 no longer reads it there).
+# See: https://pnpm.io/settings#overrides
+overrides:
+  resolve: "^1.22.8"

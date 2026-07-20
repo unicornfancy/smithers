@@ -11,10 +11,10 @@
     "url": "https://github.com/unicornfancy/smithers.git"
   },
   "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=9.0.0"
+    "node": ">=22.0.0",
+    "pnpm": ">=11.0.0"
   },
-  "packageManager": "pnpm@10.33.2",
+  "packageManager": "pnpm@11.15.1",
   "scripts": {
     "dev": "pnpm --filter @smithers/web dev",
     "build": "pnpm -r --filter './packages/*' build && pnpm --filter @smithers/web build",
@@ -33,10 +33,5 @@
     "prettier": "^3.4.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
-  },
-  "pnpm": {
-    "overrides": {
-      "resolve": "^1.22.8"
-    }
   }
 }
