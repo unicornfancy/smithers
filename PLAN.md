@@ -182,6 +182,26 @@ Surfaced while building the brief integration:
 - **Two more reusable skill frontmatter fields** that would help Smithers + future runners: `output_path` (where the artifact lands — e.g. `brief.md` for /create-brief) and `requires_partner: true` / `requires_project: true` (so the workbench can know whether a skill needs context before offering it).
 - **`temp/brief-final-partner.md` location** — referenced in the skill as the canonical reference brief. The `temp/` parent suggests work-in-progress; moving to `references/` or `examples/` would be cleaner naming.
 
+## team51 CLI provisioning — v2 rebuild
+
+**Status:** v1 rolled back on main in the 1.1.0 release (2026-07-20). Preserved on the `team51-cli-v1` branch (pushed to origin).
+
+**Why v1 was pulled:** The Terminal-launched design shipped 2026-07-08 (after scrapping an earlier subprocess design that couldn't get past 1Password's ancestry check). Katie hit real errors trying to use it end-to-end; the failure modes weren't well-covered and the surface area was too big to patch in-place. Better to redesign than reflex-fix.
+
+**What v1 got right (worth preserving in v2):**
+- Terminal-launched flow with postback endpoint — the only design that plays nicely with 1Password 8's ancestry-based caller auth *and* interactive Symfony prompts. Don't relitigate.
+- One-time postback token (`crypto.randomBytes` + `timingSafeEqual`) for authenticated log delivery.
+- Per-command URL parser + write-back to `staging_url` frontmatter field (never `production_url` — that's for the launch URL).
+- SQLite `team51_runs` table mirroring `qa_runs` shape.
+
+**What v2 needs to do differently** — TBD until Katie captures specific failure modes. Likely candidates: better pre-flight (op / gh / ssh reachable + authenticated) with actionable error surfacing; smaller command surface (start with just wpcom-create-site, add others once that's rock-solid); explicit retry / cancel affordances that don't rely on the user closing the terminal; per-command validation of arguments before we compose the shell script.
+
+**How to revive:**
+```
+git checkout team51-cli-v1 -- apps/web/lib/server/team51.ts apps/web/components/team51 apps/web/app/projects/[slug]/team51 apps/web/app/api/team51
+```
+Then re-add the DB migrations, the `Team51ProvisioningSection` slot in `projects/[slug]/page.tsx`, and the `"team51-provisioning"` entry in `tabbed-workbench.tsx` under `knowledge`.
+
 ## Other deferred items
 
 - **v1.5 Linear ↔ Hive Mind ↔ Smithers sync** — deeper field standardization. Deferred until user signals priority.

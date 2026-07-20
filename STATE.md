@@ -1,6 +1,45 @@
 # STATE.md — Smithers (snapshot)
 
-_Updated 2026-07-08_
+_Updated 2026-07-20_
+
+## Just completed (2026-07-20 — v1.1.0 release: install-path hardening + rename-partner + team51 rollback)
+
+Release theme: two new TAM-facing features, one big rollback, and a toolchain sweep driven by a real onboarding failure a new TAM hit on 2026-07-20.
+
+### Rename Partner Slug (Settings → Diagnostics)
+
+One-shot rename of a partner slug across every place Smithers persists it. New vault helper `renameHiveMindPartnerSlug` (in `packages/vault/src/hive-mind.ts`) rewrites every project frontmatter where `hive_mind_partner_slug` matches (and slug-shaped `partner:` values that also match), `git mv`s the Hive Mind partner directory, and commits only the renamed paths so other pending HM edits stay unstaged. Fully idempotent — safe to re-run after a partial failure. Autocomplete draws known slugs from the union of vault frontmatter + `~/Team51-Hive-Mind/knowledge/partners/`. Smoke covers invalid-slug / same-slug / missing-dir rejections and display-name preservation for projects whose `partner:` field holds "The Pocket NYC" rather than the slug.
+
+Motivation: multiple new TAMs joining Smithers hit "slug is wrong / needs updating" and had no better path than manually editing every project's frontmatter modal + `mv` in the terminal. Card lives in Diagnostics rather than per-project because a rename can span many projects.
+
+### Active hours gate (Settings → Workflow)
+
+New `working_rhythm.active_hours: { start, end }` config field + `isWithinActiveHours(cfg, now)` helper in `apps/web/lib/server/active-hours.ts`. Every periodic scheduler job (ping monitor + all four sync jobs) gates on the helper at the top — outside the window (or on a non-workday), the job returns a "skipped, outside active hours" summary without calling any APIs. Daily briefing intentionally bypasses this gate — it fires at `schedule.daily_briefing.time` regardless. Time-of-day comparison uses `Intl.DateTimeFormat` with the configured timezone so a Smithers laptop that travels still honors "9am Pacific" instead of "9am wherever the laptop woke up." Windows that wrap midnight (`start > end`, e.g. 22:00–06:00) are handled correctly. Fail-open on Intl errors — better to over-run than starve.
+
+Motivation: Katie observed background jobs firing after-hours and on weekends when she wasn't around, burning tokens on results she wasn't looking at. Config-first rollout: no `active_hours` block → legacy behavior (jobs fire whenever), same as before.
+
+### team51 CLI provisioning: full rollback on main
+
+The Terminal-launched team51 flow that shipped 2026-07-08 hit real errors when Katie tried to use it end-to-end. Rather than patch in-place, the entire feature (~2400 lines, 15 files) is deleted on main and preserved on the `team51-cli-v1` branch (pushed to origin) for a future rebuild. Removed: workbench Provisioning section, all per-command dialogs (wpcom-create-site, wpcom-clone-site, pressable-create-site, pressable-clone-site, run-wp-cli), Terminal-launched runner + postback endpoint, run-poll + write-back components. Schema migration V8 drops `team51_runs` (safe on both freshly-seeded DBs and legacy ones that ran V6+V7). ONBOARDING gotcha about macOS Automation permission removed.
+
+Deferred-work follow-up added to PLAN for the v2 rebuild.
+
+### Node 22 LTS + pnpm 11 + hardened install path
+
+Full trigger: on 2026-07-20 a new TAM (Kim) started fresh onboarding and hit two blockers in step 2 (`pnpm install`) — (1) her global pnpm was 11.15.1 from Homebrew, project pinned 10.33.2; pnpm 11 stopped reading `pnpm.overrides` from package.json AND rejected the lockfile; (2) her Node was 26.5.0 (also from Homebrew), which has no prebuilt `better-sqlite3` binary yet, so it fell back to source compilation that failed on a stale CLT receipt.
+
+Response was in three parts:
+
+1. **Bump Node 20 → 22 LTS.** Node 20 hits EOL April 2026 (three months before this release); 22 is supported through April 2027. `.nvmrc` + engines in root package.json updated.
+2. **Bump pnpm 10 → 11.** Pinned version now 11.15.1, matching what a fresh Homebrew install of pnpm gives you (though corepack now handles this anyway — see #3). Config migrations: `pnpm.overrides` moved from package.json to pnpm-workspace.yaml (its new pnpm 11 home). `onlyBuiltDependencies` (list of strings) replaced by `allowBuilds` (map of booleans) — added esbuild + sharp alongside better-sqlite3 so all three native modules build on install rather than being silently skipped. Lockfile regenerated in pnpm 11 format.
+3. **ONBOARDING rewrite of step 1 (install tools) + step 2 (install deps).** Now: nvm instead of `brew install node` (because brew always chases latest, drifting past `.nvmrc`); corepack instead of `brew install pnpm` (because corepack auto-fetches the pinned pnpm from `packageManager` — so a pnpm major bump never breaks anyone's install again). Explicit "verify you're on the right versions" checkpoint between install and `pnpm dev`, with fold-outs for the exact three errors Kim hit so future TAMs recognize them and know the fix. Two rows added to the bottom-of-doc troubleshooting table for the same errors.
+
+The install path is now durable across ecosystem drift — the pinned versions are the pinned versions, regardless of what Homebrew was serving on any given day.
+
+### Also shipped this cycle (between 2026-07-08 and 2026-07-20)
+
+- **Call notes Chat visibility fix.** On 2026-07-10 during a Body Dao call, only the first lines of the chat saved to the notes file — mid-chat markdown H2 headings in an assistant reply were terminating the reader regex. Fix: wrap `## Chat` sections with HTML comment sentinels (`<!-- smithers:chat-start --> ... <!-- smithers:chat-end -->`) so the reader anchors on the comment, not the heading. Legacy regex fallback preserved for files written before the fix. Chat card added above Transcript card on `/calls/notes/[id]` — chat had been saving to file but never rendering.
+- **Personal notes made editable.** Was a read-only markdown-render + `<ComingSoon />` stub. Replaced with `PersonalNotesEditor` client component (1500ms debounced autosave + save-on-blur + edit/preview toggle) and a new `writeProjectPersonalNotes` vault helper with layout-aware paths (`<folder>/notes.md` for folder-projects, `Projects/<basename> — notes.md` for flat).
 
 ## Just completed (2026-07-08 — team51 CLI: scrap subprocess, switch to Terminal-launched)
 
