@@ -261,7 +261,7 @@ export function OpenItemsPanel({
             <li
               key={t.task_id}
               className="group flex items-start gap-2 py-1.5 first:pt-0"
-              style={t.indent > 0 ? { paddingLeft: `${t.indent * 8}px` } : undefined}
+              style={t.indent > 0 ? { paddingLeft: `${t.indent * 20}px` } : undefined}
             >
               <ProjectTaskCheckbox
                 projectSlug={projectSlug}
@@ -312,7 +312,7 @@ export function OpenItemsPanel({
             <li
               key={t.task_id}
               className="text-muted-foreground group flex items-start gap-2 py-1.5 last:pb-0"
-              style={t.indent > 0 ? { paddingLeft: `${t.indent * 8}px` } : undefined}
+              style={t.indent > 0 ? { paddingLeft: `${t.indent * 20}px` } : undefined}
             >
               <ProjectTaskCheckbox
                 projectSlug={projectSlug}
