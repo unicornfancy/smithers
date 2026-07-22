@@ -59,6 +59,31 @@ export function parseTaskMarkers(rawText: string): {
   return { text, priority, due_date };
 }
 
+/**
+ * Split a raw task-add input into one line per intended subtask.
+ * Drops blank lines and strips any leading list prefix the user may
+ * have typed (`- `, `* `, `+ `, `1. `, or an existing `[ ]` / `[x]`
+ * checkbox) so we don't double up when we re-emit the checkbox.
+ *
+ * Always returns at least one entry — the caller already validated
+ * that the trimmed input is non-empty, so a full-blank result would
+ * indicate a bug rather than user input.
+ */
+export function splitTaskInputLines(trimmed: string): string[] {
+  const raw = trimmed.split(/\r?\n/);
+  const out: string[] = [];
+  for (const line of raw) {
+    const cleaned = line
+      .trim()
+      .replace(/^(?:[-*+]|\d+\.)\s+/, "")
+      .replace(/^\[[ xX]\]\s+/, "")
+      .trim();
+    if (cleaned) out.push(cleaned);
+  }
+  if (out.length === 0) out.push(trimmed);
+  return out;
+}
+
 /** Serialize priority and/or due_date back to inline marker strings. */
 function serializeMarkers(
   priority?: "high" | "medium" | "low",
@@ -238,7 +263,17 @@ export async function appendProjectTask(
 
   const { data, content } = parseMarkdown(raw);
   const lines = content.split(/\r?\n/);
-  const newLine = `- [ ] ${trimmed}${serializeMarkers(markers?.priority, markers?.due_date)}`;
+
+  // Multi-line input becomes parent task + indented subtasks so nothing
+  // gets lost when the parser reads the file back. Prior behavior spliced
+  // a single string with embedded \n's; the parser then only recognized
+  // the first line as a task and treated the rest as prose.
+  const inputLines = splitTaskInputLines(trimmed);
+  const [firstLine, ...restLines] = inputLines;
+  const newLines: string[] = [
+    `- [ ] ${firstLine}${serializeMarkers(markers?.priority, markers?.due_date)}`,
+    ...restLines.map((l) => `  - [ ] ${l}`),
+  ];
 
   let insertedLineIndex: number;
   // Walk backwards to find the last task line; insert right after it.
@@ -250,16 +285,16 @@ export async function appendProjectTask(
     }
   }
   if (lastTaskIdx >= 0) {
-    lines.splice(lastTaskIdx + 1, 0, newLine);
+    lines.splice(lastTaskIdx + 1, 0, ...newLines);
     insertedLineIndex = lastTaskIdx + 1;
   } else {
     // No tasks yet — drop trailing blanks so we don't grow whitespace,
-    // then append the line + a single trailing newline for cleanliness.
+    // then append the lines + a single trailing newline for cleanliness.
     while (lines.length > 0 && lines[lines.length - 1] === "") {
       lines.pop();
     }
-    lines.push(newLine);
-    insertedLineIndex = lines.length - 1;
+    insertedLineIndex = lines.length;
+    lines.push(...newLines);
     lines.push("");
   }
 

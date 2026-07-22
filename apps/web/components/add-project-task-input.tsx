@@ -13,16 +13,18 @@ interface Props {
 }
 
 /**
- * Inline input pinned to the bottom of the Open Items panel. Enter (or the
- * Add button) appends a `- [ ] <text>` line to the project file. We don't
- * do an optimistic insert — server-side ids depend on section + index, so
- * we'd risk a key collision if we faked it. revalidatePath is fast enough
- * that a brief pending state reads as "saving" rather than lag.
+ * Inline textarea pinned to the bottom of the Open Items panel. Enter
+ * submits (single- or multi-line), Shift+Enter inserts a newline for
+ * subtasks. Multi-line input becomes a parent `- [ ]` task with one
+ * indented `- [ ]` subtask per additional line — handled server-side
+ * by `appendProjectTask`. No optimistic insert because server-side
+ * ids depend on section + index; revalidatePath is fast enough that
+ * a brief pending state reads as "saving" rather than lag.
  */
 export function AddProjectTaskInput({ projectSlug }: Props) {
   const [text, setText] = useState("");
   const [pending, startTransition] = useTransition();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   function submit() {
     const trimmed = text.trim();
@@ -49,19 +51,25 @@ export function AddProjectTaskInput({ projectSlug }: Props) {
         e.preventDefault();
         submit();
       }}
-      className="flex items-center gap-2 pt-2"
+      className="flex items-start gap-2 pt-2"
     >
-      <input
+      <textarea
         ref={inputRef}
-        type="text"
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        rows={1}
         disabled={pending}
-        placeholder="Add a task…"
+        placeholder="Add a task… (Shift+Enter for a subtask)"
         aria-label="Add a task"
         className={cn(
           "border-input bg-background focus-visible:ring-ring",
-          "h-8 flex-1 rounded-md border px-3 text-sm",
+          "min-h-8 flex-1 resize-y rounded-md border px-3 py-1.5 text-sm leading-5",
           "focus-visible:outline-none focus-visible:ring-1",
           "disabled:opacity-60",
         )}

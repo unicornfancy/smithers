@@ -145,6 +145,46 @@ if (!rejected) throw new Error("expected empty task text to be rejected");
 
 console.log("[append] OK — populated, empty-body, and whitespace-rejection paths all pass");
 
+// --- Multi-line append: parent task + indented subtasks ---
+const multiPath = join(projectsDir, "Multi Line Project.md");
+writeFileSync(
+  multiPath,
+  `---\nslug: multi-project\nname: Multi Project\nkind: personal\nstatus: active\n---\n\n# Multi Project\n\n## Open items\n\n- [ ] Existing task\n`,
+);
+const mlText = "Check with partner\nWhat CI do they use?\nWhat env do they deploy to?\nTimeline?";
+const mlResult = await appendProjectTask(opts, "multi-project", mlText);
+if (mlResult.text !== "Check with partner") throw new Error(`multi-line: parent text should be first line, got "${mlResult.text}"`);
+const mlRaw = readFileSync(multiPath, "utf8");
+if (!mlRaw.includes("- [ ] Check with partner")) throw new Error("multi-line: parent task missing\n" + mlRaw);
+if (!mlRaw.includes("  - [ ] What CI do they use?")) throw new Error("multi-line: subtask 1 missing\n" + mlRaw);
+if (!mlRaw.includes("  - [ ] What env do they deploy to?")) throw new Error("multi-line: subtask 2 missing\n" + mlRaw);
+if (!mlRaw.includes("  - [ ] Timeline?")) throw new Error("multi-line: subtask 3 missing\n" + mlRaw);
+const mlParsed = parseProjectTasks(mlRaw.split(/---\n/).slice(2).join("---\n"));
+const parent = mlParsed.find((t) => t.text === "Check with partner");
+const kids = mlParsed.filter((t) => t.indent === 2);
+if (!parent) throw new Error("multi-line: parser didn't find parent");
+if (parent.indent !== 0) throw new Error(`multi-line: parent should be indent=0, got ${parent.indent}`);
+if (kids.length !== 3) throw new Error(`multi-line: expected 3 indented children, got ${kids.length}`);
+
+// Multi-line with pre-formatted bullets → strip prefix, don't double up
+const mlPrefixText = "- do X\n- do Y\n- do Z";
+const mlPrefixResult = await appendProjectTask(opts, "multi-project", mlPrefixText);
+if (mlPrefixResult.text !== "do X") throw new Error(`prefix-strip: got "${mlPrefixResult.text}"`);
+const mlPrefixRaw = readFileSync(multiPath, "utf8");
+if (!mlPrefixRaw.includes("- [ ] do X")) throw new Error("prefix-strip: parent missing\n" + mlPrefixRaw);
+if (!mlPrefixRaw.includes("  - [ ] do Y")) throw new Error("prefix-strip: subtask Y missing\n" + mlPrefixRaw);
+if (mlPrefixRaw.includes("- [ ] - do")) throw new Error("prefix-strip: doubled-up dash on child\n" + mlPrefixRaw);
+
+// Multi-line with blank lines interleaved → blanks dropped
+const mlBlanksText = "top\n\nmid\n\n\nbottom";
+await appendProjectTask(opts, "multi-project", mlBlanksText);
+const mlBlanksRaw = readFileSync(multiPath, "utf8");
+if (!mlBlanksRaw.includes("- [ ] top")) throw new Error("blanks: parent missing");
+if (!mlBlanksRaw.includes("  - [ ] mid")) throw new Error("blanks: mid missing");
+if (!mlBlanksRaw.includes("  - [ ] bottom")) throw new Error("blanks: bottom missing");
+
+console.log("[append multi-line] OK — parent + indented subtasks, prefix-stripping, blank-line skipping");
+
 // --- Edit: rename a task, preserving indent + checkbox state ---
 // Add an indented sub-task so we can verify indent is preserved.
 const indentedPath = join(projectsDir, "Indented Project.md");
