@@ -11,6 +11,7 @@ import {
   cloneProjectAction,
   readProjectCloneDefaultsAction,
 } from "@/app/projects/[slug]/actions";
+import { parseLinearProjectUrl } from "@/lib/linear-url";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -37,7 +38,6 @@ interface Tier1 {
   nda?: boolean;
   tags?: string[];
   production_url?: string;
-  p2_url?: string;
   slack_channel?: string;
   zendesk_search_terms?: string[];
 }
@@ -47,6 +47,7 @@ interface Tier2 {
   staging_url?: string;
   figma_url?: string;
   google_drive_url?: string;
+  p2_url?: string;
 }
 
 interface Tier2Checked {
@@ -54,6 +55,7 @@ interface Tier2Checked {
   staging_url: boolean;
   figma_url: boolean;
   google_drive_url: boolean;
+  p2_url: boolean;
 }
 
 /**
@@ -77,6 +79,7 @@ export function CloneProjectDialog({ project }: Props) {
     staging_url: true,
     figma_url: true,
     google_drive_url: true,
+    p2_url: true,
   });
   const [newName, setNewName] = React.useState("");
   const [newSlug, setNewSlug] = React.useState("");
@@ -90,13 +93,31 @@ export function CloneProjectDialog({ project }: Props) {
     void readProjectCloneDefaultsAction(project.slug)
       .then((r) => {
         if (r.ok) {
-          setTier1(r.tier1);
-          setTier2(r.tier2);
+          // p2_url moved from tier1 to tier2 per user preference —
+          // some new phases spin up a new P2 channel.
+          setTier1({
+            partner: r.tier1.partner,
+            hive_mind_partner_slug: r.tier1.hive_mind_partner_slug,
+            kind: r.tier1.kind,
+            nda: r.tier1.nda,
+            tags: r.tier1.tags,
+            production_url: r.tier1.production_url,
+            slack_channel: r.tier1.slack_channel,
+            zendesk_search_terms: r.tier1.zendesk_search_terms,
+          });
+          setTier2({
+            github_repo: r.tier2.github_repo,
+            staging_url: r.tier2.staging_url,
+            figma_url: r.tier2.figma_url,
+            google_drive_url: r.tier2.google_drive_url,
+            p2_url: r.tier1.p2_url,
+          });
           setTier2Checked({
             github_repo: Boolean(r.tier2.github_repo),
             staging_url: Boolean(r.tier2.staging_url),
             figma_url: Boolean(r.tier2.figma_url),
             google_drive_url: Boolean(r.tier2.google_drive_url),
+            p2_url: Boolean(r.tier1.p2_url),
           });
         } else {
           toast.error(r.message);
@@ -145,7 +166,6 @@ export function CloneProjectDialog({ project }: Props) {
           nda: tier1.nda,
           tags: tier1.tags,
           production_url: tier1.production_url,
-          p2_url: tier1.p2_url,
           slack_channel: tier1.slack_channel,
           zendesk_search_terms: tier1.zendesk_search_terms,
           // Tier 2 — carry only if checked
@@ -155,6 +175,7 @@ export function CloneProjectDialog({ project }: Props) {
           google_drive_url: tier2Checked.google_drive_url
             ? tier2.google_drive_url
             : undefined,
+          p2_url: tier2Checked.p2_url ? tier2.p2_url : undefined,
           // New for this phase — user-typed
           linear_project_id: linearId.trim() || undefined,
           linear_project_slug: linearSlug.trim() || undefined,
@@ -182,7 +203,7 @@ export function CloneProjectDialog({ project }: Props) {
           Clone as new project
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col">
         <DialogHeader>
           <DialogTitle>Clone {project.name} as new project</DialogTitle>
           <DialogDescription>
@@ -197,7 +218,7 @@ export function CloneProjectDialog({ project }: Props) {
             <Loader2 className="text-muted-foreground size-5 animate-spin" />
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
             {/* New project name + slug */}
             <div className="space-y-2">
               <div className="grid grid-cols-2 gap-3">
@@ -225,30 +246,48 @@ export function CloneProjectDialog({ project }: Props) {
                   />
                 </label>
               </div>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="text-foreground font-medium">
+                  Paste the new Linear project URL (optional)
+                </span>
+                <input
+                  type="text"
+                  onChange={(e) => {
+                    const parsed = parseLinearProjectUrl(e.target.value);
+                    if (!parsed) return;
+                    if (parsed.id) setLinearId(parsed.id);
+                    setLinearSlug(parsed.slug);
+                  }}
+                  disabled={saving}
+                  placeholder="https://linear.app/team51/project/pocket-nyc-phase-3-abc123"
+                  className={inputClass}
+                />
+                <span className="text-muted-foreground text-[11px]">
+                  ID and slug fill in below automatically.
+                </span>
+              </label>
               <div className="grid grid-cols-2 gap-3">
                 <label className="flex flex-col gap-1 text-xs">
                   <span className="text-foreground font-medium">
-                    New Linear project ID (optional)
+                    Linear project ID
                   </span>
                   <input
                     type="text"
                     value={linearId}
                     onChange={(e) => setLinearId(e.target.value)}
                     disabled={saving}
-                    placeholder="paste the new Linear ID"
                     className={inputClass}
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-xs">
                   <span className="text-foreground font-medium">
-                    New Linear slug (optional)
+                    Linear slug
                   </span>
                   <input
                     type="text"
                     value={linearSlug}
                     onChange={(e) => setLinearSlug(e.target.value)}
                     disabled={saving}
-                    placeholder="pocket-nyc-phase-3"
                     className={inputClass}
                   />
                 </label>
@@ -268,7 +307,6 @@ export function CloneProjectDialog({ project }: Props) {
                   ["nda", tier1.nda ? "true" : undefined],
                   ["tags", tier1.tags?.join(", ")],
                   ["production_url", tier1.production_url],
-                  ["p2_url", tier1.p2_url],
                   ["slack_channel", tier1.slack_channel],
                   [
                     "zendesk_search_terms",
@@ -301,6 +339,7 @@ export function CloneProjectDialog({ project }: Props) {
                       "Google Drive",
                       tier2.google_drive_url,
                     ],
+                    ["p2_url", "P2 URL", tier2.p2_url],
                   ] as const
                 ).map(([key, label, value]) => (
                   <label
