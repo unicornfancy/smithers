@@ -503,6 +503,134 @@ function nonEmpty(value: string | undefined): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
+// -------- clone project for new phase --------
+
+/**
+ * Fields the clone helper is allowed to carry from source → new project.
+ * Everything not in this set (project_id, zendesk_tickets, fathom_*,
+ * agenda_file, next_nudge, hive_mind_project_slug, status, created_at,
+ * follow-ups, and all body content) is intentionally NEVER cloned —
+ * those are instance-specific to the source phase.
+ */
+export interface CloneProjectFrontmatter {
+  partner?: string;
+  hive_mind_partner_slug?: string;
+  kind?: ProjectKind;
+  nda?: boolean;
+  tags?: string[];
+  github_repo?: string;
+  staging_url?: string;
+  production_url?: string;
+  figma_url?: string;
+  google_drive_url?: string;
+  p2_url?: string;
+  slack_channel?: string;
+  zendesk_search_terms?: string[];
+  linear_project_id?: string;
+  linear_project_slug?: string;
+}
+
+export interface CloneProjectInput {
+  new_name: string;
+  new_slug: string;
+  frontmatter: CloneProjectFrontmatter;
+}
+
+export interface CloneProjectResult {
+  absolute_path: string;
+  relative_path: string;
+  slug: string;
+  /** False when a file already existed at the target path (name collision). */
+  created: boolean;
+}
+
+/**
+ * Create a sibling project seeded with a caller-selected subset of
+ * frontmatter from an existing source project. Used by the "Clone as
+ * new project" workbench action when starting a new phase of the
+ * same partner engagement.
+ *
+ * The caller (server action + modal) is responsible for tier
+ * classification — picking which fields to carry from source. This
+ * helper just writes what it's given. Fields explicitly excluded
+ * from `CloneProjectFrontmatter` (project_id, zendesk_tickets,
+ * fathom search terms, agenda_file, follow-ups, body content) can
+ * never be cloned regardless of caller intent — those are
+ * instance-specific and must be fresh.
+ *
+ * Idempotent: if a file already exists at the target path, it is
+ * preserved and `created: false` is returned. Never overwrites.
+ */
+export async function cloneProjectForNewPhase(
+  opts: ResolvedVaultOptions,
+  input: CloneProjectInput,
+): Promise<CloneProjectResult> {
+  const trimmedName = input.new_name.trim();
+  if (!trimmedName) {
+    throw new Error("Project name is required");
+  }
+  const trimmedSlug = input.new_slug.trim();
+  if (!trimmedSlug) {
+    throw new Error("Project slug is required");
+  }
+
+  const paths = vaultPaths(opts);
+  const fileName = `${sanitizeFileName(trimmedName)}.md`;
+  const absolutePath = join(paths.projects, fileName);
+  const relativePath = relative(opts.vaultPath, absolutePath);
+
+  const existing = await tryReadFile(absolutePath);
+  if (existing !== null) {
+    return {
+      absolute_path: absolutePath,
+      relative_path: relativePath,
+      slug: trimmedSlug,
+      created: false,
+    };
+  }
+
+  const fm = input.frontmatter;
+  const partner = nonEmpty(fm.partner);
+  const kind: ProjectKind = fm.kind ?? (partner ? "partner" : "personal");
+
+  // serializeMarkdown strips undefined entries; that gives us "omit
+  // when empty" without a per-field guard.
+  const frontmatter: Record<string, unknown> = {
+    name: trimmedName,
+    slug: trimmedSlug,
+    kind,
+    status: "active",
+    partner,
+    hive_mind_partner_slug: nonEmpty(fm.hive_mind_partner_slug),
+    nda: fm.nda === true ? true : undefined,
+    tags: fm.tags && fm.tags.length > 0 ? fm.tags : undefined,
+    github_repo: nonEmpty(fm.github_repo),
+    staging_url: nonEmpty(fm.staging_url),
+    production_url: nonEmpty(fm.production_url),
+    figma_url: nonEmpty(fm.figma_url),
+    google_drive_url: nonEmpty(fm.google_drive_url),
+    p2_url: nonEmpty(fm.p2_url),
+    slack_channel: nonEmpty(fm.slack_channel),
+    zendesk_search_terms:
+      fm.zendesk_search_terms && fm.zendesk_search_terms.length > 0
+        ? fm.zendesk_search_terms
+        : undefined,
+    linear_project_id: nonEmpty(fm.linear_project_id),
+    linear_project_slug: nonEmpty(fm.linear_project_slug),
+    created_at: new Date().toISOString(),
+  };
+
+  const body = `\n# ${trimmedName}\n\n## Open Items\n\n- [ ] \n`;
+  await writeFileAtomic(absolutePath, serializeMarkdown(frontmatter, body));
+
+  return {
+    absolute_path: absolutePath,
+    relative_path: relativePath,
+    slug: trimmedSlug,
+    created: true,
+  };
+}
+
 export interface AddProjectZendeskTicketResult {
   zendesk_tickets: ZendeskTicketRef[];
   /** True when the ticket was newly added; false when it was a no-op duplicate. */

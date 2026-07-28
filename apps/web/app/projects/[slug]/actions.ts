@@ -552,6 +552,194 @@ export async function refreshZendeskMetadataAction(
   };
 }
 
+// -------- clone project for new phase --------
+
+/**
+ * Suggest field defaults for the Clone Project modal. Returns the
+ * source's tier-1 (partner identity) + tier-2 (usually-same
+ * references) fields with their current values, plus a hint of what
+ * the source's kind is so the modal can offer the same by default.
+ * Tier-3 (instance-specific) fields are intentionally never returned
+ * here — the modal doesn't offer them.
+ */
+export async function readProjectCloneDefaultsAction(
+  slug: string,
+): Promise<{
+  ok: true;
+  source_name: string;
+  source_status?: string;
+  tier1: {
+    partner?: string;
+    hive_mind_partner_slug?: string;
+    kind?: string;
+    nda?: boolean;
+    tags?: string[];
+    production_url?: string;
+    p2_url?: string;
+    slack_channel?: string;
+    zendesk_search_terms?: string[];
+  };
+  tier2: {
+    github_repo?: string;
+    staging_url?: string;
+    figma_url?: string;
+    google_drive_url?: string;
+  };
+} | { ok: false; message: string }> {
+  if (!slug) return { ok: false, message: "slug is required" };
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) return { ok: false, message: `Project "${slug}" not found` };
+  return {
+    ok: true,
+    source_name: project.name,
+    source_status: project.status,
+    tier1: {
+      partner: project.partner,
+      hive_mind_partner_slug: project.hive_mind_partner_slug,
+      kind: project.kind,
+      nda: project.nda,
+      tags: project.tags,
+      production_url: project.production_url,
+      p2_url: project.p2_url,
+      slack_channel: project.slack_channel,
+      zendesk_search_terms: project.zendesk_search_terms,
+    },
+    tier2: {
+      github_repo: project.github_repo,
+      staging_url: project.staging_url,
+      figma_url: project.figma_url,
+      google_drive_url: project.google_drive_url,
+    },
+  };
+}
+
+export async function cloneProjectAction(
+  sourceSlug: string,
+  input: {
+    new_name: string;
+    new_slug: string;
+    frontmatter: {
+      // Tier 1 (partner identity — modal defaults these on)
+      partner?: string;
+      hive_mind_partner_slug?: string;
+      kind?: string;
+      nda?: boolean;
+      tags?: string[];
+      production_url?: string;
+      p2_url?: string;
+      slack_channel?: string;
+      zendesk_search_terms?: string[];
+      // Tier 2 (usually same — modal defaults on but uncheckable)
+      github_repo?: string;
+      staging_url?: string;
+      figma_url?: string;
+      google_drive_url?: string;
+      // User-typed for the new phase
+      linear_project_id?: string;
+      linear_project_slug?: string;
+    };
+    close_source?: boolean;
+  },
+): Promise<
+  | {
+      ok: true;
+      new_slug: string;
+      new_path: string;
+      source_closed: boolean;
+    }
+  | { ok: false; reason: "invalid" | "collision" | "error"; message: string }
+> {
+  if (!sourceSlug) return { ok: false, reason: "invalid", message: "source slug is required" };
+  const trimmedName = input.new_name.trim();
+  const trimmedSlug = input.new_slug.trim();
+  if (!trimmedName || !trimmedSlug) {
+    return { ok: false, reason: "invalid", message: "Name and slug are required." };
+  }
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(trimmedSlug)) {
+    return {
+      ok: false,
+      reason: "invalid",
+      message: "Slug must be kebab-case: lowercase letters, digits, hyphens.",
+    };
+  }
+  if (trimmedSlug === sourceSlug) {
+    return { ok: false, reason: "invalid", message: "New slug can't equal the source slug." };
+  }
+  try {
+    const vault = await getVault();
+    const existing = await vault.readProject(trimmedSlug);
+    if (existing) {
+      return {
+        ok: false,
+        reason: "collision",
+        message: `A project with slug "${trimmedSlug}" already exists.`,
+      };
+    }
+    const result = await vault.cloneProjectForNewPhase({
+      new_name: trimmedName,
+      new_slug: trimmedSlug,
+      frontmatter: {
+        partner: input.frontmatter.partner,
+        hive_mind_partner_slug: input.frontmatter.hive_mind_partner_slug,
+        kind: input.frontmatter.kind as
+          | "partner"
+          | "team"
+          | "personal"
+          | undefined,
+        nda: input.frontmatter.nda,
+        tags: input.frontmatter.tags,
+        github_repo: input.frontmatter.github_repo,
+        staging_url: input.frontmatter.staging_url,
+        production_url: input.frontmatter.production_url,
+        figma_url: input.frontmatter.figma_url,
+        google_drive_url: input.frontmatter.google_drive_url,
+        p2_url: input.frontmatter.p2_url,
+        slack_channel: input.frontmatter.slack_channel,
+        zendesk_search_terms: input.frontmatter.zendesk_search_terms,
+        linear_project_id: input.frontmatter.linear_project_id,
+        linear_project_slug: input.frontmatter.linear_project_slug,
+      },
+    });
+    if (!result.created) {
+      // Race: another writer landed a same-name file between our check
+      // and the write. Report as collision so the user renames.
+      return {
+        ok: false,
+        reason: "collision",
+        message: `A file already exists at the target path (${result.relative_path}).`,
+      };
+    }
+
+    let source_closed = false;
+    if (input.close_source) {
+      try {
+        await vault.updateProjectFrontmatter(sourceSlug, { status: "archived" });
+        source_closed = true;
+      } catch {
+        // Best-effort — the clone succeeded; not fatal if close fails.
+      }
+    }
+
+    revalidatePath("/projects");
+    revalidatePath(`/projects/${sourceSlug}`);
+    revalidatePath("/today");
+
+    return {
+      ok: true,
+      new_slug: result.slug,
+      new_path: result.relative_path,
+      source_closed,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "clone failed",
+    };
+  }
+}
+
 /**
  * Apply a partial frontmatter patch to the project file. The vault
  * helper handles the atomic write and the empty-string-clears

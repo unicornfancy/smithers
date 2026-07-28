@@ -202,6 +202,41 @@ git checkout team51-cli-v1 -- apps/web/lib/server/team51.ts apps/web/components/
 ```
 Then re-add the DB migrations, the `Team51ProvisioningSection` slot in `projects/[slug]/page.tsx`, and the `"team51-provisioning"` entry in `tabbed-workbench.tsx` under `knowledge`.
 
+## Weekly-update generator improvements
+
+**Status:** batch analysis of W25–W31 diffs (2026-07-27) surfaced 14 distinct patterns of where Smithers's generated weekly update diverges from Katie's final. See STATE.md for the recurrence tally. Sprints below ordered by frequency × impact × feasibility.
+
+### Sprint 1 — biggest wins, smallest lifts
+
+- **Clone project for new phase.** Workbench-header action that creates a sibling project with tier-1 partner-identity frontmatter auto-copied (partner, HM slug, production URL, P2, Slack, kind, nda, tags, Zendesk search terms), tier-2 usually-same frontmatter suggested (github_repo, staging_url, figma_url, google_drive_url), and tier-3 instance-specific fields (zendesk_tickets, call notes, follow-ups, project_id) always fresh. Optional "close out source" toggle sets `status: completed` on the old phase. v1: no auto-increment on phase numbers — user types the new name themselves.
+- **Meetings/Other filter (5/6 weeks affected).** Exclude calendar events whose title contains a project-partner name already appearing in the update. Weekly-facts side; ~30 min of agent work.
+- **Attribution / handle-map corrections (4/6 weeks).** Consult the existing team-roster / TEAM_CHARTER handle map when writing @mentions. Also add a small learn-loop that watches for the pattern "Smithers wrote @X, Katie changed to @Y, N weeks in a row" and treats it as a mapping fix. Recurring examples: @lae→@mlaetitia, @nadiahussain→@thirtythreestudio, @jacklyn.lock→@jackiejade.
+- **AFK-coverage frontmatter (4/6 weeks).** Two fields on project frontmatter:
+  - `tam_role: secondary` + `primary_tam: <handle>` — standing role. Weekly-facts frames as "Supporting @X on ..." and lowers the report-worthiness bar.
+  - `covering_for: <handle>` + `covering_until: YYYY-MM-DD` — temporary. Auto-expires. Weekly-facts pulls activity into Katie's week and frames as "Wrangled comms while @X was AFK". Manual v1 (Katie sets it); v2 could parse Team51 AFK announcements.
+  - Add a small "TAM Coverage" section to the project metadata modal.
+
+### Sprint 2 — AFK is real
+
+- **Katie-AFK-week detection (3/6 weeks — including W28 where the whole Last Week report was wrong).** Check calendar for OOO days before generating the Last Week section. If 3+ days AFK, generate "**AFK — see follow-up items**" instead of pretending to summarize work. Requires calendar MCP access.
+- **AFK coverage agent behavior.** Consumes the frontmatter fields from Sprint 1.
+- **Post-AFK framing.** If you were AFK last week, generate "catch-up" style This Week phrasing ("Wrangle open items that came in from...") rather than the default proactive framing.
+
+### Sprint 3 — data staleness + coverage gaps
+
+- **HM projects without a Smithers workbench file.** Diagnostic card in Settings → Diagnostics ("You have activity on X but no workbench — create one?"). Also auto-suggest during weekly generation.
+- **Personal-notes mtime as work signal.** If `<project>/notes.md` was edited this week, include the project in weekly-facts even without upstream activity. Solves the Ukraine case (private local work).
+- **Data staleness verification pass.** "For each last-week's This Week item, is it still relevant?" — check if the dev site is up, the ticket's closed, the call happened. Not carry-forward-verbatim.
+
+### Sprint 4 — polish (unranked among themselves)
+
+- **Duplicate-line dedup** in generator output (W30: "Launch on Tuesday!" + "Launch post." both emitted).
+- **Reverse-filler heuristic** — detect wait-mode projects and use lighter "Wrangle partner comms as needed" phrasing on purpose.
+- **Over-reporting filter** — score events for "does this move the partner engagement forward?" and drop AFK-return, calendar-only, or pure-team-internal signals.
+- **Self-attribution** — when Katie appears as actor in activity events (transparency.a.com fix in W30), credit her explicitly.
+- **New-project acquisition** (Dieline, WPCerts pre-setup, Jose-Miguel) — punt or offer a "quick-add project from calendar kickoff" affordance.
+- **Missing-projects sub-pattern C** — Linear projects not yet in HM or Smithers (WP Cloud). Wire Linear as a source of project candidates.
+
 ## Other deferred items
 
 - **v1.5 Linear ↔ Hive Mind ↔ Smithers sync** — deeper field standardization. Deferred until user signals priority.

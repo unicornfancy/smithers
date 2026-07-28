@@ -88,6 +88,7 @@ import {
 import {
   addProjectZendeskTicket,
   appendDecisionsToProject,
+  cloneProjectForNewPhase,
   createProject,
   createProjectScratchpad,
   ensureProjectId,
@@ -103,6 +104,9 @@ import {
   type AddProjectZendeskTicketResult,
   type AppendDecisionsInput,
   type AppendDecisionsResult,
+  type CloneProjectFrontmatter,
+  type CloneProjectInput,
+  type CloneProjectResult,
   type CreateProjectInput,
   type CreateProjectResult,
   type CreateProjectScratchpadInput,
@@ -202,6 +206,9 @@ export type {
   AddProjectZendeskTicketResult,
   AppendDecisionsInput,
   AppendDecisionsResult,
+  CloneProjectFrontmatter,
+  CloneProjectInput,
+  CloneProjectResult,
   CreateProjectInput,
   CreateProjectResult,
   CreateProjectScratchpadInput,
@@ -275,6 +282,7 @@ export {
   appendFollowUp,
   appendProjectTask,
   applyDailySectionEdit,
+  cloneProjectForNewPhase,
   createProject,
   createProjectScratchpad,
   deleteProjectTask,
@@ -379,6 +387,9 @@ export interface Vault {
   createProjectScratchpad: (
     input: CreateProjectScratchpadInput,
   ) => ReturnType<typeof createProjectScratchpad>;
+  cloneProjectForNewPhase: (
+    input: CloneProjectInput,
+  ) => ReturnType<typeof cloneProjectForNewPhase>;
   listDrafts: () => ReturnType<typeof listDrafts>;
   readDraft: (id: string) => ReturnType<typeof readDraft>;
   listFollowUps: () => ReturnType<typeof listFollowUps>;
@@ -599,6 +610,7 @@ export function createVault(options: VaultOptions): Vault {
       writeProjectPersonalNotes(resolved, slug, body),
     createProject: (input) => createProject(resolved, input),
     createProjectScratchpad: (input) => createProjectScratchpad(resolved, input),
+    cloneProjectForNewPhase: (input) => cloneProjectForNewPhase(resolved, input),
     listDrafts: () => listDrafts(resolved),
     readDraft: (id) => readDraft(resolved, id),
     listFollowUps: () => listFollowUps(resolved),

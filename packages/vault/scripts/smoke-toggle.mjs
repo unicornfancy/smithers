@@ -11,6 +11,7 @@ import {
   appendDecisionsToProject,
   appendFollowUp,
   appendProjectTask,
+  cloneProjectForNewPhase,
   createProjectScratchpad,
   createVault,
   deleteProjectTask,
@@ -1064,6 +1065,85 @@ if (sp2.created) throw new Error("expected created=false when file already exist
 const spRaw2 = readFileSync(sp1.absolute_path, "utf8");
 if (!spRaw2.includes("user edit")) throw new Error("expected existing file preserved");
 console.log("[scratchpad] OK — seeds frontmatter + Open Items, idempotent on existing file");
+
+// --- cloneProjectForNewPhase: writes new file with selected frontmatter, idempotent ---
+{
+  const cloneResult = await cloneProjectForNewPhase(opts, {
+    new_name: "Scratch Project — Phase 2",
+    new_slug: "scratch-project-phase-2",
+    frontmatter: {
+      partner: "example-partner",
+      hive_mind_partner_slug: "example-partner",
+      kind: "partner",
+      nda: true,
+      tags: ["ecommerce", "phase-2"],
+      github_repo: "a8cteam51/example",
+      staging_url: "https://example.wpcomstaging.com",
+      production_url: "https://example.com",
+      figma_url: "https://figma.com/file/abc",
+      p2_url: "https://team51.wordpress.com/tag/example/",
+      slack_channel: "example-partner",
+      zendesk_search_terms: ["example.com", "hello@example.com"],
+      linear_project_id: "new-linear-id",
+    },
+  });
+  if (!cloneResult.created) throw new Error("[clone] expected created=true on first clone");
+  const cloneRaw = readFileSync(cloneResult.absolute_path, "utf8");
+  // Verify carried fields
+  // Check field is present + value contains the key substring — js-yaml
+  // quotes strings with `:` (URLs) so exact-string match is brittle.
+  const expected = [
+    ["slug", "scratch-project-phase-2"],
+    ["partner", "example-partner"],
+    ["hive_mind_partner_slug", "example-partner"],
+    ["kind", "partner"],
+    ["nda", "true"],
+    ["github_repo", "a8cteam51/example"],
+    ["staging_url", "example.wpcomstaging.com"],
+    ["production_url", "example.com"],
+    ["figma_url", "figma.com/file/abc"],
+    ["slack_channel", "example-partner"],
+    ["linear_project_id", "new-linear-id"],
+    ["status", "active"],
+  ];
+  for (const [key, valueSub] of expected) {
+    const re = new RegExp(`^${key}:.*${valueSub.replace(/[.\/]/g, "\\$&")}`, "m");
+    if (!re.test(cloneRaw)) {
+      throw new Error(`[clone] missing ${key}=…${valueSub}… in output:\n${cloneRaw}`);
+    }
+  }
+  if (!cloneRaw.includes("## Open Items")) {
+    throw new Error("[clone] missing Open Items heading:\n" + cloneRaw);
+  }
+  // Never-carried fields must be absent — anchor to line-start so
+  // e.g. `project_id:` doesn't false-match `linear_project_id:`.
+  for (const forbidden of ["project_id", "zendesk_tickets", "hive_mind_project_slug", "next_nudge", "agenda_file"]) {
+    const re = new RegExp(`^${forbidden}:`, "m");
+    if (re.test(cloneRaw)) {
+      throw new Error(`[clone] forbidden field "${forbidden}" leaked into output:\n${cloneRaw}`);
+    }
+  }
+
+  // Idempotent re-run: existing file preserved, created=false.
+  writeFileSync(cloneResult.absolute_path, cloneRaw + "\nuser edit\n");
+  const rerun = await cloneProjectForNewPhase(opts, {
+    new_name: "Scratch Project — Phase 2",
+    new_slug: "scratch-project-phase-2",
+    frontmatter: { partner: "example-partner" },
+  });
+  if (rerun.created) throw new Error("[clone] expected created=false on re-run");
+  const rerunRaw = readFileSync(cloneResult.absolute_path, "utf8");
+  if (!rerunRaw.includes("user edit")) throw new Error("[clone] existing file must be preserved on re-run");
+
+  // Empty/whitespace name rejected.
+  let rejected = false;
+  try {
+    await cloneProjectForNewPhase(opts, { new_name: "   ", new_slug: "x", frontmatter: {} });
+  } catch { rejected = true; }
+  if (!rejected) throw new Error("[clone] empty name should be rejected");
+
+  console.log("[clone] OK — carries tier1+tier2, blocks tier3, idempotent on collision, rejects blank name");
+}
 
 // --- renameHiveMindPartnerSlug: standalone temp vault + HM clone (no git init) ---
 {

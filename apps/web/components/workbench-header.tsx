@@ -22,6 +22,7 @@ import {
 import { zendeskTicketUrl } from "@smithers/mcp-client";
 import type { Project, ProjectKind, ProjectStatus } from "@smithers/vault";
 
+import { CloneProjectDialog } from "@/components/clone-project-dialog";
 import { GenerateHandoffButton } from "@/components/generate-handoff-button";
 import { ProjectMetadataModal } from "@/components/project-metadata-modal";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -127,6 +128,7 @@ export function WorkbenchHeader({
               QA
             </Link>
           </Button>
+          <CloneProjectDialog project={project} />
           <ProjectMetadataModal project={project} />
           <ThemeToggle />
         </div>
