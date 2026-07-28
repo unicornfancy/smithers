@@ -1217,6 +1217,12 @@ export async function analyzeCallAction(
         },
       })
       .catch(() => null);
+    // Bust the workbench cache so the "Recent calls" panel sees the
+    // newly-saved notes on next render — otherwise the recording keeps
+    // showing as unprocessed even though the file is on disk. Also
+    // /today's Recent Calls card mirrors this feed.
+    revalidatePath(`/projects/${slug}`);
+    revalidatePath("/today");
     return {
       ok: true,
       data: result.output,
