@@ -1195,6 +1195,10 @@ export async function analyzeCallAction(
           recorded_at: opts?.recorded_at ?? null,
           url: url ?? null,
         },
+        // Stash the raw transcript in the local Call Notes file so it's
+        // available for Generate Brief (and other agents) even when the
+        // HM write above fails silently or the file isn't in HM yet.
+        transcript,
         analysis: {
           summary: result.output.summary,
           action_items: result.output.action_items.map((a) => ({
@@ -2679,15 +2683,27 @@ export async function generateProjectBriefAction(
     return { ok: false, reason: "skill-missing" };
   }
 
-  // Resolve transcript file contents.
+  // Resolve transcript file contents. Two source types, discriminated
+  // by prefix:
+  //   - `local:<recording_id>`  → Smithers-processed call notes file
+  //     (raw transcript pulled from the `## Transcript` section)
+  //   - anything else            → HM-root-relative path, read via fs
+  // Failures are skipped silently so a single missing file doesn't
+  // knock out the whole brief run.
   const { readFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   const transcripts: { path: string; body: string }[] = [];
   for (const rel of input.transcript_paths) {
     try {
-      const abs = join(cfg.paths.hive_mind, rel);
-      const body = await readFile(abs, "utf-8");
-      transcripts.push({ path: rel, body });
+      if (rel.startsWith("local:")) {
+        const recordingId = rel.slice("local:".length);
+        const body = await vault.readCallNotesTranscriptByRecordingId(recordingId);
+        if (body) transcripts.push({ path: rel, body });
+      } else {
+        const abs = join(cfg.paths.hive_mind, rel);
+        const body = await readFile(abs, "utf-8");
+        transcripts.push({ path: rel, body });
+      }
     } catch {
       // skip missing transcripts; the agent will still get the rest
     }

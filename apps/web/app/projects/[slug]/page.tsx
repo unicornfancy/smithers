@@ -577,11 +577,35 @@ export default async function ProjectWorkbenchPage({
     });
   }
 
-  const briefTranscriptOptions = callTranscripts.map((t) => ({
+  const briefTranscriptOptionsHm = callTranscripts.map((t) => ({
     path: `knowledge/partners/${hmPartnerSlug}/${hmProjectSlug}/call-transcripts/${t.filename}`,
     title: t.frontmatter.title ?? t.filename.replace(/\.md$/i, ""),
     date: t.frontmatter.date ?? null,
   }));
+  // Merge local Smithers-processed call notes for this project so the
+  // picker still offers them when the HM write failed silently or the
+  // project isn't wired to Hive Mind yet. `local:<recording_id>` is a
+  // sentinel scheme the brief action resolves via
+  // `readCallNotesTranscriptByRecordingId`. Dedupe by title+date since
+  // the same call may exist on both sides.
+  const hmSeenKeys = new Set(
+    briefTranscriptOptionsHm.map((t) => `${t.title}|${t.date ?? ""}`),
+  );
+  const briefTranscriptOptionsLocal = processedCallNotes
+    .filter((c) => c.recording_id)
+    .filter((c) => {
+      const key = `${c.title}|${(c.recorded_at ?? "").slice(0, 10)}`;
+      return !hmSeenKeys.has(key);
+    })
+    .map((c) => ({
+      path: `local:${c.recording_id}`,
+      title: `${c.title} (local)`,
+      date: (c.recorded_at ?? null)?.slice(0, 10) ?? null,
+    }));
+  const briefTranscriptOptions = [
+    ...briefTranscriptOptionsHm,
+    ...briefTranscriptOptionsLocal,
+  ];
 
   sections.push({
     id: "project-brief",
