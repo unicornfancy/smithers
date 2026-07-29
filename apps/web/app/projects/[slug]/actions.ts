@@ -2634,6 +2634,14 @@ export interface GenerateBriefInput {
   domain_registrar: string;
   /** DNS provider; can be the same as registrar. */
   dns_provider: string;
+  /**
+   * Answers to questions the skill flagged on a prior run. Presence
+   * of any answer signals a re-generation loop — the agent should
+   * weave the answers into the brief and drop the corresponding
+   * questions from its own flagged list. Empty / omitted on the
+   * first run.
+   */
+  question_answers?: Array<{ question: string; answer: string }>;
 }
 
 export type GenerateBriefResult =
@@ -2722,6 +2730,9 @@ export async function generateProjectBriefAction(
     discoveryDoc: input.discovery_doc,
     registrar: input.domain_registrar,
     dns: input.dns_provider,
+    questionAnswers: (input.question_answers ?? []).filter(
+      (a) => a.answer.trim().length > 0,
+    ),
   });
 
   try {
@@ -2924,11 +2935,30 @@ function renderBriefInputsMarkdown(args: {
   discoveryDoc: { kind: "url" | "content"; value: string };
   registrar: string;
   dns: string;
+  questionAnswers: Array<{ question: string; answer: string }>;
 }): string {
   const lines: string[] = [];
   lines.push(`Partner slug: \`${args.partnerSlug}\``);
   lines.push(`Project slug: \`${args.projectSlug}\``);
   lines.push("");
+
+  if (args.questionAnswers.length > 0) {
+    // First-section placement so the agent processes these BEFORE the
+    // raw source material — they represent the user's direct answers
+    // to questions the skill raised on a prior run and are the
+    // highest-authority input in this pass.
+    lines.push("## Follow-up answers from a prior run");
+    lines.push("");
+    lines.push(
+      "The skill flagged the following questions on an earlier generation of this brief. The user has now answered them. Weave the answers into the brief. Do NOT re-ask the same questions in your `questions` output — treat them as resolved unless the answer explicitly opens a new ambiguity.",
+    );
+    lines.push("");
+    for (const qa of args.questionAnswers) {
+      lines.push(`- **Q:** ${qa.question.trim()}`);
+      lines.push(`  **A:** ${qa.answer.trim()}`);
+    }
+    lines.push("");
+  }
 
   lines.push("## Partner");
   if (args.hmPartner) {
