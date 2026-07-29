@@ -51,6 +51,9 @@ export async function generateWeeklyUpdateAction(
     name: p.name,
     partner: p.partner,
     status: p.status,
+    tam_role: p.tam_role,
+    primary_tam: p.primary_tam,
+    covering_for: p.covering_for,
     event_lines: p.events.map(eventToLine).slice(0, 30),
     linear_updates: p.linearUpdates.map((u) => ({
       date: u.createdAt.slice(0, 10),
@@ -79,6 +82,11 @@ export async function generateWeeklyUpdateAction(
     const context = await loadJobContext({
       operating_rhythm: true,
       team_charter: true,
+      // JOB_CONTEXT.md carries the auto-synced Matticspace roster
+      // block — the handle-map the agent needs to write correct
+      // @mentions. Without it we see repeated attribution errors
+      // (@lae→@mlaetitia, @nadiahussain→@thirtythreestudio, …).
+      job_context: true,
     });
     const result = await composeWeeklyUpdate(runtime, {
       iso_week: facts.iso_week,

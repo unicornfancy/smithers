@@ -67,6 +67,10 @@ interface FormState {
   next_nudge: string;
   nda: boolean;
   tags_csv: string;
+  tam_role: "primary" | "secondary" | "";
+  primary_tam: string;
+  covering_for: string;
+  covering_until: string;
 }
 
 function projectToFormState(p: Project): FormState {
@@ -87,6 +91,10 @@ function projectToFormState(p: Project): FormState {
     next_nudge: p.next_nudge ?? "",
     nda: p.nda ?? false,
     tags_csv: (p.tags ?? []).join(", "),
+    tam_role: p.tam_role ?? "",
+    primary_tam: p.primary_tam ?? "",
+    covering_for: p.covering_for ?? "",
+    covering_until: p.covering_until ?? "",
   };
 }
 
@@ -113,6 +121,10 @@ function formStateToPatch(s: FormState, original: FormState) {
   diffString("p2_url");
   diffString("slack_channel");
   diffString("next_nudge");
+  if (s.tam_role !== original.tam_role) patch["tam_role"] = s.tam_role;
+  diffString("primary_tam");
+  diffString("covering_for");
+  diffString("covering_until");
   if (s.nda !== original.nda) patch["nda"] = s.nda;
   if (s.tags_csv !== original.tags_csv) {
     patch["tags"] = s.tags_csv
@@ -386,6 +398,62 @@ export function ProjectMetadataModal({ project }: Props) {
                   disabled={pending}
                 />
               </Field>
+            </div>
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-foreground text-xs font-medium">TAM Coverage</p>
+              <p className="text-muted-foreground text-[11px]">
+                Standing role frames the project as supporting. Temporary
+                coverage auto-expires after the date so you don&apos;t have
+                to remember to clear it.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Role" hint="primary (default) or secondary">
+                  <select
+                    value={state.tam_role}
+                    onChange={(e) =>
+                      update(
+                        "tam_role",
+                        e.target.value as "primary" | "secondary" | "",
+                      )
+                    }
+                    disabled={pending}
+                    className="border-input bg-background focus-visible:ring-ring h-8 w-full rounded-md border px-2 text-sm focus-visible:outline-none focus-visible:ring-1 disabled:opacity-60"
+                  >
+                    <option value="">(primary — default)</option>
+                    <option value="primary">primary</option>
+                    <option value="secondary">secondary</option>
+                  </select>
+                </Field>
+                <Field
+                  label="Primary TAM"
+                  hint="Shown when role is secondary"
+                >
+                  <Input
+                    value={state.primary_tam}
+                    onChange={(v) => update("primary_tam", v)}
+                    disabled={pending || state.tam_role !== "secondary"}
+                    placeholder="@handle"
+                  />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Covering for" hint="Handle of AFK colleague">
+                  <Input
+                    value={state.covering_for}
+                    onChange={(v) => update("covering_for", v)}
+                    disabled={pending}
+                    placeholder="@handle"
+                  />
+                </Field>
+                <Field label="Covering until" hint="YYYY-MM-DD (auto-expires)">
+                  <Input
+                    value={state.covering_until}
+                    onChange={(v) => update("covering_until", v)}
+                    disabled={pending}
+                    type="date"
+                  />
+                </Field>
+              </div>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input

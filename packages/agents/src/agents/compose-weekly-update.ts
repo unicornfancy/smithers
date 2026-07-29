@@ -19,6 +19,20 @@ export interface WeeklyUpdateProjectFacts {
   name: string;
   partner?: string;
   status: string;
+  /**
+   * TAM role on this project. When "secondary", the user is not the
+   * lead — the row should be framed as supporting the primary TAM.
+   * When absent, treat as "primary".
+   */
+  tam_role?: "primary" | "secondary";
+  /** Handle of the primary TAM when `tam_role: secondary`. */
+  primary_tam?: string;
+  /**
+   * Temporary AFK coverage — the user is covering this project while
+   * `covering_for` is out. Weekly update row should be framed as
+   * wrangling comms while they're AFK.
+   */
+  covering_for?: string;
   /** One short line per relevant event during the week. */
   event_lines: string[];
   /** Linear project updates posted during the week (date + body). */
@@ -131,15 +145,20 @@ Voice rules:
 - Sound like a TAM giving teammates a status update. Brief, scannable, specific.
 - Match the user's voice when a style guide is provided.
 - One short sentence or fragment per bullet. Not paragraphs.
-- Use Slack-style @handle mentions for collaborators where the source data names them.
+- **When @mentioning teammates, use the WordPress.com handle from the Job Context team roster block** (the auto-synced Matticspace list). Match by real name — the source data often gives you a name, and the roster maps names to handles. If a person isn't in the roster, write their real name in plain text instead of guessing an @handle. Don't invent handles from names; wrong @mentions ping the wrong person or nobody.
 - Don't fabricate. If a project had no activity, you can either omit it OR list it with a brief note ("steady-state, no movement"). Never invent decisions or events.
 
 Quality rules:
 - Lead with substance — what changed, what was decided, what the partner is waiting on.
 - Skip filler like "had a great call" or "made progress on" — be specific.
-- Keep "Meetings/Other" terse: comma-separated list of attended meetings + standing items.
+- **Meetings/Other is for meetings that DON'T belong under a specific partner project row** — team standups, TAM workshops, 1:1s, task force syncs, cross-team calls, non-project one-offs. NEVER list a partner-specific call there. If a call was with a specific partner or about a specific project, it's already covered under that project's bullet — surfacing it in Meetings/Other duplicates and clutters. When you're inferring meetings from per-project call titles, exclude anything with a partner name in the title. Keep the section terse: comma-separated list. If you have nothing but standing cadence items ("1:1, Task Force"), that's fine — don't invent to fill space.
 - Do NOT include action items the user owns privately — those live in their personal queue.
 - Do NOT include partner-confidential decisions teammates don't need to see.
+
+TAM role framing (per project):
+- If a project has "tam_role: secondary" (with "primary_tam: @X"), frame the row as **support** work — Katie isn't leading, she's helping. Example: "Caught up on current status from @michiecat so I can support while she's AFK." Lower the bar for what counts as report-worthy on these — a single check-in is worth including because the fact that Katie is supporting is the signal.
+- If a project has "covering_for: @Y", frame the row as covering their partner comms while they're out. Example: "Wrangled partner comms while @rachelelizabird was AFK." Include the project even if there's no upstream activity — Katie's coverage IS the activity worth reporting.
+- Otherwise (default), the user is primary — write in the first person / active voice.
 
 Signal weighting for Last Week vs This Week:
 - "Last Week" content is what actually moved. The strongest signal is "My Zendesk replies" (per-project) — those are outbound comments the user sent on the partner's tickets (nudges, replies, or internal notes). They count as project movement EVEN IF the partner hasn't replied yet — pushing the project forward is movement, not just receiving a reply. A "Re: Q3 launch — checking in on the staging URL" with no inbound after it is still a load-bearing data point. Treat a week with multiple outbound nudges as an active project; treat one with no outbound + no Linear updates + no calls as a quiet week.
@@ -224,6 +243,16 @@ function renderUserPrompt(input: WeeklyUpdateInput): string {
     lines.push(`## ${p.name}${p.partner ? ` — ${p.partner}` : ""}`);
     lines.push(`- slug: ${p.slug}`);
     lines.push(`- status: ${p.status}`);
+    if (p.tam_role === "secondary") {
+      lines.push(
+        `- TAM role: SECONDARY${p.primary_tam ? ` (primary: ${p.primary_tam})` : ""} — frame as support work.`,
+      );
+    }
+    if (p.covering_for) {
+      lines.push(
+        `- Coverage: AFK-covering for ${p.covering_for}. Include this project even without upstream activity; frame the row as wrangling comms while they're out.`,
+      );
+    }
     if (p.event_lines.length > 0) {
       lines.push(`- Activity (${p.event_lines.length} events):`);
       for (const line of p.event_lines.slice(0, 30)) {

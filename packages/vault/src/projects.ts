@@ -234,6 +234,13 @@ async function projectFromFile(
     tags: Array.isArray(fm.tags) ? fm.tags : [],
     hive_mind_partner_slug: fm.hive_mind_partner_slug,
     hive_mind_project_slug: fm.hive_mind_project_slug,
+    tam_role:
+      fm.tam_role === "secondary" || fm.tam_role === "primary"
+        ? fm.tam_role
+        : undefined,
+    primary_tam: fm.primary_tam,
+    covering_for: fm.covering_for,
+    covering_until: fm.covering_until,
     heading,
     modified_at: mtime,
   };
@@ -903,6 +910,12 @@ export interface UpdateProjectFrontmatterPatch {
   review_interval_days?: number;
   nda?: boolean;
   tags?: string[];
+  /** "primary" | "secondary" | "" to clear. */
+  tam_role?: "primary" | "secondary" | "";
+  primary_tam?: string;
+  covering_for?: string;
+  /** YYYY-MM-DD when coverage window expires; "" clears. */
+  covering_until?: string;
 }
 
 export interface UpdateProjectFrontmatterResult {

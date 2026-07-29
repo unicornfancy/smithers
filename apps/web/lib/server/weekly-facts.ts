@@ -25,6 +25,12 @@ export interface ProjectFacts {
   name: string;
   partner?: string;
   status: string;
+  /** From frontmatter `tam_role`. Absent = primary. */
+  tam_role?: "primary" | "secondary";
+  /** From frontmatter `primary_tam`. */
+  primary_tam?: string;
+  /** From frontmatter `covering_for` when `covering_until` hasn't expired. */
+  covering_for?: string;
   /** Activity events from listProjectActivity, scoped to the week window, newest first. */
   events: ActivityEvent[];
   /** Linear project updates posted during the week, newest first. */
@@ -166,10 +172,24 @@ export async function collectWeeklyFacts(
   const selfEmail = (cfg.identity.email ?? "").trim().toLowerCase();
   const selfName = (cfg.identity.name ?? "").trim().toLowerCase();
   const allProjects = await vault.listProjects().catch(() => []);
+  // "In scope" for the weekly update: active/hot/at-risk partner+team
+  // projects, PLUS any project with active AFK coverage (Katie is
+  // wrangling it while a colleague is out — the row belongs in her
+  // weekly regardless of the project's own status). Coverage expires
+  // once `covering_until` has passed.
+  const debriefWeekStartDateOnly = debriefWeekStart; // YYYY-MM-DD
+  const isCoveringNow = (p: Project) =>
+    Boolean(
+      p.covering_for &&
+        (!p.covering_until || p.covering_until >= debriefWeekStartDateOnly),
+    );
   const inScope = allProjects.filter(
     (p) =>
       (p.kind === "partner" || p.kind === "team") &&
-      (p.status === "active" || p.status === "hot" || p.status === "at-risk"),
+      (p.status === "active" ||
+        p.status === "hot" ||
+        p.status === "at-risk" ||
+        isCoveringNow(p)),
   );
 
   const allCalls = await vault
@@ -219,6 +239,9 @@ export async function collectWeeklyFacts(
       name: project.name,
       partner: project.partner,
       status: project.status,
+      tam_role: project.tam_role,
+      primary_tam: project.primary_tam,
+      covering_for: isCoveringNow(project) ? project.covering_for : undefined,
       events,
       linearUpdates,
       recentCalls,

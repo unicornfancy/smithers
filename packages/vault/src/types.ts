@@ -113,6 +113,26 @@ export interface ProjectFrontmatter {
   hive_mind_partner_slug?: string;
   /** Override the project slug used when calling Hive Mind helpers (when it differs from the Smithers slug). */
   hive_mind_project_slug?: string;
+
+  /**
+   * TAM role on this project. `primary` (default when unset) means Katie
+   * owns the engagement; `secondary` means another TAM leads and Katie
+   * is supporting. Weekly-update generator uses this to frame the row
+   * differently for `secondary`.
+   */
+  tam_role?: "primary" | "secondary";
+  /** Handle of the primary TAM when `tam_role: secondary`. */
+  primary_tam?: string;
+  /**
+   * Standing / temporary AFK coverage — this project isn't normally
+   * Katie's, but she's covering while `covering_for` is out until
+   * `covering_until` (YYYY-MM-DD). Weekly-facts includes the project
+   * in the weekly update while the window is active; agent frames as
+   * "Wrangled comms while @X was AFK". Both cleared automatically
+   * (from the agent's view) once the date passes.
+   */
+  covering_for?: string;
+  covering_until?: string;
 }
 
 /** A project as Smithers sees it — sourced from vault info.md or a flat `Projects/<name>.md`. */
@@ -166,6 +186,15 @@ export interface Project {
 
   hive_mind_partner_slug?: string;
   hive_mind_project_slug?: string;
+
+  /** See ProjectFrontmatter.tam_role. */
+  tam_role?: "primary" | "secondary";
+  /** See ProjectFrontmatter.primary_tam. */
+  primary_tam?: string;
+  /** See ProjectFrontmatter.covering_for. */
+  covering_for?: string;
+  /** See ProjectFrontmatter.covering_until. */
+  covering_until?: string;
 
   /** First H1 header of the body, when present. Often equal to `name`. */
   heading?: string;
