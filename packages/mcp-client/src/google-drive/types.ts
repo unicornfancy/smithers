@@ -39,4 +39,22 @@ export interface GoogleDriveClient {
    * scope required.
    */
   exportSheetCsv(args: { fileId: string; gid: string }): Promise<string>;
+
+  /**
+   * Fetch a Drive file's contents as a text body. Used by the brief
+   * generator to inline the Discovery Doc when the user pastes a
+   * Drive URL instead of the doc contents. Handles Google Docs
+   * (exported to Markdown), Sheets (CSV), Slides (plain-text
+   * transcript), and uploaded files (raw bytes as UTF-8 for text/*
+   * or PDF; other binary types throw). Throws on missing perms /
+   * unknown fileId / MCP disabled — caller falls back to the
+   * URL-only path.
+   */
+  fetchDocContent(args: { fileId: string }): Promise<{
+    content: string;
+    /** Original mimeType so caller can label the content in context. */
+    mimeType: string;
+    /** File name from Drive metadata (may be undefined). */
+    name?: string;
+  }>;
 }

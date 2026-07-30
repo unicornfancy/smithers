@@ -28,4 +28,12 @@ export class MockGoogleDriveTransport implements GoogleDriveClient {
       "Drive transport is in mock mode — configure paths.kosh (sic — actually paths to gcp-oauth.keys + creds) to enable real exports",
     );
   }
+
+  async fetchDocContent(_args: {
+    fileId: string;
+  }): Promise<{ content: string; mimeType: string; name?: string }> {
+    throw new Error(
+      "Drive transport is in mock mode — configure Drive OAuth keys + creds paths to enable doc fetches",
+    );
+  }
 }

@@ -2720,6 +2720,41 @@ export async function generateProjectBriefAction(
   const hmPartner = await vault.getHiveMindPartner(partnerSlug);
   const hmProject = await vault.getHiveMindProject(partnerSlug, projectSlug);
 
+  // When the Discovery Doc is a Drive URL, try to fetch the doc
+  // contents server-side via Smithers's Drive MCP so the agent sees
+  // the body inline. Otherwise the agent gets only the URL and no
+  // way to fetch it (runner agents have no Drive tool). Failures
+  // (MCP not configured, no access, unsupported mime type) fall
+  // back to passing the URL as-is so the brief still generates —
+  // just with less material.
+  let effectiveDiscoveryDoc = input.discovery_doc;
+  let driveFetchError: string | null = null;
+  if (input.discovery_doc.kind === "url" && input.discovery_doc.value.trim()) {
+    const { parseDriveFileId } = await import("@/lib/drive-url");
+    const fileId = parseDriveFileId(input.discovery_doc.value);
+    if (fileId) {
+      try {
+        const mcp = await getMcpClient();
+        const fetched = await mcp.googleDrive.fetchDocContent({ fileId });
+        // Prepend a header so the agent knows where the content came
+        // from — useful if it wants to cite or link back.
+        const header = [
+          `# ${fetched.name ?? "Discovery Doc"}`,
+          `Fetched from: ${input.discovery_doc.value.trim()}`,
+          `Original mimeType: ${fetched.mimeType}`,
+          "",
+        ].join("\n");
+        effectiveDiscoveryDoc = {
+          kind: "content",
+          value: `${header}\n${fetched.content}`,
+        };
+      } catch (err) {
+        driveFetchError =
+          err instanceof Error ? err.message : "Drive fetch failed";
+      }
+    }
+  }
+
   const inputsMarkdown = renderBriefInputsMarkdown({
     partnerSlug,
     projectSlug,
@@ -2727,7 +2762,12 @@ export async function generateProjectBriefAction(
     hmPartner,
     hmProject,
     transcripts,
-    discoveryDoc: input.discovery_doc,
+    discoveryDoc: effectiveDiscoveryDoc,
+    discoveryDocUrlOrigin:
+      input.discovery_doc.kind === "url" && input.discovery_doc.value.trim()
+        ? input.discovery_doc.value.trim()
+        : undefined,
+    driveFetchError,
     registrar: input.domain_registrar,
     dns: input.dns_provider,
     questionAnswers: (input.question_answers ?? []).filter(
@@ -2933,6 +2973,18 @@ function renderBriefInputsMarkdown(args: {
     | null;
   transcripts: { path: string; body: string }[];
   discoveryDoc: { kind: "url" | "content"; value: string };
+  /**
+   * When Smithers fetched the Discovery Doc content from a Drive URL,
+   * this carries the original URL so the agent can cite or link back.
+   * Undefined when the user pasted content directly.
+   */
+  discoveryDocUrlOrigin?: string;
+  /**
+   * When present, Smithers tried to auto-fetch the Discovery Doc URL
+   * via Drive and failed. Passed to the agent so it can flag the gap
+   * in its `questions` output.
+   */
+  driveFetchError: string | null;
   registrar: string;
   dns: string;
   questionAnswers: Array<{ question: string; answer: string }>;
@@ -3000,11 +3052,23 @@ function renderBriefInputsMarkdown(args: {
   lines.push("");
 
   lines.push("## Discovery Doc");
+  if (args.driveFetchError) {
+    lines.push(
+      `**Note to agent:** Smithers tried to auto-fetch the Discovery Doc from ${args.discoveryDocUrlOrigin ?? "the provided URL"} but the fetch failed: ${args.driveFetchError}. Add "Fetch the Discovery Doc contents (auto-fetch failed: ${args.driveFetchError.split("\n")[0]?.slice(0, 120) ?? args.driveFetchError})" to the questions list so the user can paste the content manually on a re-run.`,
+    );
+    lines.push("");
+  }
   if (args.discoveryDoc.kind === "url" && args.discoveryDoc.value.trim()) {
     lines.push(`URL: ${args.discoveryDoc.value.trim()}`);
     lines.push("(content not fetched — refer to the URL if a body is needed)");
   } else if (args.discoveryDoc.kind === "content" && args.discoveryDoc.value.trim()) {
-    lines.push("Pasted content:");
+    if (args.discoveryDocUrlOrigin) {
+      lines.push(
+        `_Fetched by Smithers from: ${args.discoveryDocUrlOrigin}_`,
+      );
+      lines.push("");
+    }
+    lines.push("Content:");
     lines.push("```markdown");
     lines.push(args.discoveryDoc.value.trim());
     lines.push("```");

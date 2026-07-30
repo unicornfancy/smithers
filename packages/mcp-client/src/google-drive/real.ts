@@ -76,6 +76,61 @@ export class RealGoogleDriveTransport implements GoogleDriveClient {
     return typeof res.data === "string" ? res.data : String(res.data ?? "");
   }
 
+  /**
+   * Fetch a Drive file's contents as a text body. Route by mimeType:
+   *   - google-apps.document  → export as text/markdown
+   *   - google-apps.spreadsheet → export as text/csv (first tab)
+   *   - google-apps.presentation → export as text/plain
+   *   - text/* or application/pdf → files.get(alt=media) as UTF-8
+   *   - anything else → throw (caller falls back to URL-only)
+   *
+   * Not cached — brief generation is user-initiated and each run is
+   * fresh; caching would risk staleness. Uses supportsAllDrives so
+   * shared-drive files work.
+   */
+  async fetchDocContent(args: {
+    fileId: string;
+  }): Promise<{ content: string; mimeType: string; name?: string }> {
+    const drive = this.ensureClient();
+    const meta = await drive.files.get({
+      fileId: args.fileId,
+      fields: "id,name,mimeType",
+      supportsAllDrives: true,
+    });
+    const mimeType = meta.data.mimeType ?? "";
+    const name = meta.data.name ?? undefined;
+
+    const EXPORT_MAP: Record<string, string> = {
+      "application/vnd.google-apps.document": "text/markdown",
+      "application/vnd.google-apps.spreadsheet": "text/csv",
+      "application/vnd.google-apps.presentation": "text/plain",
+    };
+    const exportMime = EXPORT_MAP[mimeType];
+    if (exportMime) {
+      const res = await drive.files.export(
+        { fileId: args.fileId, mimeType: exportMime },
+        { responseType: "text" },
+      );
+      const body = typeof res.data === "string" ? res.data : String(res.data ?? "");
+      return { content: body, mimeType, name };
+    }
+
+    const isTextish =
+      mimeType.startsWith("text/") || mimeType === "application/json";
+    if (isTextish) {
+      const res = await drive.files.get(
+        { fileId: args.fileId, alt: "media", supportsAllDrives: true },
+        { responseType: "text" },
+      );
+      const body = typeof res.data === "string" ? res.data : String(res.data ?? "");
+      return { content: body, mimeType, name };
+    }
+
+    throw new Error(
+      `Can't inline "${name ?? args.fileId}" — mimeType "${mimeType || "(unknown)"}" isn't a text format we can export. Paste the content into the Discovery Doc field manually.`,
+    );
+  }
+
   async listFolderActivity(
     query: DriveFolderActivityQuery,
   ): Promise<SourceResult<ActivityEvent[]>> {
