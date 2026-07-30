@@ -2997,14 +2997,31 @@ function renderBriefInputsMarkdown(args: {
   if (args.questionAnswers.length > 0) {
     // First-section placement so the agent processes these BEFORE the
     // raw source material — they represent the user's direct answers
-    // to questions the skill raised on a prior run and are the
+    // to questions the skill raised on earlier runs and are the
     // highest-authority input in this pass.
-    lines.push("## Follow-up answers from a prior run");
+    lines.push("## RESOLVED — do not re-ask");
     lines.push("");
     lines.push(
-      "The skill flagged the following questions on an earlier generation of this brief. The user has now answered them. Weave the answers into the brief. Do NOT re-ask the same questions in your `questions` output — treat them as resolved unless the answer explicitly opens a new ambiguity.",
+      "The user has already answered the following questions across one or more prior generations of this brief. Treat every Q here as **permanently resolved** for this brief run.",
     );
     lines.push("");
+    lines.push(
+      "Rules that OVERRIDE anything the skill body says about asking the user:",
+    );
+    lines.push(
+      "1. Weave the answers into the brief body. If an answer contradicts source material, prefer the user's answer.",
+    );
+    lines.push(
+      '2. Your `questions` output MUST NOT include any of these questions, restated versions of them, rewordings, subsets, or follow-ups that would be answered by the same information. Example of what NOT to do: if the user answered "DNS provider: Squarespace," do not ask "Where is DNS managed?" or "Is DNS at the registrar or separate?" — the answer resolves both.',
+    );
+    lines.push(
+      "3. Only add a NEW question to `questions` if it is about information genuinely not covered here AND not answerable from the source material.",
+    );
+    lines.push(
+      "4. If you have no genuinely new questions, return an empty `questions` array.",
+    );
+    lines.push("");
+    lines.push("### Resolved Q&A");
     for (const qa of args.questionAnswers) {
       lines.push(`- **Q:** ${qa.question.trim()}`);
       lines.push(`  **A:** ${qa.answer.trim()}`);

@@ -47,11 +47,41 @@ interface QuestionAnswer {
   answer: string;
 }
 
+/**
+ * Lowercased + whitespace-collapsed + punctuation-stripped so a
+ * client-side dedupe catches near-duplicates when the agent re-asks
+ * a resolved question with slightly different wording ("What DNS?"
+ * vs "what dns"). Cheap fallback for the stronger prompt-side
+ * "resolved" rule.
+ */
+function normalizeQuestion(q: string): string {
+  return q
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 type Phase =
   | { kind: "inputs" }
   | { kind: "generating" }
-  | { kind: "regenerating"; markdown: string; questionAnswers: QuestionAnswer[] }
-  | { kind: "review"; markdown: string; questionAnswers: QuestionAnswer[] }
+  | {
+      kind: "regenerating";
+      markdown: string;
+      resolvedAnswers: QuestionAnswer[];
+      activeAnswers: QuestionAnswer[];
+    }
+  | {
+      kind: "review";
+      markdown: string;
+      /** Answers accumulated across all prior rounds — always passed to
+       *  the agent so it never re-asks a resolved question, even 3+
+       *  rounds later. Not editable in the UI (rendered as a collapsed
+       *  "previously answered" panel). */
+      resolvedAnswers: QuestionAnswer[];
+      /** Questions from the most recent round with editable textareas. */
+      activeAnswers: QuestionAnswer[];
+    }
   | { kind: "saving"; markdown: string }
   | { kind: "saved" };
 
@@ -102,16 +132,29 @@ export function BriefGeneratorDialog({
     });
   }
 
-  async function handleGenerate(
-    prevAnswers?: QuestionAnswer[],
-    prevMarkdown?: string,
-  ) {
-    const isRerun = Boolean(prevAnswers && prevAnswers.length > 0);
-    if (isRerun && prevMarkdown) {
+  async function handleGenerate(prev?: {
+    resolvedAnswers: QuestionAnswer[];
+    activeAnswers: QuestionAnswer[];
+    markdown: string;
+  }) {
+    // Accumulate every answered question across all rounds so the
+    // agent never re-asks something the user resolved in an earlier
+    // pass. `resolvedForCall` is what we send to the action: prior
+    // resolved answers + any active-round answers that just got
+    // filled in.
+    const resolvedForCall: QuestionAnswer[] = prev
+      ? [
+          ...prev.resolvedAnswers,
+          ...prev.activeAnswers.filter((a) => a.answer.trim().length > 0),
+        ]
+      : [];
+    const isRerun = Boolean(prev && resolvedForCall.length > 0);
+    if (isRerun && prev) {
       setPhase({
         kind: "regenerating",
-        markdown: prevMarkdown,
-        questionAnswers: prevAnswers!,
+        markdown: prev.markdown,
+        resolvedAnswers: prev.resolvedAnswers,
+        activeAnswers: prev.activeAnswers,
       });
     } else {
       setPhase({ kind: "generating" });
@@ -122,30 +165,38 @@ export function BriefGeneratorDialog({
       discovery_doc: { kind: docKind, value: docValue },
       domain_registrar: registrar,
       dns_provider: dns,
-      question_answers: prevAnswers?.filter((a) => a.answer.trim().length > 0),
+      question_answers: resolvedForCall,
     });
     if (!res.ok) {
       toast.error(res.message ?? res.reason);
-      if (isRerun) {
+      if (isRerun && prev) {
         // Preserve the prior review so the user doesn't lose their
         // typed answers on a transient failure.
         setPhase({
           kind: "review",
-          markdown: prevMarkdown ?? "",
-          questionAnswers: prevAnswers ?? [],
+          markdown: prev.markdown,
+          resolvedAnswers: prev.resolvedAnswers,
+          activeAnswers: prev.activeAnswers,
         });
       } else {
         setPhase({ kind: "inputs" });
       }
       return;
     }
+    // Filter out any newly-returned questions that duplicate a
+    // resolved one (agent shouldn't re-ask, but if it does, dedupe
+    // client-side so the user isn't asked the same thing twice).
+    const resolvedKeys = new Set(
+      resolvedForCall.map((qa) => normalizeQuestion(qa.question)),
+    );
+    const activeAnswers = res.data.questions
+      .filter((q) => !resolvedKeys.has(normalizeQuestion(q)))
+      .map((q) => ({ question: q, answer: "" }));
     setPhase({
       kind: "review",
       markdown: res.data.markdown,
-      questionAnswers: res.data.questions.map((q) => ({
-        question: q,
-        answer: "",
-      })),
+      resolvedAnswers: resolvedForCall,
+      activeAnswers,
     });
   }
 
@@ -162,7 +213,8 @@ export function BriefGeneratorDialog({
       setPhase({
         kind: "review",
         markdown: saved.markdown,
-        questionAnswers: saved.questionAnswers,
+        resolvedAnswers: saved.resolvedAnswers,
+        activeAnswers: saved.activeAnswers,
       });
       return;
     }
@@ -178,10 +230,10 @@ export function BriefGeneratorDialog({
 
   function updateAnswer(index: number, next: string) {
     if (phase.kind !== "review") return;
-    const nextAnswers = phase.questionAnswers.map((qa, i) =>
+    const nextAnswers = phase.activeAnswers.map((qa, i) =>
       i === index ? { ...qa, answer: next } : qa,
     );
-    setPhase({ ...phase, questionAnswers: nextAnswers });
+    setPhase({ ...phase, activeAnswers: nextAnswers });
   }
 
   const sortedTranscripts = React.useMemo(
@@ -231,9 +283,14 @@ export function BriefGeneratorDialog({
             phase.kind === "saving" ? (
               <ReviewPhase
                 markdown={phase.markdown}
-                questionAnswers={
+                activeAnswers={
                   phase.kind === "review" || phase.kind === "regenerating"
-                    ? phase.questionAnswers
+                    ? phase.activeAnswers
+                    : []
+                }
+                resolvedAnswers={
+                  phase.kind === "review" || phase.kind === "regenerating"
+                    ? phase.resolvedAnswers
                     : []
                 }
                 onMarkdownChange={updateReviewMarkdown}
@@ -283,13 +340,17 @@ export function BriefGeneratorDialog({
                   Back to inputs
                 </Button>
                 {phase.kind === "review" &&
-                phase.questionAnswers.some(
+                phase.activeAnswers.some(
                   (qa) => qa.answer.trim().length > 0,
                 ) ? (
                   <Button
                     variant="outline"
                     onClick={() =>
-                      handleGenerate(phase.questionAnswers, phase.markdown)
+                      handleGenerate({
+                        resolvedAnswers: phase.resolvedAnswers,
+                        activeAnswers: phase.activeAnswers,
+                        markdown: phase.markdown,
+                      })
                     }
                     className="gap-1.5"
                   >
@@ -488,7 +549,8 @@ function InputsPhase({
 
 function ReviewPhase({
   markdown,
-  questionAnswers,
+  activeAnswers,
+  resolvedAnswers,
   onMarkdownChange,
   onAnswerChange,
   showPreview,
@@ -497,7 +559,8 @@ function ReviewPhase({
   regenerating,
 }: {
   markdown: string;
-  questionAnswers: QuestionAnswer[];
+  activeAnswers: QuestionAnswer[];
+  resolvedAnswers: QuestionAnswer[];
   onMarkdownChange: (next: string) => void;
   onAnswerChange: (index: number, next: string) => void;
   showPreview: boolean;
@@ -505,9 +568,10 @@ function ReviewPhase({
   readOnly: boolean;
   regenerating: boolean;
 }) {
+  const [showResolved, setShowResolved] = React.useState(false);
   return (
     <div className="space-y-4">
-      {questionAnswers.length > 0 ? (
+      {activeAnswers.length > 0 ? (
         <div className="rounded-md border border-amber-500/40 bg-amber-50 p-3 dark:bg-amber-950/30">
           <p className="text-amber-900 text-xs font-medium dark:text-amber-200">
             The skill flagged follow-up questions. Answer any you can and hit
@@ -515,7 +579,7 @@ function ReviewPhase({
             skip and edit the brief directly.
           </p>
           <div className="mt-2 space-y-3">
-            {questionAnswers.map((qa, i) => (
+            {activeAnswers.map((qa, i) => (
               <div key={i} className="space-y-1">
                 <p className="text-xs text-amber-900 dark:text-amber-200">
                   <span className="font-medium">Q:</span> {qa.question}
@@ -535,6 +599,32 @@ function ReviewPhase({
             <p className="mt-2 text-[11px] text-amber-900/70 dark:text-amber-200/70">
               Re-generating with your answers…
             </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {resolvedAnswers.length > 0 ? (
+        <div className="text-muted-foreground rounded-md border bg-muted/30 p-3 text-xs">
+          <button
+            type="button"
+            onClick={() => setShowResolved((v) => !v)}
+            className="flex w-full items-center justify-between text-left font-medium"
+          >
+            <span>
+              Previously answered ({resolvedAnswers.length}) — passed to the
+              agent on every re-generate so it doesn&apos;t re-ask.
+            </span>
+            <span>{showResolved ? "Hide" : "Show"}</span>
+          </button>
+          {showResolved ? (
+            <dl className="mt-2 space-y-2">
+              {resolvedAnswers.map((qa, i) => (
+                <div key={i}>
+                  <dt className="text-foreground">{qa.question}</dt>
+                  <dd className="pl-3">{qa.answer}</dd>
+                </div>
+              ))}
+            </dl>
           ) : null}
         </div>
       ) : null}
