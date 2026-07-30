@@ -2880,6 +2880,87 @@ export async function linkExternalBriefAction(input: {
 }
 
 /**
+ * Resolve the brief file's absolute path + return its current
+ * markdown. Powers both the "Open in editor" action (path only) and
+ * the "Copy markdown" action (body). The Edit-brief link in the
+ * workbench used to use a `file://` URL but modern browsers block
+ * navigating to file:// from http:// pages, so clicks silently no-op'd.
+ */
+export async function readBriefFileAction(slug: string): Promise<
+  | { ok: true; absolute_path: string; markdown: string }
+  | { ok: false; reason: string }
+> {
+  if (!slug) return { ok: false, reason: "slug is required" };
+  const vault = await getVault();
+  const project = await vault.readProject(slug);
+  if (!project) return { ok: false, reason: "Project not found" };
+  const partnerSlug = project.hive_mind_partner_slug ?? project.partner;
+  const projectSlug = project.hive_mind_project_slug ?? project.slug;
+  if (!partnerSlug) return { ok: false, reason: "Project is not connected to Hive Mind" };
+  const cfg = await loadConfig();
+  if (!cfg.paths.hive_mind) return { ok: false, reason: "hive_mind path not set" };
+
+  // Try the canonical write path first (`brief.md`), then the legacy
+  // `briefs/project-brief.md` fallback the skill used to write to.
+  // Whichever exists wins; if neither, we return the canonical one so
+  // the caller can offer a create-in-editor flow.
+  const { readFile, access } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const base = join(
+    cfg.paths.hive_mind,
+    "knowledge",
+    "partners",
+    partnerSlug,
+    projectSlug,
+  );
+  const candidates = [
+    join(base, "brief.md"),
+    join(base, "briefs", "project-brief.md"),
+  ];
+  for (const p of candidates) {
+    try {
+      await access(p);
+      const raw = await readFile(p, "utf-8");
+      return { ok: true, absolute_path: p, markdown: raw };
+    } catch {
+      // keep looking
+    }
+  }
+  return {
+    ok: false,
+    reason: `No brief file found at ${candidates[0]} or the legacy path.`,
+  };
+}
+
+/**
+ * Open the project's brief file in the OS default editor for .md
+ * (macOS: registered Markdown handler, typically Obsidian or VS Code).
+ * Replaces the busted `file://` anchor link that browsers refuse to
+ * navigate to from a served page.
+ */
+export async function openBriefFileAction(
+  slug: string,
+): Promise<{ ok: true; absolute_path: string } | { ok: false; reason: string }> {
+  const read = await readBriefFileAction(slug);
+  if (!read.ok) return read;
+  try {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+    // macOS `open` respects the user's default app for the file's
+    // extension. Fails loudly if `open` isn't on PATH (non-macOS), in
+    // which case the caller shows the path so the user can open manually.
+    await execFileAsync("open", [read.absolute_path], { timeout: 5000 });
+    return { ok: true, absolute_path: read.absolute_path };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "Couldn't open file",
+    };
+  }
+}
+
+/**
  * Save the reviewed brief markdown to <HM>/knowledge/partners/<partner>/
  * <project>/brief.md (the path the /create-brief skill writes to today).
  * Commits via MCP and revalidates the workbench so the brief card

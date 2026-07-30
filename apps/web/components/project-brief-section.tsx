@@ -2,6 +2,7 @@ import { ExternalLink, FileText } from "lucide-react";
 import type { HiveMindBrief } from "@smithers/vault";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Markdown } from "@/components/markdown";
+import { BriefFileActions } from "@/components/brief-file-actions";
 import {
   GenerateBriefButton,
   type TranscriptOption,
@@ -10,7 +11,6 @@ import { LinkExistingBriefButton } from "@/components/link-existing-brief-button
 
 interface Props {
   brief: HiveMindBrief | null;
-  editPath: string | null;
   projectSlug: string;
   /** True when the project is HM-linked and brief generation is possible. */
   canGenerate: boolean;
@@ -23,7 +23,6 @@ interface Props {
 
 export function ProjectBriefSection({
   brief,
-  editPath,
   projectSlug,
   canGenerate,
   transcripts,
@@ -108,15 +107,9 @@ export function ProjectBriefSection({
                 <ExternalLink className="size-3" />
                 Open in Google Docs
               </a>
-            ) : editPath ? (
-              <a
-                href={editPath}
-                className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs font-normal"
-              >
-                <ExternalLink className="size-3" />
-                Edit brief
-              </a>
-            ) : null}
+            ) : (
+              <BriefFileActions projectSlug={projectSlug} />
+            )}
           </div>
         </CardTitle>
       </CardHeader>
