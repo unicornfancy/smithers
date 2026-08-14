@@ -1092,6 +1092,12 @@ export function ProcessCallDialog({ projectSlug, recording, p2Url }: Props) {
           recordingTitle={recording.title ?? recording.recording_id}
           recordedAt={recording.recorded_at}
           p2PostUrl={p2Url}
+          recordingUrl={
+            // Fathom-only: Granola recordings have no shareable web URL.
+            recording.source_url?.includes("fathom.video")
+              ? recording.source_url
+              : undefined
+          }
         />
       ) : null}
 

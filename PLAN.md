@@ -167,6 +167,8 @@ Sketch:
 
 **Still open (read path):** re-add P2 comments to the Live Activity feed — the `content-authoring` tool's `comments.list` likely covers it now. Re-add the `fetchP2Comments` branch in the activity pipeline, the `p2_url` field on `ProjectActivityRefs`, the `"p2"` source filter, and the workbench's P2 chip. Mock transport seed needs a P2 sample.
 
+**Fathom public share links (v1.5.2 follow-up):** the Share-notes-to-P2 composer can include the call's Fathom URL, but the Fathom MCP only exposes internal `/calls/:id` URLs (probed 2026-07-30 — no `/share/` tokens in list_meetings, get_meeting_summary, or get_meeting_transcript). `/calls/` links are viewable by the user's Fathom teammates, which covers the internal-P2 audience. For links partners could open, Fathom's REST API (`api.fathom.ai/external/v1`, separate API-key auth — not the MCP OAuth) exposes `share_url` on meeting objects. Worth wiring only if TAMs start sharing to partner-visible P2s: config field for the API key + a small client + swap the URL in the composer when available.
+
 ## Hive Mind side — recommendations for v1.5 (not blocking)
 
 Surfaced while building the brief integration:

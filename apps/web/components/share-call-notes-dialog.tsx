@@ -22,6 +22,15 @@ interface Props {
   recordedAt?: string;
   /** The project's p2_url — the post the comment will attach to. */
   p2PostUrl: string;
+  /**
+   * Fathom call URL to optionally include in the comment. Only passed
+   * when the recording came from Fathom (fathom.video URL) — Granola
+   * recordings have no shareable web URL, so the row doesn't render.
+   * Note: this is the /calls/ form, viewable by the user's Fathom
+   * teammates; the MCP doesn't expose public /share/ tokens (probed
+   * 2026-07-30 — see PLAN for the REST-API follow-up).
+   */
+  recordingUrl?: string;
 }
 
 interface SectionToggles {
@@ -29,6 +38,7 @@ interface SectionToggles {
   action_items: boolean;
   decisions: boolean;
   key_quotes: boolean;
+  recording_link: boolean;
 }
 
 /**
@@ -51,12 +61,14 @@ export function ShareCallNotesDialog({
   recordingTitle,
   recordedAt,
   p2PostUrl,
+  recordingUrl,
 }: Props) {
   const [toggles, setToggles] = React.useState<SectionToggles>({
     summary: true,
     action_items: false,
     decisions: true,
     key_quotes: false,
+    recording_link: true,
   });
   const [draftOpen, setDraftOpen] = React.useState(false);
   const [composed, setComposed] = React.useState("");
@@ -82,7 +94,13 @@ export function ShareCallNotesDialog({
 
   function handleContinue() {
     setComposed(
-      composeCallNotesMarkdown(analysis, toggles, recordingTitle, recordedAt),
+      composeCallNotesMarkdown(
+        analysis,
+        toggles,
+        recordingTitle,
+        recordedAt,
+        recordingUrl,
+      ),
     );
     onOpenChange(false);
     setDraftOpen(true);
@@ -118,6 +136,16 @@ export function ShareCallNotesDialog({
       detail: `${counts.key_quotes} quote${counts.key_quotes === 1 ? "" : "s"}`,
       disabled: counts.key_quotes === 0,
     },
+    ...(recordingUrl
+      ? [
+          {
+            key: "recording_link" as const,
+            label: "Call recording link",
+            detail: "Fathom (team-visible)",
+            disabled: false,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -192,6 +220,7 @@ function composeCallNotesMarkdown(
   toggles: SectionToggles,
   title: string,
   recordedAt?: string,
+  recordingUrl?: string,
 ): string {
   const lines: string[] = [];
   const dateLabel = recordedAt
@@ -203,6 +232,10 @@ function composeCallNotesMarkdown(
     : undefined;
   lines.push(`**Call notes — ${title}${dateLabel ? ` (${dateLabel})` : ""}**`);
   lines.push("");
+  if (toggles.recording_link && recordingUrl) {
+    lines.push(`[Watch the call recording](${recordingUrl})`);
+    lines.push("");
+  }
 
   if (toggles.summary && analysis.summary) {
     lines.push("**Summary**");
