@@ -250,6 +250,35 @@ export interface ContextA8CClient {
    * or auth failure — callers should degrade rather than crash.
    */
   fetchP2Posts(query: P2PostFetchQuery): Promise<P2Post[]>;
+
+  /**
+   * Post a comment on a P2 post via the wpcom `content-authoring`
+   * tool's `comments.create` operation. `markdown` is sent as the raw
+   * comment body — P2s (o2 theme) render markdown in comments
+   * natively, so what the user reviewed is what renders.
+   *
+   * The upstream tool requires `user_confirmed: true` on every write;
+   * callers MUST only invoke this after an explicit user confirmation
+   * in the UI (this is Smithers's only outbound-post primitive — the
+   * "nothing auto-posts" rule applies).
+   *
+   * Throws on failure — posting is interactive; the caller surfaces
+   * the error rather than degrading silently.
+   */
+  createP2Comment(args: {
+    /** P2 host, bare or with scheme (e.g. "team51projects.wordpress.com"). */
+    site: string;
+    /** Numeric post id the comment attaches to. */
+    post_id: number;
+    /** Comment body — markdown, rendered natively by P2. */
+    markdown: string;
+  }): Promise<P2CommentCreateResult>;
+}
+
+export interface P2CommentCreateResult {
+  comment_id: number;
+  /** Permalink to the created comment, when the API returns one. */
+  link?: string;
 }
 
 export interface P2PostFetchQuery {

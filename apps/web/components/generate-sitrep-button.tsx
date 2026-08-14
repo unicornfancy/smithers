@@ -23,7 +23,9 @@ interface Props {
  * Workbench affordance: draft a SITREP (Situation Report) as a top-level
  * comment on the project's existing P2 post. Pulls Linear + Zendesk +
  * follow-ups via composeSitrepAction, renders the resulting markdown in
- * an AiDraftDialog for copy-to-clipboard. Nothing posts automatically.
+ * an AiDraftDialog for copy-to-clipboard — or, when the project has a
+ * p2_url, direct posting via the dialog's Post-to-P2 button (two-step
+ * confirm; nothing posts without the explicit second click).
  *
  * No "Save as draft" wiring — the SITREP target is a comment on someone
  * else's P2 (the project's launch post), not a stand-alone vault draft.
@@ -110,6 +112,7 @@ export function GenerateSitrepButton({
           body={data.body}
           onRegenerate={regenerate}
           regenerating={pending}
+          postToP2={p2Url ? { p2PostUrl: p2Url } : undefined}
         />
       ) : null}
     </>

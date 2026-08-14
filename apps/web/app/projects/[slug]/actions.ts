@@ -3989,6 +3989,78 @@ function parseP2Url(
  * Primary thread = the first active (non-solved/closed) attached
  * ticket. If there isn't one, the SITREP simply skips that section.
  */
+/**
+ * Post a markdown body as a new comment on a P2 post. Smithers's only
+ * outbound-post primitive — the UI collects an explicit confirmation
+ * (showing the resolved target post) before calling this; nothing
+ * routes here automatically.
+ *
+ * `p2_post_url` accepts permalink or ?p= shortlink forms, under the
+ * current site name or a renamed predecessor (WP.com keeps old
+ * addresses routing server-side). Slug-form URLs cost one posts-text
+ * lookup to resolve the numeric post id; ?p= URLs skip it.
+ *
+ * Returns the resolved post title + comment link so the UI can show
+ * "posted to <post> — view comment."
+ */
+export async function postCommentToP2Action(input: {
+  p2_post_url: string;
+  markdown: string;
+}): Promise<
+  | { ok: true; post_title?: string; comment_link?: string }
+  | { ok: false; reason: "invalid-url" | "post-not-found" | "error"; message: string }
+> {
+  const markdown = input.markdown.trim();
+  if (!markdown) {
+    return { ok: false, reason: "error", message: "Nothing to post — body is empty." };
+  }
+  const { parseP2PostUrl } = await import("@/lib/p2-url");
+  const parsed = parseP2PostUrl(input.p2_post_url);
+  if (!parsed) {
+    return {
+      ok: false,
+      reason: "invalid-url",
+      message:
+        "That doesn't look like a P2 post URL. Link a specific post (permalink or ?p= shortlink), not the site root.",
+    };
+  }
+
+  try {
+    const mcp = await getMcpClient();
+    let postId = parsed.post_id;
+    let postTitle: string | undefined;
+    if (!postId) {
+      const posts = await mcp.contextA8C.fetchP2Posts({
+        site: parsed.site,
+        slugs: [parsed.slug!],
+      });
+      const post = posts[0];
+      if (!post) {
+        return {
+          ok: false,
+          reason: "post-not-found",
+          message: `Couldn't find a post with slug "${parsed.slug}" on ${parsed.site}. Check the URL (the P2 may have been renamed — try the current site name).`,
+        };
+      }
+      postId = post.id;
+      postTitle = post.title;
+    }
+
+    const result = await mcp.contextA8C.createP2Comment({
+      site: parsed.site,
+      post_id: postId,
+      markdown,
+    });
+    return { ok: true, post_title: postTitle, comment_link: result.link };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "Posting failed",
+    };
+  }
+}
+
 export async function composeSitrepAction(
   slug: string,
   intent?: string,

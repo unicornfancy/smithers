@@ -2,10 +2,12 @@
 
 import {
   CalendarDays,
+  Check,
   Copy,
   ExternalLink,
   Loader2,
   Save,
+  Send,
   Sparkles,
 } from "lucide-react";
 import * as React from "react";
@@ -15,6 +17,7 @@ import {
   generateWeeklyUpdateAction,
   saveWeeklyUpdateAction,
 } from "@/app/weekly-updates/actions";
+import { postCommentToP2Action } from "@/app/projects/[slug]/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HandleCheckBanner } from "@/components/handle-check-banner";
@@ -55,6 +58,41 @@ export function WeeklyUpdateEditor({
   const [saving, setSaving] = React.useState(false);
   const [userNotes, setUserNotes] = React.useState("");
   const [showPreview, setShowPreview] = React.useState(false);
+  const [p2Confirming, setP2Confirming] = React.useState(false);
+  const [p2Posting, setP2Posting] = React.useState(false);
+  const [p2CommentLink, setP2CommentLink] = React.useState<string | null>(null);
+
+  // Only a specifically-matched weekly thread post is postable —
+  // kind "fallback" is the P2 homepage, which isn't a comment target.
+  const postTargetUrl = teamPost.kind === "found" ? teamPost.url : null;
+
+  async function handlePostToThread() {
+    if (!postTargetUrl || p2Posting || p2CommentLink) return;
+    if (!p2Confirming) {
+      setP2Confirming(true);
+      return;
+    }
+    setP2Posting(true);
+    try {
+      const result = await postCommentToP2Action({
+        p2_post_url: postTargetUrl,
+        markdown: body,
+      });
+      if (!result.ok) {
+        toast.error(result.message);
+        setP2Confirming(false);
+        return;
+      }
+      setP2CommentLink(result.comment_link ?? postTargetUrl);
+      toast.success(
+        teamPost.title
+          ? `Posted to "${teamPost.title}"`
+          : "Posted to the weekly thread",
+      );
+    } finally {
+      setP2Posting(false);
+    }
+  }
 
   async function handleGenerate() {
     if (!apiKeyConfigured) {
@@ -200,6 +238,36 @@ export function WeeklyUpdateEditor({
               <Copy className="size-3.5" />
               Copy
             </Button>
+            {postTargetUrl ? (
+              p2CommentLink ? (
+                <Button size="sm" variant="ghost" asChild className="gap-1.5">
+                  <a href={p2CommentLink} target="_blank" rel="noreferrer">
+                    <Check className="size-3.5" />
+                    View comment
+                  </a>
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant={p2Confirming ? "default" : "outline"}
+                  onClick={handlePostToThread}
+                  disabled={p2Posting || !body.trim()}
+                  className="gap-1.5"
+                  title={`Comment will post to ${postTargetUrl}`}
+                >
+                  {p2Posting ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Send className="size-3.5" />
+                  )}
+                  {p2Posting
+                    ? "Posting…"
+                    : p2Confirming
+                      ? "Confirm post to weekly thread?"
+                      : "Post to thread"}
+                </Button>
+              )
+            ) : null}
             <Button
               size="sm"
               variant="ghost"

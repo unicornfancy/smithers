@@ -723,6 +723,18 @@ export class MockContextA8CTransport implements ContextA8CClient {
   async fetchP2Posts(_query: unknown): Promise<never[]> {
     return [];
   }
+
+  async createP2Comment(_args: {
+    site: string;
+    post_id: number;
+    markdown: string;
+  }): Promise<{ comment_id: number; link?: string }> {
+    // Never pretend an outbound post succeeded in mock mode — a demo
+    // user believing they posted to a real P2 is worse than an error.
+    throw new Error(
+      "ContextA8C is in mock mode — enable the real transport to post P2 comments",
+    );
+  }
 }
 
 function shortHash(rng: () => number): string {

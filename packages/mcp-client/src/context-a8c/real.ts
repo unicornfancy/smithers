@@ -24,6 +24,7 @@ import type {
   ContextA8CClient,
   MatticspaceGroupMember,
   MatticspaceGroupRoster,
+  P2CommentCreateResult,
   P2Post,
   P2PostAuthor,
   P2PostFetchQuery,
@@ -1509,6 +1510,54 @@ export class RealContextA8CTransport implements ContextA8CClient {
     } catch {
       return [];
     }
+  }
+
+  async createP2Comment(args: {
+    site: string;
+    post_id: number;
+    markdown: string;
+  }): Promise<P2CommentCreateResult> {
+    const site = normalizeP2Site(args.site);
+    if (!site) throw new Error(`Invalid P2 site: "${args.site}"`);
+    if (!Number.isInteger(args.post_id) || args.post_id <= 0) {
+      throw new Error(`Invalid post id: ${args.post_id}`);
+    }
+    if (!args.markdown.trim()) throw new Error("Comment body is empty");
+
+    // content-authoring requires user_confirmed: true on every write.
+    // The Smithers UI collects that confirmation before this method is
+    // ever called (see AiDraftDialog's Post-to-P2 confirm step) — this
+    // is the transport-level passthrough of that consent, not a bypass.
+    const result = await this.mcp.callJsonTool<{
+      id?: number;
+      link?: string;
+      comment?: { id?: number; link?: string };
+    }>("context-a8c-execute-tool", {
+      provider: "wpcom",
+      tool: "content-authoring",
+      params: {
+        wpcom_site: site,
+        action: "execute",
+        operation: "comments.create",
+        params: {
+          post: args.post_id,
+          content: { raw: args.markdown },
+          user_confirmed: true,
+          include_fields: ["id", "link", "status"],
+        },
+      },
+    });
+
+    const commentId = result?.id ?? result?.comment?.id;
+    if (typeof commentId !== "number") {
+      throw new Error(
+        `comments.create returned no comment id: ${JSON.stringify(result).slice(0, 300)}`,
+      );
+    }
+    return {
+      comment_id: commentId,
+      link: result?.link ?? result?.comment?.link,
+    };
   }
 }
 

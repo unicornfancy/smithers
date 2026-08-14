@@ -153,25 +153,19 @@ Sketch:
 - **Settings card** — at the bottom of `/settings → About` (or its own "Costs" tab if it grows). Roll-up: last 24h tokens + cost, last 7d, all-time. Per-agent breakdown table sortable by cost. CSV export button for accounting.
 - **Optional later**: budget alert when daily spend exceeds a configurable threshold; per-agent cap.
 
-## P2 integration — re-evaluate after ContextA8C updates (and explore WordPress.com MCP)
+## P2 integration — write path SHIPPED v1.5.0 (2026-07-30); read path still open
 
-P2 was cut from the Live Activity feed on 2026-05-28 (1538a03) because ContextA8C's `wpcom` provider had no per-post comments tool and public WP.com REST 401'd on internal P2s like `wpspecialprojectsp2`. ContextA8C ships periodic updates; the provider may have grown comment-fetch tooling since. Separately, the WordPress.com MCP (the public/official one) is a second path that may give cleaner P2 access than ContextA8C's `wpcom` wrapper.
+**Re-probe done 2026-07-30** (`packages/mcp-client/scripts/probe-wpcom-tools.mjs`). ContextA8C's `wpcom` provider now exposes a `content-authoring` meta-tool (list/describe/execute) with full CRUD on posts, pages, comments, media, taxonomies — including `comments.create` with a required `user_confirmed: true` write gate. `posts-text` still exists for slug→post-id resolution.
 
-Two parallel paths to probe — pick whichever produces working comment + post access on internal P2s:
+**Shipped in v1.5.0:**
+- `ContextA8CClient.createP2Comment` transport method (real + mock; mock throws rather than fake-succeeding).
+- `postCommentToP2Action` — generic "post markdown as comment on any P2 post URL" action; resolves permalinks via posts-text, ?p= shortlinks directly.
+- SITREP dialog: Post to P2 button (AiDraftDialog's `postToP2` prop; two-step confirm).
+- Weekly-update editor: "Post to thread" button when `detectTeamWeeklyPost` matched a specific post.
 
-**Path A — Re-probe ContextA8C:**
-- Run `mcp.contextA8C.loadProvider("wpcom")` and dump the tool list. Look for `posts-comments`, `post-comments`, `reader-comments`, or anything that takes a post URL + returns the thread.
-- Check whether the existing `posts-text` / `reader` tools now handle internal P2s without 401ing (the original cut was driven by auth, not by missing tools alone).
+**P2 rename note (2026-07):** `wpspecialprojects.wordpress.com` → `team51projects.wordpress.com`. Probed both — WP.com keeps the old address routing server-side, so existing `p2_url` frontmatter under the old name still resolves. **No bulk URL migration needed.** If display-URL cleanliness ever matters, a rename card à la Rename Partner Slug could bulk-rewrite `p2_url` values, but it's cosmetic.
 
-**Path B — WordPress.com MCP:**
-- Evaluate the WordPress.com MCP (the official one, not the ContextA8C wrapper) as a parallel transport. May expose richer P2-as-WP-site primitives — post comments, post bodies, search across a P2, user/author lookups — under proper a8c-internal auth instead of public REST.
-- Check whether it co-exists with ContextA8C (e.g. `mcps.wpcom` as a new config block alongside `mcps.context_a8c`) or whether it replaces the `wpcom` provider entirely. Hive Mind's MCP wiring is the precedent for "additional MCP transport beside ContextA8C."
-- Compare against ContextA8C `wpcom` on the same internal-P2 fixtures — which gives cleaner data, lower latency, fewer 401s, write capability.
-
-**Either way:**
-- If comment reads work: re-add the `fetchP2Comments` branch in the activity pipeline, the `p2_url` field on `ProjectActivityRefs`, the `"p2"` source filter, and the workbench's P2 chip. The mock transport seed will need a P2 sample too.
-- If write tools exist (`create-comment`, `create-post`): the manual copy-paste step in the team weekly-update flow (see Weekly Updates follow-ups above) becomes a one-click "Post as comment to team P2" affordance.
-- If neither path produces working access: leave the cut in place but timestamp the re-probe date so the next person doesn't re-investigate. Record which MCP failed and how.
+**Still open (read path):** re-add P2 comments to the Live Activity feed — the `content-authoring` tool's `comments.list` likely covers it now. Re-add the `fetchP2Comments` branch in the activity pipeline, the `p2_url` field on `ProjectActivityRefs`, the `"p2"` source filter, and the workbench's P2 chip. Mock transport seed needs a P2 sample.
 
 ## Hive Mind side — recommendations for v1.5 (not blocking)
 

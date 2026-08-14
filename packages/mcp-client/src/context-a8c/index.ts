@@ -40,6 +40,7 @@ export type {
   ActivitySourceFilter,
   MatticspaceGroupMember,
   MatticspaceGroupRoster,
+  P2CommentCreateResult,
   P2Post,
   P2PostAuthor,
   P2PostComment,

@@ -9,12 +9,14 @@ import {
   Loader2,
   RefreshCw,
   Save,
+  Send,
   Sliders,
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { saveAsDraftAction } from "@/app/drafts/actions";
+import { postCommentToP2Action } from "@/app/projects/[slug]/actions";
 import { encodeDraftIdForUrl } from "@/lib/draft-id-url";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
+/** Bare host for the confirm-button label; falls back to the raw string. */
+function p2Host(url: string): string {
+  try {
+    return new URL(url.startsWith("http") ? url : `https://${url}`).host;
+  } catch {
+    return url;
+  }
+}
 
 interface Props {
   open: boolean;
@@ -79,6 +90,17 @@ interface Props {
     /** Channel hint stored in frontmatter ("email" / "slack" / etc.). */
     channel?: string;
   };
+  /**
+   * When provided, exposes a "Post to P2" button that publishes the
+   * edited body as a new comment on the given P2 post. Two-step: the
+   * first click flips to an explicit confirm (showing the target
+   * host) — nothing posts until the second click. Smithers's only
+   * outbound-post affordance.
+   */
+  postToP2?: {
+    /** The P2 post URL the comment will attach to. */
+    p2PostUrl: string;
+  };
 }
 
 /**
@@ -104,6 +126,7 @@ export function AiDraftDialog({
   onChangeContext,
   regenerating,
   saveAsDraft,
+  postToP2,
 }: Props) {
   const [editedSubject, setEditedSubject] = React.useState(subject ?? "");
   const [editedBody, setEditedBody] = React.useState(body);
@@ -115,6 +138,11 @@ export function AiDraftDialog({
   } | null>(null);
   const [regeneratePanelOpen, setRegeneratePanelOpen] = React.useState(false);
   const [regenerateIntent, setRegenerateIntent] = React.useState("");
+  const [p2Confirming, setP2Confirming] = React.useState(false);
+  const [p2Posting, setP2Posting] = React.useState(false);
+  const [p2Posted, setP2Posted] = React.useState<{
+    comment_link?: string;
+  } | null>(null);
 
   // Re-seed when a new draft lands (parent passes new body/subject).
   React.useEffect(() => {
@@ -125,8 +153,40 @@ export function AiDraftDialog({
       setSavedDraft(null);
       setRegeneratePanelOpen(false);
       setRegenerateIntent("");
+      setP2Confirming(false);
+      setP2Posting(false);
+      setP2Posted(null);
     }
   }, [open, subject, body]);
+
+  async function handlePostToP2() {
+    if (!postToP2 || p2Posting || p2Posted) return;
+    // Two-step: first click arms the confirm, second click posts.
+    if (!p2Confirming) {
+      setP2Confirming(true);
+      return;
+    }
+    setP2Posting(true);
+    try {
+      const result = await postCommentToP2Action({
+        p2_post_url: postToP2.p2PostUrl,
+        markdown: editedBody,
+      });
+      if (!result.ok) {
+        toast.error(result.message);
+        setP2Confirming(false);
+        return;
+      }
+      setP2Posted({ comment_link: result.comment_link });
+      toast.success(
+        result.post_title
+          ? `Posted to "${result.post_title}"`
+          : "Posted to P2",
+      );
+    } finally {
+      setP2Posting(false);
+    }
+  }
 
   function handleSaveAsDraft() {
     if (!saveAsDraft) return;
@@ -361,6 +421,47 @@ export function AiDraftDialog({
                   <Save className="size-3.5" />
                 )}
                 Save as draft
+              </Button>
+            )
+          ) : null}
+          {postToP2 ? (
+            p2Posted ? (
+              p2Posted.comment_link ? (
+                <Button asChild variant="ghost" className="gap-1.5">
+                  <a
+                    href={p2Posted.comment_link}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Check className="size-3.5" />
+                    View comment
+                  </a>
+                </Button>
+              ) : (
+                <Button variant="ghost" disabled className="gap-1.5">
+                  <Check className="size-3.5" />
+                  Posted
+                </Button>
+              )
+            ) : (
+              <Button
+                type="button"
+                variant={p2Confirming ? "default" : "outline"}
+                onClick={handlePostToP2}
+                disabled={p2Posting || !editedBody.trim()}
+                className="gap-1.5"
+                title={`Comment will post to ${postToP2.p2PostUrl}`}
+              >
+                {p2Posting ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Send className="size-3.5" />
+                )}
+                {p2Posting
+                  ? "Posting…"
+                  : p2Confirming
+                    ? `Confirm post to ${p2Host(postToP2.p2PostUrl)}?`
+                    : "Post to P2"}
               </Button>
             )
           ) : null}
