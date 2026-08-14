@@ -47,6 +47,7 @@ import {
 import { cn } from "@/lib/utils";
 import { AiDraftDialog } from "@/components/ai-draft-dialog";
 import { DraftContextPickerDialog } from "@/components/draft-context-picker-dialog";
+import { ShareCallNotesDialog } from "@/components/share-call-notes-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -59,6 +60,8 @@ import {
 interface Props {
   projectSlug: string;
   recording: CallRecordingRef;
+  /** Project's p2_url — enables the deterministic Share-to-P2 composer. */
+  p2Url?: string;
 }
 
 /**
@@ -68,7 +71,7 @@ interface Props {
  * action where applicable. Action items + follow-ups write directly
  * into the vault; summary copies to clipboard.
  */
-export function ProcessCallDialog({ projectSlug, recording }: Props) {
+export function ProcessCallDialog({ projectSlug, recording, p2Url }: Props) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [running, startTransition] = React.useTransition();
@@ -132,6 +135,8 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
   const [p2Pending, startP2] = React.useTransition();
   const [p2Data, setP2Data] = React.useState<DraftP2UpdateOutput | null>(null);
   const [p2Open, setP2Open] = React.useState(false);
+  // Deterministic share-to-P2 composer (section checkboxes, no agent).
+  const [shareOpen, setShareOpen] = React.useState(false);
   const [p2PickerOpen, setP2PickerOpen] = React.useState(false);
   const [p2LastContext, setP2LastContext] = React.useState<ContextItem[]>([]);
   // Mirror of the picker's intent field — replayed on regenerate so the
@@ -718,6 +723,19 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
                   )}
                   Draft P2 update
                 </Button>
+                {p2Url ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShareOpen(true)}
+                    className="h-6 gap-1 px-1.5 text-[11px]"
+                    title="Compose a P2 comment from the sections below — no AI rewrite, instant"
+                  >
+                    <Send className="size-3" />
+                    Share notes to P2…
+                  </Button>
+                ) : null}
               </div>
               <Section
                 icon={<Sparkles className="size-3.5" />}
@@ -1065,6 +1083,17 @@ export function ProcessCallDialog({ projectSlug, recording }: Props) {
         onGenerate={actuallyGenerateP2}
         busy={p2Pending}
       />
+
+      {p2Url && data ? (
+        <ShareCallNotesDialog
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          analysis={data}
+          recordingTitle={recording.title ?? recording.recording_id}
+          recordedAt={recording.recorded_at}
+          p2PostUrl={p2Url}
+        />
+      ) : null}
 
       <AiDraftDialog
         open={p2Open}

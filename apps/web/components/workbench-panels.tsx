@@ -639,10 +639,13 @@ export function CallNotesPanel({
   savedNotesByRecordingId,
   callTranscripts,
   processedCallNotes,
+  p2Url,
 }: {
   projectSlug: string;
   projectName: string;
   recordings: CallRecordingRef[];
+  /** Project's p2_url frontmatter — enables Share-to-P2 in Process Call. */
+  p2Url?: string;
   /**
    * Per-recording lookup: if a recording has a saved Call Notes file
    * (vault `Call Notes/<file>.md` with this recording_id in
@@ -738,6 +741,7 @@ export function CallNotesPanel({
               recordings.map((r) => [r.recording_id, r]),
             )}
             projectSlug={projectSlug}
+            p2Url={p2Url}
           />
         ) : null}
 
@@ -776,6 +780,7 @@ export function CallNotesPanel({
                       <ProcessCallDialog
                         projectSlug={projectSlug}
                         recording={r}
+                        p2Url={p2Url}
                       />
                       {r.source_url ? (
                         <a
@@ -824,6 +829,7 @@ function ProcessedCallsList({
   savedNotesByRecordingId,
   recordingsById,
   projectSlug,
+  p2Url,
 }: {
   notes: Array<{
     recording_id: string;
@@ -837,6 +843,7 @@ function ProcessedCallsList({
   >;
   recordingsById: Record<string, CallRecordingRef>;
   projectSlug: string;
+  p2Url?: string;
 }) {
   // Show the most recent 8 inline; collapse the rest behind a disclosure
   // so the workbench doesn't grow unbounded when Katie has dozens of
@@ -857,6 +864,7 @@ function ProcessedCallsList({
             savedRelPath={savedNotesByRecordingId?.[n.recording_id]?.relative_path}
             recording={recordingsById[n.recording_id]}
             projectSlug={projectSlug}
+            p2Url={p2Url}
           />
         ))}
       </ul>
@@ -873,6 +881,7 @@ function ProcessedCallsList({
                 savedRelPath={savedNotesByRecordingId?.[n.recording_id]?.relative_path}
                 recording={recordingsById[n.recording_id]}
                 projectSlug={projectSlug}
+                p2Url={p2Url}
               />
             ))}
           </ul>
@@ -887,6 +896,7 @@ function ProcessedCallRow({
   savedRelPath,
   recording,
   projectSlug,
+  p2Url,
 }: {
   note: {
     recording_id: string;
@@ -897,6 +907,7 @@ function ProcessedCallRow({
   savedRelPath: string | undefined;
   recording: CallRecordingRef | undefined;
   projectSlug: string;
+  p2Url?: string;
 }) {
   return (
     <li className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0">
@@ -925,7 +936,11 @@ function ProcessedCallRow({
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         {recording ? (
-          <ProcessCallDialog projectSlug={projectSlug} recording={recording} />
+          <ProcessCallDialog
+            projectSlug={projectSlug}
+            recording={recording}
+            p2Url={p2Url}
+          />
         ) : note.recording_id ? (
           // External imports: synthesize a CallRecordingRef so the
           // same dialog mounts. Its cached-path short-circuit reads
@@ -941,6 +956,7 @@ function ProcessedCallRow({
               duration_seconds: 0,
               title: note.title,
             }}
+            p2Url={p2Url}
           />
         ) : null}
         {note.recording_id ? (

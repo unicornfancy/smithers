@@ -738,6 +738,7 @@ export default async function ProjectWorkbenchPage({
         savedNotesByRecordingId={savedCallNotesByRecordingId}
         callTranscripts={callTranscripts}
         processedCallNotes={mergedProcessedCallNotes}
+        p2Url={detail.p2_url}
       />
     ),
   });
