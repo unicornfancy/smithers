@@ -52,12 +52,25 @@ export async function getMatticspaceHandleMap(): Promise<MatticspaceHandleMap> {
       : ["team-51", "team-51-contractors"]);
   const mcp = await getMcpClient();
   const people: HandleMapPerson[] = [];
+  const failures: string[] = [];
+  let loadedGroups = 0;
   for (const slug of slugs) {
     const result = await mcp.contextA8C
       .listMatticspaceGroupMembers(slug, { includeSubteams: true })
       .catch(() => null);
-    if (!result?.ok) continue;
-    for (const m of result.data.members) {
+    // On fetch failure (typically an expired ContextA8C session) fall
+    // back to the last-known-good roster the SWR cache kept around —
+    // a slightly stale roster beats an empty map that flags every
+    // mention as unknown.
+    const roster = result?.ok ? result.data : result?.cachedData;
+    if (!roster) {
+      failures.push(
+        result && !result.ok ? `${slug}: ${result.error.message}` : `${slug}: fetch failed`,
+      );
+      continue;
+    }
+    loadedGroups++;
+    for (const m of roster.members) {
       if (!m.wp_username) continue;
       people.push({
         name: m.name,
@@ -65,6 +78,15 @@ export async function getMatticspaceHandleMap(): Promise<MatticspaceHandleMap> {
         group_slug: slug,
       });
     }
+  }
+
+  // Every group failed with nothing cached: throw so the API route
+  // reports "unavailable" instead of serving an empty map — the client
+  // can't tell an empty roster from a failed one otherwise.
+  if (loadedGroups === 0) {
+    throw new Error(
+      `Matticspace roster unavailable — ${failures.join("; ") || "no groups configured"}`,
+    );
   }
 
   // Dedupe by wp_username — a person can appear in multiple groups

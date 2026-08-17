@@ -92,8 +92,16 @@ export function HandleCheckBanner({
   }
 
   if (mapError) {
-    // Silent if roster can't be loaded — don't block the user.
-    return null;
+    // Roster unavailable: say so instead of vanishing, but only when
+    // the draft actually contains mentions worth verifying.
+    HANDLE_REGEX.lastIndex = 0;
+    if (!HANDLE_REGEX.test(text)) return null;
+    return (
+      <p className="text-muted-foreground/80 text-[11px] italic">
+        Handle check skipped — team roster unavailable (ContextA8C may need
+        re-auth). @-mentions weren&apos;t verified.
+      </p>
+    );
   }
 
   const empty = suggestions.length === 0 && unknowns.length === 0;
