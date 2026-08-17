@@ -62,12 +62,18 @@ export function WeeklyUpdateEditor({
   const [p2Posting, setP2Posting] = React.useState(false);
   const [p2CommentLink, setP2CommentLink] = React.useState<string | null>(null);
 
-  // Only a specifically-matched weekly thread post is postable —
-  // kind "fallback" is the P2 homepage, which isn't a comment target.
-  const postTargetUrl = teamPost.kind === "found" ? teamPost.url : null;
+  // Thread URL is editable: pre-filled when auto-detection matched a
+  // specific post, manual paste otherwise. Detection uses the public
+  // REST API which 401s on private P2s (kind: "fallback",
+  // reason: "auth-required") — team51projects is private, so manual
+  // paste is the common path there.
+  const [threadUrl, setThreadUrl] = React.useState(
+    teamPost.kind === "found" ? (teamPost.url ?? "") : "",
+  );
 
   async function handlePostToThread() {
-    if (!postTargetUrl || p2Posting || p2CommentLink) return;
+    const target = threadUrl.trim();
+    if (!target || p2Posting || p2CommentLink) return;
     if (!p2Confirming) {
       setP2Confirming(true);
       return;
@@ -75,7 +81,7 @@ export function WeeklyUpdateEditor({
     setP2Posting(true);
     try {
       const result = await postCommentToP2Action({
-        p2_post_url: postTargetUrl,
+        p2_post_url: target,
         markdown: body,
       });
       if (!result.ok) {
@@ -83,11 +89,13 @@ export function WeeklyUpdateEditor({
         setP2Confirming(false);
         return;
       }
-      setP2CommentLink(result.comment_link ?? postTargetUrl);
+      setP2CommentLink(result.comment_link ?? target);
       toast.success(
-        teamPost.title
-          ? `Posted to "${teamPost.title}"`
-          : "Posted to the weekly thread",
+        result.post_title
+          ? `Posted to "${result.post_title}"`
+          : teamPost.title && teamPost.url === target
+            ? `Posted to "${teamPost.title}"`
+            : "Posted to the weekly thread",
       );
     } finally {
       setP2Posting(false);
@@ -238,36 +246,6 @@ export function WeeklyUpdateEditor({
               <Copy className="size-3.5" />
               Copy
             </Button>
-            {postTargetUrl ? (
-              p2CommentLink ? (
-                <Button size="sm" variant="ghost" asChild className="gap-1.5">
-                  <a href={p2CommentLink} target="_blank" rel="noreferrer">
-                    <Check className="size-3.5" />
-                    View comment
-                  </a>
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant={p2Confirming ? "default" : "outline"}
-                  onClick={handlePostToThread}
-                  disabled={p2Posting || !body.trim()}
-                  className="gap-1.5"
-                  title={`Comment will post to ${postTargetUrl}`}
-                >
-                  {p2Posting ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Send className="size-3.5" />
-                  )}
-                  {p2Posting
-                    ? "Posting…"
-                    : p2Confirming
-                      ? "Confirm post to weekly thread?"
-                      : "Post to thread"}
-                </Button>
-              )
-            ) : null}
             <Button
               size="sm"
               variant="ghost"
@@ -276,6 +254,58 @@ export function WeeklyUpdateEditor({
             >
               {showPreview ? "Edit" : "Preview"}
             </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t pt-2">
+            <span className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+              Weekly thread
+            </span>
+            <input
+              type="text"
+              value={threadUrl}
+              onChange={(e) => {
+                setThreadUrl(e.target.value);
+                setP2Confirming(false);
+              }}
+              disabled={p2Posting || Boolean(p2CommentLink)}
+              placeholder={
+                teamPost.kind === "found"
+                  ? "Auto-detected — edit to override"
+                  : "Paste the team weekly thread post URL to enable posting"
+              }
+              className="border-input focus-visible:ring-ring h-7 min-w-64 flex-1 rounded-md border bg-transparent px-2 text-xs focus-visible:outline-none focus-visible:ring-1 disabled:opacity-60"
+            />
+            {p2CommentLink ? (
+              <Button size="sm" variant="ghost" asChild className="gap-1.5">
+                <a href={p2CommentLink} target="_blank" rel="noreferrer">
+                  <Check className="size-3.5" />
+                  View comment
+                </a>
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant={p2Confirming ? "default" : "outline"}
+                onClick={handlePostToThread}
+                disabled={p2Posting || !body.trim() || !threadUrl.trim()}
+                className="gap-1.5"
+                title={
+                  threadUrl.trim()
+                    ? `Comment will post to ${threadUrl.trim()}`
+                    : "Paste the weekly thread post URL first"
+                }
+              >
+                {p2Posting ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Send className="size-3.5" />
+                )}
+                {p2Posting
+                  ? "Posting…"
+                  : p2Confirming
+                    ? "Confirm post to weekly thread?"
+                    : "Post to thread"}
+              </Button>
+            )}
           </div>
           {originalBody && originalBody.trim() !== body.trim() ? (
             <p className="text-muted-foreground/80 mt-1 text-[11px] italic">
