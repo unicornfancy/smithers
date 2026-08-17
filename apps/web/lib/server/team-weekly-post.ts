@@ -1,17 +1,21 @@
 import "server-only";
 
 import { loadConfig } from "./config";
+import { getMcpClient } from "./mcp";
 
 /**
  * Try to detect this week's team P2 post URL — the master post each
- * Monday that every TAM comments on with their weekly update. We
- * search the team P2 via WordPress.com's public REST API for posts
- * matching the configured title pattern (default "Week {n}").
+ * Monday that every TAM comments on with their weekly update.
+ *
+ * Two lookups per title pattern (default "Week {n}"), in order:
+ *   1. Authenticated search via ContextA8C's content-authoring
+ *      posts.list — works on private P2s (team51projects is private,
+ *      so this is the path that actually fires in production).
+ *   2. Public WP.com REST — kept as fallback for public P2s when the
+ *      MCP is in mock mode or the session has expired.
  *
  * Returns the post URL when found, or a fallback shape pointing at the
- * team P2 homepage so the UI can still render a link. Auth-required
- * sites that 401 the public API show as `kind: "fallback"` — we'll
- * promote to OAuth-via-ContextA8C when a real need arises.
+ * team P2 homepage so the UI can still render a link.
  */
 export interface TeamWeeklyPostResult {
   kind: "found" | "fallback" | "not-configured";
@@ -53,15 +57,34 @@ export async function detectTeamWeeklyPost(
     .map((p) => p.replace("{n}", String(weekNumber)).trim())
     .filter(Boolean);
 
+  // Prefer a title match that includes the literal week number — search
+  // is fuzzy, so a "Week 19" query can return adjacent weeks.
+  const weekRe = new RegExp(`\\bweek\\s*${weekNumber}\\b`, "i");
+
+  // Path 1: authenticated search (works on private P2s).
+  try {
+    const mcp = await getMcpClient();
+    for (const term of searchTerms) {
+      const hits = await mcp.contextA8C.searchP2Posts({
+        site: siteHost,
+        search: term,
+        per_page: 10,
+      });
+      const match = hits.find((h) => weekRe.test(h.title)) ?? hits[0];
+      if (match?.link) {
+        return { kind: "found", url: match.link, title: match.title };
+      }
+    }
+  } catch {
+    // MCP unavailable (mock mode / expired session) — public REST below.
+  }
+
+  // Path 2: public REST (public P2s only; 401s silently on private).
   for (const term of searchTerms) {
     const found = await searchWpComPosts(siteHost, term).catch(() => null);
     if (found && found.posts && found.posts.length > 0) {
-      // Prefer a title match that includes the literal week number — search
-      // is fuzzy, so a "Week 19" query can return adjacent weeks.
       const match = found.posts.find(
-        (p) =>
-          typeof p.title === "string" &&
-          new RegExp(`\\bweek\\s*${weekNumber}\\b`, "i").test(p.title),
+        (p) => typeof p.title === "string" && weekRe.test(p.title),
       ) ?? found.posts[0];
       if (match?.URL) {
         return {

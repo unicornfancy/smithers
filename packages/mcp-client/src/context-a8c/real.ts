@@ -28,6 +28,7 @@ import type {
   P2Post,
   P2PostAuthor,
   P2PostFetchQuery,
+  P2PostSearchHit,
   PingsQuery,
   ProjectActivityQuery,
 } from "./types";
@@ -1512,6 +1513,51 @@ export class RealContextA8CTransport implements ContextA8CClient {
     }
   }
 
+  async searchP2Posts(args: {
+    site: string;
+    search: string;
+    per_page?: number;
+  }): Promise<P2PostSearchHit[]> {
+    const site = normalizeP2Site(args.site);
+    if (!site || !args.search.trim()) return [];
+    try {
+      const result = await this.mcp.callJsonTool<{
+        data?: Array<{
+          id?: number;
+          title?: string;
+          link?: string;
+          date?: string;
+        }>;
+      }>("context-a8c-execute-tool", {
+        provider: "wpcom",
+        tool: "content-authoring",
+        params: {
+          wpcom_site: site,
+          action: "execute",
+          operation: "posts.list",
+          params: {
+            search: args.search,
+            per_page: Math.min(args.per_page ?? 10, 50),
+            include_fields: ["id", "title", "link", "date"],
+          },
+        },
+      });
+      return (result?.data ?? [])
+        .filter(
+          (p): p is { id: number; title?: string; link: string; date?: string } =>
+            typeof p?.id === "number" && typeof p?.link === "string",
+        )
+        .map((p) => ({
+          id: p.id,
+          title: decodeBasicEntities(p.title ?? ""),
+          link: p.link,
+          date: p.date,
+        }));
+    } catch {
+      return [];
+    }
+  }
+
   async createP2Comment(args: {
     site: string;
     post_id: number;
@@ -1563,6 +1609,23 @@ export class RealContextA8CTransport implements ContextA8CClient {
 
 interface P2PostsTextEnvelope {
   posts?: Array<Record<string, unknown>>;
+}
+
+/**
+ * Decode the handful of HTML entities WP.com post titles actually
+ * carry (&nbsp; &amp; &#8211; etc.) without pulling in a full parser.
+ */
+function decodeBasicEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) =>
+      String.fromCodePoint(parseInt(code, 16)),
+    );
 }
 
 function normalizeP2Site(input: string): string | null {

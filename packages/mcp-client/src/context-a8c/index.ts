@@ -45,4 +45,5 @@ export type {
   P2PostAuthor,
   P2PostComment,
   P2PostFetchQuery,
+  P2PostSearchHit,
 } from "./types";

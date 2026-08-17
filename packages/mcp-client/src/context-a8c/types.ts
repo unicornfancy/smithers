@@ -252,6 +252,22 @@ export interface ContextA8CClient {
   fetchP2Posts(query: P2PostFetchQuery): Promise<P2Post[]>;
 
   /**
+   * Authenticated post search on a P2 via the wpcom `content-authoring`
+   * tool's `posts.list` operation. Works on private P2s where the
+   * public REST API 401s. Returns minimal hits sorted by the API's
+   * default relevance/date ordering; titles are entity-decoded.
+   * Returns [] on any failure so callers can fall back gracefully.
+   */
+  searchP2Posts(args: {
+    /** P2 host, bare or with scheme. */
+    site: string;
+    /** Full-text search term (matches title + content). */
+    search: string;
+    /** Max results (default 10). */
+    per_page?: number;
+  }): Promise<P2PostSearchHit[]>;
+
+  /**
    * Post a comment on a P2 post via the wpcom `content-authoring`
    * tool's `comments.create` operation. `markdown` is sent as the raw
    * comment body — P2s (o2 theme) render markdown in comments
@@ -279,6 +295,15 @@ export interface P2CommentCreateResult {
   comment_id: number;
   /** Permalink to the created comment, when the API returns one. */
   link?: string;
+}
+
+export interface P2PostSearchHit {
+  id: number;
+  /** Entity-decoded title. */
+  title: string;
+  link: string;
+  /** ISO-ish date from the API (site-local, no timezone suffix). */
+  date?: string;
 }
 
 export interface P2PostFetchQuery {

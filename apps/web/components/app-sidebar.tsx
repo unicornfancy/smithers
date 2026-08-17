@@ -103,7 +103,7 @@ export function AppSidebar() {
       </nav>
 
       <div className="border-sidebar-border border-t p-3 text-xs text-muted-foreground">
-        <span className="font-medium">v1.5.3</span>
+        <span className="font-medium">v1.5.4</span>
       </div>
     </aside>
   );

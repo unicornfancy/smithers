@@ -724,6 +724,14 @@ export class MockContextA8CTransport implements ContextA8CClient {
     return [];
   }
 
+  async searchP2Posts(_args: {
+    site: string;
+    search: string;
+    per_page?: number;
+  }): Promise<never[]> {
+    return [];
+  }
+
   async createP2Comment(_args: {
     site: string;
     post_id: number;

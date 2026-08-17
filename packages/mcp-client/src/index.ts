@@ -111,6 +111,7 @@ export type {
   P2PostAuthor,
   P2PostComment,
   P2PostFetchQuery,
+  P2PostSearchHit,
 } from "./context-a8c/index";
 export {
   extractTicketId,
