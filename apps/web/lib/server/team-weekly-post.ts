@@ -1,5 +1,6 @@
 import "server-only";
 
+import { normalizeP2Host } from "@/lib/p2-url";
 import { loadConfig } from "./config";
 import { getMcpClient } from "./mcp";
 
@@ -153,7 +154,9 @@ function parseSiteHost(rawUrl: string): string | null {
     const u = new URL(
       rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`,
     );
-    return u.hostname;
+    // Old P2 names (to51, wpspecialprojectsp2) don't resolve inside
+    // ContextA8C — silently search the renamed site instead.
+    return u.hostname ? normalizeP2Host(u.hostname) : null;
   } catch {
     return null;
   }

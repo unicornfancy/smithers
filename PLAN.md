@@ -163,7 +163,7 @@ Sketch:
 - SITREP dialog: Post to P2 button (AiDraftDialog's `postToP2` prop; two-step confirm).
 - Weekly-update editor: "Post to thread" button when `detectTeamWeeklyPost` matched a specific post.
 
-**P2 rename note (2026-07):** `wpspecialprojects.wordpress.com` → `team51projects.wordpress.com`. Probed both — WP.com keeps the old address routing server-side, so existing `p2_url` frontmatter under the old name still resolves. **No bulk URL migration needed.** If display-URL cleanliness ever matters, a rename card à la Rename Partner Slug could bulk-rewrite `p2_url` values, but it's cosmetic.
+**P2 rename note (corrected 2026-08, v1.5.7):** `wpspecialprojectsp2.wordpress.com` → `team51projects.wordpress.com` and `to51.wordpress.com` → `team51.wordpress.com`. The 2026-07 conclusion ("old names route server-side, no migration needed") was **wrong for ContextA8C content tools** — posts.list / posts-text / comments.create return empty against old hosts, which silently broke Post-to-P2 (first hit: IFFS SITREP, 2026-08-17). Fixed twice over: Katie's 13 `p2_url` frontmatter values bulk-migrated to the new host (one-off script, all slugs verified resolving upstream), and `normalizeP2Host` in `apps/web/lib/p2-url.ts` maps old→new at parse time (also applied to `team_p2_url` in weekly-thread detection) so stale URLs from Hive Mind or other TAMs' vaults keep working. Future renames: add a row to `P2_SITE_RENAMES`.
 
 **Still open (read path):** re-add P2 comments to the Live Activity feed — the `content-authoring` tool's `comments.list` likely covers it now. Re-add the `fetchP2Comments` branch in the activity pipeline, the `p2_url` field on `ProjectActivityRefs`, the `"p2"` source filter, and the workbench's P2 chip. Mock transport seed needs a P2 sample.
 
