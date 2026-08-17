@@ -39,6 +39,7 @@ export interface SitrepInput {
     title: string;
     state?: string;
     assignee?: string;
+    url?: string;
   }>;
   /** Open GitHub issues in the project's repo, when linked. */
   github_open_issues?: Array<{
@@ -102,6 +103,7 @@ Quality rules:
 - Don't include items the user owns privately that aren't appropriate to post (drafts, personal notes). Use only the provided inputs.
 - Don't editorialize the partner unfavorably. Stick to facts.
 - Don't repeat the project name in every section header — P2 already shows the context.
+- When you reference a Linear issue anywhere in the body, render its identifier as a markdown link to the URL provided in the input, e.g. "[ABC-123](https://linear.app/...) Fix nav overflow". Only link issues whose URL was provided — never invent or guess a URL.
 
 Always return JSON matching the requested schema. No prose outside the JSON.`;
 
@@ -183,6 +185,7 @@ function renderUserPrompt(input: SitrepInput): string {
       const parts = [`${i.identifier}`, i.title];
       if (i.state) parts.push(`[${i.state}]`);
       if (i.assignee) parts.push(`(${i.assignee})`);
+      if (i.url) parts.push(`<${i.url}>`);
       lines.push(`- ${parts.join(" ")}`);
     }
   }

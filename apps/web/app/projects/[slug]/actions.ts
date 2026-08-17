@@ -4176,6 +4176,7 @@ export async function composeSitrepAction(
         title: i.title,
         state: i.state?.name ?? undefined,
         assignee: i.assignee?.name ?? undefined,
+        url: i.url || undefined,
       })),
       primary_zendesk: primary
         ? {
@@ -4202,7 +4203,14 @@ export async function composeSitrepAction(
       context,
       user_intent: intent?.trim() || undefined,
     });
-    return { ok: true, data: result.output };
+    // Deterministic safety net: link any issue identifier the agent
+    // left bare, so references are clickable even when the prompt rule
+    // was missed.
+    const output = {
+      ...result.output,
+      body: linkifyLinearIdentifiers(result.output.body, openLinearIssues),
+    };
+    return { ok: true, data: output };
   } catch (err) {
     return {
       ok: false,
@@ -4210,4 +4218,20 @@ export async function composeSitrepAction(
       message: err instanceof Error ? err.message : "Agent call failed",
     };
   }
+}
+
+function linkifyLinearIdentifiers(
+  body: string,
+  issues: Array<{ identifier: string; url: string }>,
+): string {
+  let next = body;
+  for (const issue of issues) {
+    if (!issue.url) continue;
+    const escaped = issue.identifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Skip identifiers already inside a markdown link ("[ABC-1](…)")
+    // or part of a URL/longer token ("/ABC-1", "ABC-12").
+    const re = new RegExp(`(?<![\\[\\w/-])${escaped}(?![\\w\\]-])`, "g");
+    next = next.replace(re, `[${issue.identifier}](${issue.url})`);
+  }
+  return next;
 }

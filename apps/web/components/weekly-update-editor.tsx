@@ -61,6 +61,8 @@ export function WeeklyUpdateEditor({
   const [p2Confirming, setP2Confirming] = React.useState(false);
   const [p2Posting, setP2Posting] = React.useState(false);
   const [p2CommentLink, setP2CommentLink] = React.useState<string | null>(null);
+  // Post failures stay visible here — toasts disappear too fast to read.
+  const [p2Error, setP2Error] = React.useState<string | null>(null);
 
   // Thread URL is editable: pre-filled when auto-detection matched a
   // specific post (authenticated ContextA8C search first, public REST
@@ -75,6 +77,7 @@ export function WeeklyUpdateEditor({
     if (!target || p2Posting || p2CommentLink) return;
     if (!p2Confirming) {
       setP2Confirming(true);
+      setP2Error(null);
       return;
     }
     setP2Posting(true);
@@ -84,10 +87,11 @@ export function WeeklyUpdateEditor({
         markdown: body,
       });
       if (!result.ok) {
-        toast.error(result.message);
+        setP2Error(result.message);
         setP2Confirming(false);
         return;
       }
+      setP2Error(null);
       setP2CommentLink(result.comment_link ?? target);
       toast.success(
         result.post_title
@@ -96,6 +100,9 @@ export function WeeklyUpdateEditor({
             ? `Posted to "${teamPost.title}"`
             : "Posted to the weekly thread",
       );
+    } catch (err) {
+      setP2Error(err instanceof Error ? err.message : "Posting failed");
+      setP2Confirming(false);
     } finally {
       setP2Posting(false);
     }
@@ -264,6 +271,7 @@ export function WeeklyUpdateEditor({
               onChange={(e) => {
                 setThreadUrl(e.target.value);
                 setP2Confirming(false);
+                setP2Error(null);
               }}
               disabled={p2Posting || Boolean(p2CommentLink)}
               placeholder={
@@ -306,6 +314,15 @@ export function WeeklyUpdateEditor({
               </Button>
             )}
           </div>
+          {p2Error ? (
+            <p
+              role="alert"
+              className="mt-1 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs leading-snug text-destructive"
+            >
+              <span className="font-medium">Post to thread failed:</span>{" "}
+              {p2Error}
+            </p>
+          ) : null}
           {teamPost.kind !== "found" && !p2CommentLink ? (
             <DetectionHint result={teamPost} />
           ) : null}

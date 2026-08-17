@@ -143,6 +143,8 @@ export function AiDraftDialog({
   const [p2Posted, setP2Posted] = React.useState<{
     comment_link?: string;
   } | null>(null);
+  // Post failures stay visible here — toasts disappear too fast to read.
+  const [p2Error, setP2Error] = React.useState<string | null>(null);
 
   // Re-seed when a new draft lands (parent passes new body/subject).
   React.useEffect(() => {
@@ -156,6 +158,7 @@ export function AiDraftDialog({
       setP2Confirming(false);
       setP2Posting(false);
       setP2Posted(null);
+      setP2Error(null);
     }
   }, [open, subject, body]);
 
@@ -164,6 +167,7 @@ export function AiDraftDialog({
     // Two-step: first click arms the confirm, second click posts.
     if (!p2Confirming) {
       setP2Confirming(true);
+      setP2Error(null);
       return;
     }
     setP2Posting(true);
@@ -173,16 +177,20 @@ export function AiDraftDialog({
         markdown: editedBody,
       });
       if (!result.ok) {
-        toast.error(result.message);
+        setP2Error(result.message);
         setP2Confirming(false);
         return;
       }
+      setP2Error(null);
       setP2Posted({ comment_link: result.comment_link });
       toast.success(
         result.post_title
           ? `Posted to "${result.post_title}"`
           : "Posted to P2",
       );
+    } catch (err) {
+      setP2Error(err instanceof Error ? err.message : "Posting failed");
+      setP2Confirming(false);
     } finally {
       setP2Posting(false);
     }
@@ -395,6 +403,15 @@ export function AiDraftDialog({
             <span className="font-medium">Tip:</span> saving as a draft snapshots
             the AI&apos;s first pass and tracks your edits — when you archive,
             those edits feed your my-voice rules.
+          </p>
+        ) : null}
+
+        {p2Error ? (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs leading-snug text-destructive"
+          >
+            <span className="font-medium">Post to P2 failed:</span> {p2Error}
           </p>
         ) : null}
 
