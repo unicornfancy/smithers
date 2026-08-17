@@ -1574,10 +1574,14 @@ export class RealContextA8CTransport implements ContextA8CClient {
     // The Smithers UI collects that confirmation before this method is
     // ever called (see AiDraftDialog's Post-to-P2 confirm step) — this
     // is the transport-level passthrough of that consent, not a bypass.
+    // content-authoring wraps created entities in a `data` envelope
+    // ({data: {id, link, status}}, same as posts.list) — but accept the
+    // bare and `comment`-wrapped shapes too, in case that ever varies.
     const result = await this.mcp.callJsonTool<{
       id?: number;
       link?: string;
       comment?: { id?: number; link?: string };
+      data?: { id?: number; link?: string };
     }>("context-a8c-execute-tool", {
       provider: "wpcom",
       tool: "content-authoring",
@@ -1594,7 +1598,8 @@ export class RealContextA8CTransport implements ContextA8CClient {
       },
     });
 
-    const commentId = result?.id ?? result?.comment?.id;
+    const payload = result?.data ?? result?.comment ?? result;
+    const commentId = payload?.id;
     if (typeof commentId !== "number") {
       throw new Error(
         `comments.create returned no comment id: ${JSON.stringify(result).slice(0, 300)}`,
@@ -1602,7 +1607,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
     }
     return {
       comment_id: commentId,
-      link: result?.link ?? result?.comment?.link,
+      link: payload?.link,
     };
   }
 }

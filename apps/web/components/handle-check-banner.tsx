@@ -162,8 +162,10 @@ function SuggestionItem({
 }) {
   if (row.suggested) {
     return (
-      <li className="flex items-center justify-between gap-2">
-        <span>
+      <li className="flex flex-wrap items-center justify-between gap-2">
+        {/* min-w-0 lets the text wrap in narrow containers (dialogs) —
+            otherwise it pushes the Apply button past the clipped edge. */}
+        <span className="min-w-0">
           <code className="bg-muted rounded px-1">@{row.typed}</code>{" "}
           <span className="text-muted-foreground">→</span>{" "}
           <code className="bg-emerald-500/10 text-emerald-700 rounded px-1 dark:text-emerald-400">
@@ -176,7 +178,7 @@ function SuggestionItem({
           size="sm"
           variant="outline"
           onClick={() => onApply(row.typed, row.suggested!)}
-          className="h-6 text-[11px]"
+          className="h-6 shrink-0 text-[11px]"
         >
           Apply
         </Button>
