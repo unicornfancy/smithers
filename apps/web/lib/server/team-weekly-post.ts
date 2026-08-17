@@ -22,8 +22,17 @@ export interface TeamWeeklyPostResult {
   url: string | null;
   /** Title of the matched post when kind === "found". */
   title?: string;
-  /** When kind === "fallback", a short reason ("auth-required", "no-match", "fetch-failed"). */
+  /**
+   * When kind === "fallback": "no-match" (search ran, nothing matched),
+   * "search-unavailable" (authenticated search errored AND the public
+   * API refused — likely an expired MCP session on a private P2), or
+   * "unparseable-team-url".
+   */
   reason?: string;
+  /** Site that was searched — lets the UI say where detection looked. */
+  siteHost?: string;
+  /** Title search terms tried, in order (patterns with {n} substituted). */
+  searchTerms?: string[];
 }
 
 interface WpComPost {
@@ -62,6 +71,7 @@ export async function detectTeamWeeklyPost(
   const weekRe = new RegExp(`\\bweek\\s*${weekNumber}\\b`, "i");
 
   // Path 1: authenticated search (works on private P2s).
+  let mcpSearchFailed = false;
   try {
     const mcp = await getMcpClient();
     for (const term of searchTerms) {
@@ -72,17 +82,27 @@ export async function detectTeamWeeklyPost(
       });
       const match = hits.find((h) => weekRe.test(h.title)) ?? hits[0];
       if (match?.link) {
-        return { kind: "found", url: match.link, title: match.title };
+        return {
+          kind: "found",
+          url: match.link,
+          title: match.title,
+          siteHost,
+          searchTerms,
+        };
       }
     }
   } catch {
     // MCP unavailable (mock mode / expired session) — public REST below.
+    mcpSearchFailed = true;
   }
 
   // Path 2: public REST (public P2s only; 401s silently on private).
+  let publicSearchRan = false;
   for (const term of searchTerms) {
     const found = await searchWpComPosts(siteHost, term).catch(() => null);
-    if (found && found.posts && found.posts.length > 0) {
+    if (!found) continue;
+    publicSearchRan = true;
+    if (found.posts && found.posts.length > 0) {
       const match = found.posts.find(
         (p) => typeof p.title === "string" && weekRe.test(p.title),
       ) ?? found.posts[0];
@@ -91,17 +111,23 @@ export async function detectTeamWeeklyPost(
           kind: "found",
           url: match.URL,
           title: match.title,
+          siteHost,
+          searchTerms,
         };
       }
     }
   }
 
   // Couldn't match a post — render a link to the team P2 homepage so the
-  // user can still find it manually.
+  // user can still find it manually. Distinguish "nothing matched" from
+  // "we couldn't search at all" so the UI hint points at the right fix.
   return {
     kind: "fallback",
     url: teamUrl,
-    reason: "no-match",
+    reason:
+      mcpSearchFailed && !publicSearchRan ? "search-unavailable" : "no-match",
+    siteHost,
+    searchTerms,
   };
 }
 

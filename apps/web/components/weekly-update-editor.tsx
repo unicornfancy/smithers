@@ -63,10 +63,9 @@ export function WeeklyUpdateEditor({
   const [p2CommentLink, setP2CommentLink] = React.useState<string | null>(null);
 
   // Thread URL is editable: pre-filled when auto-detection matched a
-  // specific post, manual paste otherwise. Detection uses the public
-  // REST API which 401s on private P2s (kind: "fallback",
-  // reason: "auth-required") — team51projects is private, so manual
-  // paste is the common path there.
+  // specific post (authenticated ContextA8C search first, public REST
+  // fallback), manual paste otherwise. When detection falls back, the
+  // hint below the row says where it searched and why nothing matched.
   const [threadUrl, setThreadUrl] = React.useState(
     teamPost.kind === "found" ? (teamPost.url ?? "") : "",
   );
@@ -307,6 +306,9 @@ export function WeeklyUpdateEditor({
               </Button>
             )}
           </div>
+          {teamPost.kind !== "found" && !p2CommentLink ? (
+            <DetectionHint result={teamPost} />
+          ) : null}
           {originalBody && originalBody.trim() !== body.trim() ? (
             <p className="text-muted-foreground/80 mt-1 text-[11px] italic">
               Your edits will feed into{" "}
@@ -361,6 +363,27 @@ export function WeeklyUpdateEditor({
         <FactsPanel facts={facts} />
       </div>
     </div>
+  );
+}
+
+function DetectionHint({ result }: { result: TeamWeeklyPostResult }) {
+  let message: string;
+  if (result.kind === "not-configured") {
+    message =
+      "Auto-detection is off — set p2.team_p2_url in config.local.yaml to your team P2.";
+  } else if (result.reason === "unparseable-team-url") {
+    message =
+      "Couldn't parse p2.team_p2_url in config.local.yaml — check it's a full site URL.";
+  } else if (result.reason === "search-unavailable") {
+    message = `Couldn't search ${result.siteHost ?? "the team P2"} — ContextA8C is unavailable (mock mode or expired session) and the site's public API requires auth. Paste the thread URL manually.`;
+  } else {
+    const terms = (result.searchTerms ?? []).map((t) => `"${t}"`).join(", ");
+    message = `Searched ${result.siteHost ?? "the team P2"}${terms ? ` for ${terms}` : ""} — no matching post. Check the site and title_patterns under p2 in config.local.yaml, or paste the thread URL manually.`;
+  }
+  return (
+    <p className="text-muted-foreground/80 mt-1 text-[11px] italic">
+      {message}
+    </p>
   );
 }
 
