@@ -1561,14 +1561,14 @@ export class RealContextA8CTransport implements ContextA8CClient {
   async createP2Comment(args: {
     site: string;
     post_id: number;
-    markdown: string;
+    content: string;
   }): Promise<P2CommentCreateResult> {
     const site = normalizeP2Site(args.site);
     if (!site) throw new Error(`Invalid P2 site: "${args.site}"`);
     if (!Number.isInteger(args.post_id) || args.post_id <= 0) {
       throw new Error(`Invalid post id: ${args.post_id}`);
     }
-    if (!args.markdown.trim()) throw new Error("Comment body is empty");
+    if (!args.content.trim()) throw new Error("Comment body is empty");
 
     // content-authoring requires user_confirmed: true on every write.
     // The Smithers UI collects that confirmation before this method is
@@ -1591,7 +1591,7 @@ export class RealContextA8CTransport implements ContextA8CClient {
         operation: "comments.create",
         params: {
           post: args.post_id,
-          content: { raw: args.markdown },
+          content: { raw: args.content },
           user_confirmed: true,
           include_fields: ["id", "link", "status"],
         },

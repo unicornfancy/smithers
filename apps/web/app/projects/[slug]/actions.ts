@@ -4046,10 +4046,14 @@ export async function postCommentToP2Action(input: {
       postTitle = post.title;
     }
 
+    // Serialize to Gutenberg blocks so P2's editor sees real blocks
+    // instead of one Classic block (server-side markdown conversion
+    // yields bare HTML with no block delimiters).
+    const { markdownToBlocks } = await import("@/lib/server/markdown-to-blocks");
     const result = await mcp.contextA8C.createP2Comment({
       site: parsed.site,
       post_id: postId,
-      markdown,
+      content: markdownToBlocks(markdown),
     });
     return { ok: true, post_title: postTitle, comment_link: result.link };
   } catch (err) {

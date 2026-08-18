@@ -286,8 +286,12 @@ export interface ContextA8CClient {
     site: string;
     /** Numeric post id the comment attaches to. */
     post_id: number;
-    /** Comment body — markdown, rendered natively by P2. */
-    markdown: string;
+    /**
+     * Comment body, passed through verbatim as content.raw. Send
+     * serialized Gutenberg block HTML (see apps/web markdownToBlocks)
+     * so P2's editor treats it as blocks rather than one Classic block.
+     */
+    content: string;
   }): Promise<P2CommentCreateResult>;
 }
 

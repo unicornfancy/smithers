@@ -735,7 +735,7 @@ export class MockContextA8CTransport implements ContextA8CClient {
   async createP2Comment(_args: {
     site: string;
     post_id: number;
-    markdown: string;
+    content: string;
   }): Promise<{ comment_id: number; link?: string }> {
     // Never pretend an outbound post succeeded in mock mode — a demo
     // user believing they posted to a real P2 is worse than an error.

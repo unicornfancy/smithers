@@ -61,6 +61,9 @@ Typecheck: `pnpm --filter @smithers/<pkg> typecheck`. There is no test runner; s
 - Zendesk search response uses **`ticket_id`** (not `id`) for the numeric id. Mapper accepts both.
 - Zendesk `id:<n>` filter in search **does not work** — returns 0 or wrong tickets. The workaround is **persist subject + status into frontmatter at attach time** (see `addProjectZendeskTicket`); the panel reads from frontmatter, never from a per-render upstream lookup.
 - ContextA8C sessions expire periodically (`MCP error -32603: Invalid or expired session`). Every callsite wraps in try/catch and degrades gracefully.
+- **P2 comments via `comments.create` must be serialized Gutenberg blocks** (`markdownToBlocks` in `apps/web/lib/server/markdown-to-blocks.ts`) or P2's editor shows the whole comment as one Classic block. The API save path re-serializes all-block comments through an allowlist: paragraph / list / list-item / quote / code survive; **heading, html, separator, table, preformatted are silently dropped** (probed 2026-08-18). Headings go out as bold paragraphs. Don't emit other block types without re-probing.
+- **`comments.create` / `posts.list` responses use a `data` envelope** (`{data: {...}, tool, subtool}`). Read `result.data`, not the top level. `comments.delete` has no `force` — it trashes only.
+- **Old P2 hostnames don't resolve inside ContextA8C** (`wpspecialprojectsp2` → `team51projects`, `to51` → `team51`) even though they redirect in a browser. `normalizeP2Host` in `apps/web/lib/p2-url.ts` maps them; add future renames there.
 - **Zendesk outbound author is always `concierge@wordpress.com`** — every team reply leaves via the shared persona, so `actor.email` / `is_external` can't tell a Katie reply from another TAM's or a partner inbound. To attribute outbound to a specific TAM, parse the comment body for their name (signature line). `filterMyZendeskReplies` in `weekly-facts.ts` does this for the weekly-update generator.
 
 **Fathom MCP:**
