@@ -207,6 +207,8 @@ export interface RecentCallSlice {
   recorded_at: string;
   title: string;
   summary?: string;
+  /** Persisted Fathom URL, when the file was saved with one. */
+  fathom_url?: string;
 }
 
 export async function listRecentCallSlices(
@@ -277,6 +279,8 @@ export async function listCallNotesForProject(
       title: typeof data["title"] === "string" ? data["title"] : f,
       summary:
         typeof analysis?.summary === "string" ? analysis.summary : undefined,
+      fathom_url:
+        typeof data["fathom_url"] === "string" ? data["fathom_url"] : undefined,
     });
   }
   out.sort((a, b) => b.recorded_at.localeCompare(a.recorded_at));

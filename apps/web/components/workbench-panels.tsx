@@ -44,6 +44,7 @@ import { DeleteProjectTaskButton } from "@/components/delete-project-task-button
 import { EditableTaskText } from "@/components/editable-task-text";
 import { AddProjectLogNoteInput } from "@/components/add-project-log-note-input";
 import { ProcessCallDialog } from "@/components/process-call-dialog";
+import { fathomCallUrl } from "@/lib/fathom-url";
 import { ProjectTaskCheckbox } from "@/components/project-task-checkbox";
 import { ViewTranscriptButton } from "@/components/view-transcript-button";
 
@@ -668,6 +669,7 @@ export function CallNotesPanel({
     recorded_at: string;
     title: string;
     summary?: string;
+    fathom_url?: string;
   }>;
 }) {
   // Split recordings into "matched but not processed yet" and
@@ -836,6 +838,7 @@ function ProcessedCallsList({
     recorded_at: string;
     title: string;
     summary?: string;
+    fathom_url?: string;
   }>;
   savedNotesByRecordingId?: Record<
     string,
@@ -903,6 +906,7 @@ function ProcessedCallRow({
     recorded_at: string;
     title: string;
     summary?: string;
+    fathom_url?: string;
   };
   savedRelPath: string | undefined;
   recording: CallRecordingRef | undefined;
@@ -955,6 +959,12 @@ function ProcessedCallRow({
               recorded_at: note.recorded_at,
               duration_seconds: 0,
               title: note.title,
+              // Persisted URL when the file has one; otherwise derived
+              // from the numeric id (fathom.video/calls/<id>) so older
+              // calls outside the live Fathom window still share their
+              // recording link to P2. Non-numeric (external) ids get
+              // neither — correctly.
+              source_url: note.fathom_url ?? fathomCallUrl(note.recording_id),
             }}
             p2Url={p2Url}
           />
@@ -967,9 +977,9 @@ function ProcessedCallRow({
             View
           </a>
         ) : null}
-        {recording?.source_url ? (
+        {(recording?.source_url ?? note.fathom_url ?? fathomCallUrl(note.recording_id)) ? (
           <a
-            href={recording.source_url}
+            href={recording?.source_url ?? note.fathom_url ?? fathomCallUrl(note.recording_id)}
             target="_blank"
             rel="noreferrer"
             className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
