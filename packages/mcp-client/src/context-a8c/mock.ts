@@ -732,6 +732,19 @@ export class MockContextA8CTransport implements ContextA8CClient {
     return [];
   }
 
+  async listGithubOpenIssues(): Promise<
+    import("../types").SourceResult<import("./types").GithubOpenIssue[]>
+  > {
+    // Seed data has no GitHub issue fixtures; SITREPs in mock mode
+    // simply omit the GitHub section.
+    return {
+      ok: true,
+      data: [],
+      from: "fresh",
+      fetched_at: new Date().toISOString(),
+    };
+  }
+
   async createP2Comment(_args: {
     site: string;
     post_id: number;

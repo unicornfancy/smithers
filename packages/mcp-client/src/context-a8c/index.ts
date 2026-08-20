@@ -40,6 +40,8 @@ export type {
   ActivitySourceFilter,
   MatticspaceGroupMember,
   MatticspaceGroupRoster,
+  GithubIssueComment,
+  GithubOpenIssue,
   P2CommentCreateResult,
   P2Post,
   P2PostAuthor,

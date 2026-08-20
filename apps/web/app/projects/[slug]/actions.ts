@@ -4094,7 +4094,7 @@ export async function composeSitrepAction(
     linearUpdates,
     allFollowUps,
     context,
-    githubActivityResult,
+    githubIssuesResult,
   ] = await Promise.all([
     project.linear_project_id
       ? mcp.linear.getProject(project.linear_project_id).catch(() => null)
@@ -4113,35 +4113,43 @@ export async function composeSitrepAction(
       .listFollowUps()
       .catch(() => ({ active: [], resolved: [] } as never)),
     loadJobContext({ operating_rhythm: true, strategic_priorities: true }),
-    // GitHub commits + PRs from the last week, via the same fan-out the
-    // activity feed uses (github_repo accepts the frontmatter URL form).
+    // Open GitHub issues + recent comments (no commits/PRs — issue
+    // discussion is the TAM-relevant signal; Katie 2026-08-20).
     project.github_repo
       ? mcp.contextA8C
-          .listProjectActivity({
-            project_slug: project.slug,
-            project_name: project.name,
-            limit: 20,
-            since: new Date(Date.now() - 7 * 86_400_000).toISOString(),
-            refs: { github_repo: project.github_repo },
+          .listGithubOpenIssues(project.github_repo, {
+            limit: 15,
+            comment_issue_limit: 5,
+            comments_per_issue: 3,
           })
           .catch(() => null)
       : Promise.resolve(null),
   ]);
 
-  const githubActivity = (
-    githubActivityResult?.ok
-      ? githubActivityResult.data
-      : (githubActivityResult?.cachedData ?? [])
-  )
-    .filter((e) => e.source === "github")
-    .slice(0, 15)
-    .map((e) => ({
-      kind: e.kind,
-      title: decodeHtmlEntitiesLite(e.title),
-      actor: e.actor?.name,
-      timestamp: e.timestamp,
-      url: e.url,
-    }));
+  const githubOpenIssues = (
+    githubIssuesResult?.ok
+      ? githubIssuesResult.data
+      : (githubIssuesResult?.cachedData ?? [])
+  ).map((i) => ({
+    number: i.number,
+    title: decodeHtmlEntitiesLite(i.title),
+    url: i.url,
+    assignees: i.assignees.length > 0 ? i.assignees : undefined,
+    updated_at: i.updated_at,
+    recent_comments:
+      i.recent_comments.length > 0
+        ? i.recent_comments.map((c) => ({
+            author: c.author,
+            date: c.created_at,
+            // Excerpt only — comment bodies can carry embedded images /
+            // long specs that would swamp the prompt.
+            excerpt: decodeHtmlEntitiesLite(c.body)
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 300),
+          }))
+        : undefined,
+  }));
 
   const detail = await vault.readProjectDetail(slug).catch(() => null);
   const projectActiveFollowUps = detail
@@ -4204,7 +4212,8 @@ export async function composeSitrepAction(
         health: u.health || undefined,
         author: u.user?.displayName ?? undefined,
       })),
-      github_activity: githubActivity.length > 0 ? githubActivity : undefined,
+      github_open_issues:
+        githubOpenIssues.length > 0 ? githubOpenIssues : undefined,
       linear_open_issues: openLinearIssues.slice(0, 20).map((i) => ({
         identifier: i.identifier,
         title: i.title,

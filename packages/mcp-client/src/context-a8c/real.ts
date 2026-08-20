@@ -22,6 +22,8 @@ import type { ActivityEvent, Ping, SourceResult } from "../types";
 import type {
   ActivitySourceFilter,
   ContextA8CClient,
+  GithubIssueComment,
+  GithubOpenIssue,
   MatticspaceGroupMember,
   MatticspaceGroupRoster,
   P2CommentCreateResult,
@@ -1471,6 +1473,114 @@ export class RealContextA8CTransport implements ContextA8CClient {
   }
 
   /**
+   * Open issues (newest activity first) with recent comments pulled
+   * for the most recently-active few. Issue discussion is the
+   * TAM-relevant GitHub signal for SITREPs — commits/PRs deliberately
+   * excluded (Katie, 2026-08-20).
+   *
+   * Response shapes are defensive: the `issues` tool has returned both
+   * `{result: [...]}` and `{result: {issues: [...]}}`; assignees appear
+   * as login strings in the trimmed form and objects in the REST form.
+   */
+  async listGithubOpenIssues(
+    repo: string,
+    opts: { limit?: number; comment_issue_limit?: number; comments_per_issue?: number } = {},
+  ): Promise<SourceResult<GithubOpenIssue[]>> {
+    const limit = Math.min(opts.limit ?? 15, 30);
+    const commentIssueLimit = Math.min(opts.comment_issue_limit ?? 5, 10);
+    const commentsPerIssue = Math.min(opts.comments_per_issue ?? 3, 10);
+    const [owner, name] = normalizeGithubRepo(repo);
+    if (!owner || !name) {
+      return failedResult(
+        "context_a8c.github",
+        "invalid",
+        `Bad github_repo "${repo}" — expected owner/name`,
+      );
+    }
+    return runIsolated(
+      { cache: this.cache, health: this.health },
+      {
+        source: "context_a8c.github",
+        cacheKey: `real:context_a8c:github_open_issues:${repo}:${limit}:${commentIssueLimit}:${commentsPerIssue}`,
+        ttl: ACTIVITY_TTL,
+        fetcher: async () => {
+          const result = await this.mcp.callJsonTool<{
+            result?: GithubIssue[] | { issues?: GithubIssue[] };
+          }>("context-a8c-execute-tool", {
+            provider: "github",
+            tool: "issues",
+            params: {
+              owner,
+              repo: name,
+              state: "OPEN",
+              orderBy: "UPDATED_AT",
+              direction: "DESC",
+              perPage: limit,
+            },
+          });
+          const rawList = Array.isArray(result?.result)
+            ? result.result
+            : (result?.result?.issues ?? []);
+          const issues: GithubOpenIssue[] = rawList
+            .filter((i) => typeof i.number === "number" && !i.pull_request)
+            .map((i) => ({
+              number: i.number!,
+              title: i.title ?? `#${i.number}`,
+              url: i.html_url ?? `https://github.com/${owner}/${name}/issues/${i.number}`,
+              author: i.user?.login,
+              assignees: asArray<unknown>((i as { assignees?: unknown[] }).assignees)
+                .map((a) =>
+                  typeof a === "string" ? a : ((a as { login?: string })?.login ?? ""),
+                )
+                .filter(Boolean),
+              comments_count:
+                typeof (i as { comments?: number }).comments === "number"
+                  ? (i as { comments?: number }).comments!
+                  : 0,
+              created_at: i.created_at,
+              updated_at: i.updated_at,
+              recent_comments: [] as GithubIssueComment[],
+            }));
+
+          // Comments for the most recently-active issues that have any.
+          const withComments = issues
+            .filter((i) => i.comments_count > 0)
+            .slice(0, commentIssueLimit);
+          await Promise.all(
+            withComments.map(async (issue) => {
+              try {
+                const c = await this.mcp.callJsonTool<GithubReadEnvelope>(
+                  "context-a8c-execute-tool",
+                  {
+                    provider: "github",
+                    tool: "issue",
+                    params: {
+                      owner,
+                      repo: name,
+                      issue_number: issue.number,
+                      method: "get_comments",
+                      perPage: 30,
+                    },
+                  },
+                );
+                const comments = asArray<GithubComment>(c?.result);
+                issue.recent_comments = comments.slice(-commentsPerIssue).map((cm) => ({
+                  author: cm.user?.login,
+                  body: cm.body ?? "",
+                  created_at: cm.created_at,
+                }));
+              } catch {
+                // Comments are enrichment — the issue row stands alone.
+              }
+            }),
+          );
+          return issues;
+        },
+      },
+    );
+  }
+
+  /**
    * Fetch posts from a single A8C P2 via the wpcom provider's
    * `posts-text` tool. Supports per-slug / per-id targeting plus
    * inline comments. Internal P2s (wpspecialprojectsp2, to51) are
@@ -1823,11 +1933,11 @@ function hasLinearRef(refs: ProjectActivityQuery["refs"]): boolean {
  * before ever talking to the MCP. Most failures bubble up through
  * runIsolated which wraps the actual fetcher exceptions.
  */
-function failedResult(
+function failedResult<T = ActivityEvent[]>(
   source: ContextA8CSourceId,
   code: string,
   message: string,
-): SourceResult<ActivityEvent[]> {
+): SourceResult<T> {
   return {
     ok: false,
     error: {

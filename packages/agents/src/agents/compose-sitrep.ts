@@ -41,20 +41,22 @@ export interface SitrepInput {
     assignee?: string;
     url?: string;
   }>;
-  /** Open GitHub issues in the project's repo, when linked. */
+  /**
+   * Open GitHub issues (newest activity first) with recent comment
+   * excerpts on the active ones. Deliberately no commits/PRs — issue
+   * discussion is the TAM-relevant engineering signal.
+   */
   github_open_issues?: Array<{
-    title: string;
     number: number;
-    url: string;
-    updated_at: string;
-  }>;
-  /** Recent GitHub events (commits, PRs, issue comments), newest first. */
-  github_activity?: Array<{
-    kind: string;
     title: string;
-    actor?: string;
-    timestamp: string;
-    url?: string;
+    url: string;
+    assignees?: string[];
+    updated_at?: string;
+    recent_comments?: Array<{
+      author?: string;
+      excerpt: string;
+      date?: string;
+    }>;
   }>;
   /** Primary Zendesk thread (first attached ticket). */
   primary_zendesk?: {
@@ -112,7 +114,7 @@ Quality rules:
 - Don't editorialize the partner unfavorably. Stick to facts.
 - Don't repeat the project name in every section header — P2 already shows the context.
 - When you reference a Linear issue anywhere in the body, render its identifier as a markdown link to the URL provided in the input, e.g. "[ABC-123](https://linear.app/...) Fix nav overflow". Only link issues whose URL was provided — never invent or guess a URL.
-- Recent GitHub activity (commits, PRs) is engineering signal for the "Latest activity" section — summarize what shipped or is in review, don't list every commit. When citing a specific PR that has a URL in the input, link its title. Skip the section's GitHub angle entirely when no GitHub activity was provided.
+- Open GitHub issues and their recent comment discussion are engineering signal for "Latest activity" and "Open items" — surface decisions, questions waiting on someone, and newly-filed requests. When citing a specific issue, link its number, e.g. "[#165](https://github.com/...)". Never list every issue or quote comments at length; skip the GitHub angle entirely when no issues were provided.
 
 Always return JSON matching the requested schema. No prose outside the JSON.`;
 
@@ -199,22 +201,24 @@ function renderUserPrompt(input: SitrepInput): string {
     }
   }
 
-  if (input.github_activity && input.github_activity.length > 0) {
-    lines.push("");
-    lines.push("# Recent GitHub activity (newest first)");
-    for (const e of input.github_activity) {
-      const head = `- (${e.timestamp.slice(0, 10)}) [${e.kind}]${e.actor ? ` ${e.actor}` : ""}: ${e.title}`;
-      lines.push(e.url ? `${head} <${e.url}>` : head);
-    }
-  }
-
   if (input.github_open_issues && input.github_open_issues.length > 0) {
     lines.push("");
-    lines.push("# Open GitHub issues");
+    lines.push("# Open GitHub issues (newest activity first)");
     for (const i of input.github_open_issues) {
-      lines.push(
-        `- #${i.number} ${i.title} (updated ${i.updated_at.slice(0, 10)})`,
-      );
+      const meta = [
+        i.updated_at ? `updated ${i.updated_at.slice(0, 10)}` : null,
+        i.assignees && i.assignees.length > 0
+          ? `assigned ${i.assignees.join(", ")}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      lines.push(`- #${i.number} ${i.title}${meta ? ` (${meta})` : ""} <${i.url}>`);
+      for (const c of i.recent_comments ?? []) {
+        lines.push(
+          `    - comment${c.author ? ` by ${c.author}` : ""}${c.date ? ` (${c.date.slice(0, 10)})` : ""}: ${c.excerpt}`,
+        );
+      }
     }
   }
 

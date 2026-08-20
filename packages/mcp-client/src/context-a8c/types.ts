@@ -89,6 +89,27 @@ export interface MatticspaceGroupRoster {
   members: MatticspaceGroupMember[];
 }
 
+export interface GithubIssueComment {
+  author?: string;
+  body: string;
+  created_at?: string;
+}
+
+/** Open GitHub issue slice for SITREPs — issue + recent discussion. */
+export interface GithubOpenIssue {
+  number: number;
+  title: string;
+  /** Derived: https://github.com/<owner>/<repo>/issues/<number>. */
+  url: string;
+  author?: string;
+  assignees: string[];
+  comments_count: number;
+  created_at?: string;
+  updated_at?: string;
+  /** Newest-last comments on the issue (only fetched for recently-active issues). */
+  recent_comments: GithubIssueComment[];
+}
+
 export interface ContextA8CClient {
   listProjectActivity(
     query: ProjectActivityQuery,
@@ -107,6 +128,18 @@ export interface ContextA8CClient {
     groupSlug: string,
     opts?: { includeSubteams?: boolean },
   ): Promise<SourceResult<MatticspaceGroupRoster>>;
+
+  /**
+   * Open issues (newest activity first) in a project's GitHub repo,
+   * with recent comments pulled for the most recently-active few.
+   * `repo` accepts owner/name or a full github.com URL. Feeds the
+   * SITREP composer — issue discussion is TAM-relevant signal where
+   * commits/PRs are not.
+   */
+  listGithubOpenIssues(
+    repo: string,
+    opts?: { limit?: number; comment_issue_limit?: number; comments_per_issue?: number },
+  ): Promise<SourceResult<GithubOpenIssue[]>>;
 
   /**
    * Per-ticket metadata fetch for the workbench's Zendesk threads
