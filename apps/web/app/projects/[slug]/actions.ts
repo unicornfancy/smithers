@@ -4094,6 +4094,7 @@ export async function composeSitrepAction(
     linearUpdates,
     allFollowUps,
     context,
+    githubActivityResult,
   ] = await Promise.all([
     project.linear_project_id
       ? mcp.linear.getProject(project.linear_project_id).catch(() => null)
@@ -4112,7 +4113,35 @@ export async function composeSitrepAction(
       .listFollowUps()
       .catch(() => ({ active: [], resolved: [] } as never)),
     loadJobContext({ operating_rhythm: true, strategic_priorities: true }),
+    // GitHub commits + PRs from the last week, via the same fan-out the
+    // activity feed uses (github_repo accepts the frontmatter URL form).
+    project.github_repo
+      ? mcp.contextA8C
+          .listProjectActivity({
+            project_slug: project.slug,
+            project_name: project.name,
+            limit: 20,
+            since: new Date(Date.now() - 7 * 86_400_000).toISOString(),
+            refs: { github_repo: project.github_repo },
+          })
+          .catch(() => null)
+      : Promise.resolve(null),
   ]);
+
+  const githubActivity = (
+    githubActivityResult?.ok
+      ? githubActivityResult.data
+      : (githubActivityResult?.cachedData ?? [])
+  )
+    .filter((e) => e.source === "github")
+    .slice(0, 15)
+    .map((e) => ({
+      kind: e.kind,
+      title: decodeHtmlEntitiesLite(e.title),
+      actor: e.actor?.name,
+      timestamp: e.timestamp,
+      url: e.url,
+    }));
 
   const detail = await vault.readProjectDetail(slug).catch(() => null);
   const projectActiveFollowUps = detail
@@ -4175,6 +4204,7 @@ export async function composeSitrepAction(
         health: u.health || undefined,
         author: u.user?.displayName ?? undefined,
       })),
+      github_activity: githubActivity.length > 0 ? githubActivity : undefined,
       linear_open_issues: openLinearIssues.slice(0, 20).map((i) => ({
         identifier: i.identifier,
         title: i.title,
@@ -4222,6 +4252,18 @@ export async function composeSitrepAction(
       message: err instanceof Error ? err.message : "Agent call failed",
     };
   }
+}
+
+// GitHub event titles arrive with HTML entities (&#39; etc.) — decode
+// the common ones so they don't leak into the agent prompt / SITREP.
+function decodeHtmlEntitiesLite(s: string): string {
+  return s
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
 }
 
 function linkifyLinearIdentifiers(

@@ -48,6 +48,14 @@ export interface SitrepInput {
     url: string;
     updated_at: string;
   }>;
+  /** Recent GitHub events (commits, PRs, issue comments), newest first. */
+  github_activity?: Array<{
+    kind: string;
+    title: string;
+    actor?: string;
+    timestamp: string;
+    url?: string;
+  }>;
   /** Primary Zendesk thread (first attached ticket). */
   primary_zendesk?: {
     id: string;
@@ -104,6 +112,7 @@ Quality rules:
 - Don't editorialize the partner unfavorably. Stick to facts.
 - Don't repeat the project name in every section header — P2 already shows the context.
 - When you reference a Linear issue anywhere in the body, render its identifier as a markdown link to the URL provided in the input, e.g. "[ABC-123](https://linear.app/...) Fix nav overflow". Only link issues whose URL was provided — never invent or guess a URL.
+- Recent GitHub activity (commits, PRs) is engineering signal for the "Latest activity" section — summarize what shipped or is in review, don't list every commit. When citing a specific PR that has a URL in the input, link its title. Skip the section's GitHub angle entirely when no GitHub activity was provided.
 
 Always return JSON matching the requested schema. No prose outside the JSON.`;
 
@@ -187,6 +196,15 @@ function renderUserPrompt(input: SitrepInput): string {
       if (i.assignee) parts.push(`(${i.assignee})`);
       if (i.url) parts.push(`<${i.url}>`);
       lines.push(`- ${parts.join(" ")}`);
+    }
+  }
+
+  if (input.github_activity && input.github_activity.length > 0) {
+    lines.push("");
+    lines.push("# Recent GitHub activity (newest first)");
+    for (const e of input.github_activity) {
+      const head = `- (${e.timestamp.slice(0, 10)}) [${e.kind}]${e.actor ? ` ${e.actor}` : ""}: ${e.title}`;
+      lines.push(e.url ? `${head} <${e.url}>` : head);
     }
   }
 
