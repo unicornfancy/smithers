@@ -59,7 +59,7 @@ interface RawProjectUpdatesResponse {
         createdAt: string;
         body: string;
         health: string;
-        user: { displayName: string };
+        user: { displayName: string } | null;
       }>;
     };
   } | null;
@@ -76,7 +76,7 @@ interface RawIssueDetailResponse {
       nodes: Array<{
         body: string;
         createdAt: string;
-        user: { displayName: string };
+        user: { displayName: string } | null;
       }>;
     };
     url: string;
@@ -343,7 +343,7 @@ export class RealLinearTransport implements LinearClient {
       );
       if (issue.description?.trim()) lines.push(issue.description.trim());
       for (const c of issue.comments) {
-        const who = c.user.displayName;
+        const who = c.user?.displayName ?? "(bot/removed user)";
         lines.push(`${who}: ${c.body.trim()}`);
       }
       return {
@@ -366,7 +366,7 @@ export class RealLinearTransport implements LinearClient {
     if (project.targetDate) lines.push(`target: ${project.targetDate}`);
     for (const u of updates.slice(0, 5)) {
       lines.push(
-        `${u.user.displayName} (${u.createdAt.slice(0, 10)}, ${u.health}): ${u.body.trim()}`,
+        `${u.user?.displayName ?? "(bot/removed user)"} (${u.createdAt.slice(0, 10)}, ${u.health}): ${u.body.trim()}`,
       );
     }
     return {

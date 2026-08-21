@@ -138,7 +138,7 @@ function linearUpdateToEntry(update: LinearProjectUpdate): ProjectLogEntry {
     body: update.body,
     source: "linear",
     health: update.health,
-    author: update.user.displayName,
+    author: update.user?.displayName ?? "(bot/removed user)",
   };
 }
 

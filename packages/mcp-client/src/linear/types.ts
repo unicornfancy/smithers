@@ -29,7 +29,8 @@ export interface LinearProjectUpdate {
   createdAt: string;
   body: string;
   health: string;
-  user: { displayName: string };
+  /** Null when authored by an integration or a deleted account. */
+  user: { displayName: string } | null;
 }
 
 export interface LinearIssueDetail {
@@ -41,7 +42,8 @@ export interface LinearIssueDetail {
   comments: Array<{
     body: string;
     createdAt: string;
-    user: { displayName: string };
+    /** Null for bot/integration comments and deleted accounts. */
+    user: { displayName: string } | null;
   }>;
   url: string;
   dueDate: string | null;

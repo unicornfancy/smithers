@@ -3783,7 +3783,7 @@ function renderLaunchPostInputsMarkdown(args: {
     );
     for (const u of args.linearUpdates.slice(0, 6)) {
       const when = u.createdAt.slice(0, 10);
-      const who = u.user.displayName;
+      const who = u.user?.displayName ?? "(bot/removed user)";
       lines.push(`- **${when}** (${who}, health=${u.health}):`);
       lines.push(indent(u.body.trim(), "  "));
     }
@@ -3854,7 +3854,7 @@ function renderLaunchPostInputsMarkdown(args: {
         lines.push(`Comments (${d.comments.length}):`);
         for (const c of d.comments) {
           const when = c.createdAt.slice(0, 10);
-          lines.push(`- **${when}** ${c.user.displayName}:`);
+          lines.push(`- **${when}** ${c.user?.displayName ?? "(bot/removed user)"}:`);
           lines.push(indent(c.body.trim(), "  "));
         }
       }
