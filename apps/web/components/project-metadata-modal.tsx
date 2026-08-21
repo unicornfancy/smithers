@@ -248,7 +248,7 @@ export function ProjectMetadataModal({ project }: Props) {
           Edit
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col">
         <DialogHeader>
           <DialogTitle>Edit project metadata</DialogTitle>
           <DialogDescription>
@@ -261,7 +261,10 @@ export function ProjectMetadataModal({ project }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-[1fr_220px] gap-4">
+        {/* min-h-0 + overflow-y-auto: the form is taller than most
+            viewports — scroll the field area, keep header/footer fixed
+            (same treatment as CloneProjectDialog). */}
+        <div className="grid min-h-0 flex-1 grid-cols-[1fr_220px] gap-4 overflow-y-auto pr-1">
           <form
             onSubmit={(e) => {
               e.preventDefault();
